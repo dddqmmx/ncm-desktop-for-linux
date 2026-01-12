@@ -1,0 +1,19 @@
+[package]
+name = "native"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = {version = "3.7.1", features = ["tokio_rt"]}
+napi-derive = "3.4.1"
+rodio = {version="0.21.1"}
+once_cell = "1.21.3"
+cpal = { version = "0.17.1", features = ["asio"] }
+symphonia = { version = "0.5", features = ["all-formats", "all-codecs"] }
+ringbuf = "0.4.8"
+stream-download = {version ="0.22.9", features = ["reqwest-rustls"]}
+reqwest = { version = "0.13.1", features = ["stream"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

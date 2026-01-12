@@ -1,0 +1,9 @@
+@import './base.css';
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-size: cover;
+  user-select: none;
+}

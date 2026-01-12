@@ -1,0 +1,51 @@
+{
+  "name": "music",
+  "version": "1.0.0",
+  "description": "An Electron application with Vue and TypeScript",
+  "main": "./out/main/index.js",
+  "author": "example.com",
+  "homepage": "https://electron-vite.org",
+  "scripts": {
+    "format": "prettier --write .",
+    "lint": "eslint --cache .",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "start": "electron-vite preview",
+    "dev:native": "cd native && npx napi build --watch",
+    "dev": "concurrently \"npm run dev:native\" \"electron-vite dev\"",
+    "build": "npm run typecheck && electron-vite build",
+    "postinstall": "electron-builder install-app-deps",
+    "build:unpack": "npm run build && electron-builder --dir",
+    "build:win": "npm run build && electron-builder --win",
+    "build:mac": "npm run build && electron-builder --mac",
+    "build:linux": "npm run build && electron-builder --linux"
+  },
+  "dependencies": {
+    "@electron-toolkit/preload": "^3.0.2",
+    "@electron-toolkit/utils": "^4.0.0",
+    "axios": "^1.13.2",
+    "colorthief": "^2.6.0",
+    "electron-updater": "^6.3.9",
+    "NeteaseCloudMusicApi": "^4.28.0",
+    "pinia": "^3.0.4",
+    "tough-cookie": "^6.0.0",
+    "vue-router": "^4.6.3"
+  },
+  "devDependencies": {
+    "@electron-toolkit/tsconfig": "^2.0.0",
+    "@types/node": "^22.19.2",
+    "@types/tough-cookie": "^4.0.5",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "@vue/devtools": "^8.0.5",
+    "electron": "^38.1.2",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^4.0.1",
+    "prettier": "^3.6.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.6",
+    "vue": "^3.5.21",
+    "vue-tsc": "^3.0.7"
+  }
+}
