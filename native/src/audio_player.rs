@@ -25,11 +25,12 @@ use tokio::sync::Notify;
 
 pub struct SeekableSource<R> {
     inner: R,
+    len: Option<u64>, // 新增长度字段
 }
 
 impl<R: Read + Seek + Send + Sync> SeekableSource<R> {
-    pub fn new(inner: R) -> Self {
-        Self { inner }
+    pub fn new(inner: R, len: Option<u64>) -> Self {
+        Self { inner, len }
     }
 }
 
@@ -50,9 +51,10 @@ impl<R: Read + Seek + Send + Sync> MediaSource for SeekableSource<R> {
         true
     }
     fn byte_len(&self) -> Option<u64> {
-        None
+        self.len // 返回实际长度
     }
 }
+
 
 struct AudioMetadata {
     sample_rate: u32,
@@ -139,7 +141,11 @@ impl AudioPlayer {
         )
         .await?;
 
-        let source = Box::new(SeekableSource::new(reader));
+        // 获取长度：StreamDownload 提供了 content_length()
+        let content_len = reader.content_length();
+
+        // 传入长度
+        let source = Box::new(SeekableSource::new(reader, content_len));
         let meta = self.spawn_probe_task(source, extension).await?;
         self.setup_and_play(meta)
     }
