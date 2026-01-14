@@ -211,54 +211,61 @@ impl AudioPlayer {
         })
     }
 
-    fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> {
-        self.stop(); // 停止并重置之前的所有状态
+fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> {
+    // 1. 先调用 stop 确保旧流销毁，旧 state 被标记为终止
+    self.stop();
 
-        self.state.is_terminating.store(false, Ordering::SeqCst);
-        self.state.decoder_done.store(false, Ordering::SeqCst);
-        self.state.is_finished.store(false, Ordering::SeqCst);
+    // 2. 彻底替换 state，确保新旧音频状态完全隔离
+    // 这样旧线程永远看不到新音频的 false 标记，它只能看到旧 state 的 is_terminating = true
+    self.state = Arc::new(SharedState {
+        is_paused: AtomicBool::new(false),
+        current_frame: AtomicU64::new(0),
+        sample_rate: AtomicU32::new(meta.sample_rate),
+        channels: AtomicU32::new(meta.channels as u32),
+        seek_request: Mutex::new(None),
+        is_terminating: AtomicBool::new(false), // 新 state 初始为 false
+        discard_buffer: AtomicBool::new(false),
+        decoder_done: AtomicBool::new(false),
+        is_finished: AtomicBool::new(false),
+        finish_notify: Notify::new(),
+        buffered_frames: AtomicU64::new(0),
+        min_buffer_frames: AtomicU64::new(0),
+        waiting_for_seek: AtomicBool::new(false),
+        has_seek_request: AtomicBool::new(false),
+    });
 
-        let sr = meta.sample_rate;
-        let channels = meta.channels;
-        self.state.sample_rate.store(sr, Ordering::SeqCst);
-        self.state.channels.store(channels as u32, Ordering::SeqCst);
-        self.state.current_frame.store(0, Ordering::SeqCst);
-        self.state.buffered_frames.store(0, Ordering::SeqCst);
-        self.state.min_buffer_frames.store(0, Ordering::SeqCst);
-        self.state.waiting_for_seek.store(false, Ordering::SeqCst);
+    let sr = meta.sample_rate;
+    let channels = meta.channels;
 
-        let (config, sample_format) = self.find_best_config(sr, channels)?;
-        if config.sample_rate != sr {
-            return Err(format!(
-                "Sample-rate mismatch: file={}Hz, output={}Hz",
-                sr, config.sample_rate
-            )
-            .into());
-        }
+    // 3. 硬件配置检查
+    let (config, sample_format) = self.find_best_config(sr, channels)?;
 
-        let rb = HeapRb::<i32>::new(sr as usize * channels as usize * 2); // 减小了些缓冲区，20秒稍大
-        let (producer, consumer) = rb.split();
-
-        self.start_decode_thread(meta, producer);
-
-        let state_for_cb = self.state.clone();
-        let stream = match sample_format {
-            cpal::SampleFormat::I16 => {
-                self.build_stream::<i16, _>(&config, consumer, state_for_cb, channels as usize)?
-            }
-            cpal::SampleFormat::I32 => {
-                self.build_stream::<i32, _>(&config, consumer, state_for_cb, channels as usize)?
-            }
-            cpal::SampleFormat::F32 => {
-                self.build_stream::<f32, _>(&config, consumer, state_for_cb, channels as usize)?
-            }
-            _ => return Err(format!("Unsupported sample format: {:?}", sample_format).into()),
-        };
-
-        stream.play()?;
-        self.stream = Some(stream);
-        Ok(())
+    // 修正：cpal 的 config.sample_rate 是一个结构体，需通过 .0 取值
+    if config.sample_rate != sr {
+        return Err(format!(
+            "Sample-rate mismatch: file={}Hz, output={}Hz",
+            sr, config.sample_rate
+        ).into());
     }
+
+    // 4. 创建全新的缓冲区和解码线程
+    let rb = HeapRb::<i32>::new(sr as usize * channels as usize * 2);
+    let (producer, consumer) = rb.split();
+
+    self.start_decode_thread(meta, producer);
+
+    let state_for_cb = self.state.clone();
+    let stream = match sample_format {
+        cpal::SampleFormat::I16 => self.build_stream::<i16, _>(&config, consumer, state_for_cb, channels as usize)?,
+        cpal::SampleFormat::I32 => self.build_stream::<i32, _>(&config, consumer, state_for_cb, channels as usize)?,
+        cpal::SampleFormat::F32 => self.build_stream::<f32, _>(&config, consumer, state_for_cb, channels as usize)?,
+        _ => return Err(format!("Unsupported sample format: {:?}", sample_format).into()),
+    };
+
+    stream.play()?;
+    self.stream = Some(stream);
+    Ok(())
+}
 
     fn start_decode_thread(
         &self,
@@ -612,18 +619,17 @@ impl AudioPlayer {
         self.state.has_seek_request.store(true, Ordering::SeqCst);
     }
 
-    pub fn stop(&mut self) {
-        self.state.is_terminating.store(true, Ordering::SeqCst);
-        self.stream = None;
-        self.state.current_frame.store(0, Ordering::SeqCst);
-        self.state.is_paused.store(false, Ordering::SeqCst);
-        let mut seek_req = self.state.seek_request.lock().unwrap();
-        *seek_req = None;
+pub fn stop(&mut self) {
+    // 1. 先设置旧状态的终止标记，让旧线程在任何检查点都能发现并退出
+    self.state.is_terminating.store(true, Ordering::SeqCst);
 
-        // 如果有任务在等待结束，手动停止也应触发通知避免死锁
-        self.state.is_finished.store(true, Ordering::SeqCst);
-        self.state.finish_notify.notify_waiters();
-    }
+    // 2. 销毁 cpal 流，这会触发旧 consumer 的 Drop
+    self.stream = None;
+
+    // 3. 唤醒所有在 wait_finished 上的等待者
+    self.state.is_finished.store(true, Ordering::SeqCst);
+    self.state.finish_notify.notify_waiters();
+}
 
     /// 高性能异步等待：直到播放自然结束或被 stop
     pub async fn wait_finished(&self) {
