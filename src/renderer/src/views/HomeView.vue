@@ -65,11 +65,11 @@ const playSong = (song: Song) => playerStore.playMusic(song.id)
 </script>
 
 <template>
-  <main class="scrollable-content">
+  <main class="scrollable-content" >
     <h1 class="page-title">主页</h1>
 
     <!-- 1. 每日推荐歌单部分 -->
-    <section class="section">
+    <section class="section"  v-if="userStore.isLoggedIn">
       <div class="section-header">
         <h2>每日推荐歌单</h2>
         <div class="nav-btns">

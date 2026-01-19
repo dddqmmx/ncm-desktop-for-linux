@@ -7,3 +7,7 @@ out
 native/target
 native/index.d.ts
 native/index.node
+native/Cargo.lock
+yarn.lock
+package-lock.json
+

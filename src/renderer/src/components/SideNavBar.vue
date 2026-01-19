@@ -16,7 +16,7 @@ const toggleLoginModal = () => {
 
 const handleLogout = () => {
   // 假设 store 中有 logout 方法，没有的话请根据实际情况清除状态
-  userStore.$reset()
+  userStore.logout()
   createdPlaylists.value = []
 }
 

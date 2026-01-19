@@ -1,18 +1,14 @@
 <script setup lang="ts">
-import { useUserStore } from '@renderer/stores/userStore'
 import { usePlayerStore } from '@renderer/stores/playerStore'
 import { SongDetailResult } from '@renderer/types/songDetail'
 import { computed, ref, onMounted } from 'vue'
 import { PlaylistCatlist, PlaylistCategory } from '@renderer/types/playlistCatlist'
 
-// --- 状态管理 ---
 const searchQuery = ref('')
 const searchResults = ref<SearchResult | null>(null)
 const isSearching = ref(false)
 const coverMap = ref<Record<number, string>>({})
 
-// 2. 将 browseCategories 定义为响应式引用
-// 这里的类型扩展一下，加上我们 UI 需要的 color 属性
 interface DisplayCategory extends PlaylistCategory {
   color: string
 }
@@ -25,17 +21,13 @@ const gradientColors = [
   'bg-gradient-pink', 'bg-gradient-indigo'
 ]
 
-// --- 核心逻辑：获取分类 ---
 const getBrowseCategories = async (): Promise<void> => {
   try {
     const res = await window.api.playlist_catlist({}) as { body?: PlaylistCatlist }
 
     if (res.body && res.body.sub) {
-      // 这里的 sub 是所有的次级分类（如：民谣、电子等）
-      // 我们取前 8-10 个或者全部，并为其分配颜色
       browseCategories.value = res.body.sub.slice(0, 12).map((item, index) => ({
         ...item,
-        // 循环使用预设颜色
         color: gradientColors[index % gradientColors.length]
       }))
     }
@@ -44,12 +36,10 @@ const getBrowseCategories = async (): Promise<void> => {
   }
 }
 
-// 3. 组件挂载时自动加载
 onMounted(() => {
   getBrowseCategories()
 })
 
-// --- 其他逻辑 ---
 const hasSearched = computed(() =>
   searchQuery.value.trim().length > 0 && searchResults.value !== null
 )
