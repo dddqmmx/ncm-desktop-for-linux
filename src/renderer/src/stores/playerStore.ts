@@ -5,6 +5,9 @@ import { useUserStore } from './userStore'
 import { SoundQualityType } from 'NeteaseCloudMusicApi'
 import { SongUrl } from '@renderer/types/song'
 
+// 播放模式定义
+export type PlayMode = 'sequence' | 'loop' | 'random' | 'single'
+
 export interface CurrentSong {
   id: number
   name: string
@@ -20,7 +23,11 @@ export const usePlayerStore = defineStore('player', () => {
   const currentSongId = ref<number | null>(Number(localStorage.getItem('currentSongId')) || null)
   const isPlaying = ref(false)
   const isFullScreen = ref(false)
-  const isHistorySong = ref(true) // 标记是否为历史记录中的歌曲（未真正开始播放）
+  const isHistorySong = ref(true)
+
+  // --- 播放列表相关状态 ---
+  const playlist = ref<CurrentSong[]>(JSON.parse(localStorage.getItem('playlist') || '[]'))
+  const playMode = ref<PlayMode>((localStorage.getItem('playMode') as PlayMode) || 'sequence')
 
   const userStore = useUserStore()
   let progressTimer: ReturnType<typeof setInterval> | null = null
@@ -29,8 +36,12 @@ export const usePlayerStore = defineStore('player', () => {
   const duration = computed(() => currentSong.value?.duration || 0)
   const progressPercent = computed(() => {
     if (duration.value <= 0) return 0
-    // 使用取余操作，确保 currentTime 超过 duration 时（如循环播放），进度条能正确回到起点
     return ((currentTime.value % duration.value) / duration.value) * 100
+  })
+
+  // 获取当前歌曲在列表中的索引
+  const currentIndex = computed(() => {
+    return playlist.value.findIndex(s => s.id === currentSongId.value)
   })
 
   // --- 私有辅助函数 ---
@@ -42,24 +53,22 @@ export const usePlayerStore = defineStore('player', () => {
   const getSongUrl = async (song_id: number): Promise<string> => {
     const res = await window.api.song_url({
       id: song_id,
-      level: "standard" as SoundQualityType,
+      level: "hires" as SoundQualityType,
       cookie: userStore.cookie
     }) as { body?: { data?: SongUrl[] } }
     return res.body?.data?.[0].url ?? ""
   }
 
-  // 同步后端进度到 Store
-const syncProgress = async () => {
-  try {
-    const progressMs = await window.api.get_progress();
-    console.log('收到原始进度:', progressMs); // <-- 添加这一行
-    if (progressMs !== undefined && progressMs !== null) {
-      currentTime.value = progressMs;
+  const syncProgress = async () => {
+    try {
+      const progressMs = await window.api.get_progress();
+      if (progressMs !== undefined && progressMs !== null) {
+        currentTime.value = progressMs;
+      }
+    } catch (error) {
+      console.error('同步进度失败:', error);
     }
-  } catch (error) {
-    console.error('同步进度失败:', error);
   }
-}
 
   const startTimer = () => {
     if (progressTimer) return
@@ -74,30 +83,122 @@ const syncProgress = async () => {
   }
 
   // --- 核心操作 (Actions) ---
+
+  // 1. 播放下一首 (isAuto: 是否为播放结束自动触发)
+  const playNext = async (isAuto = false) => {
+    if (playlist.value.length === 0) return
+
+    // 单曲循环逻辑
+    if (isAuto && playMode.value === 'single') {
+      await playMusic(currentSongId.value!, 0)
+      return
+    }
+
+    let nextIndex = 0
+    if (playMode.value === 'random') {
+      nextIndex = Math.floor(Math.random() * playlist.value.length)
+    } else {
+      nextIndex = currentIndex.value + 1
+      if (nextIndex >= playlist.value.length) {
+        nextIndex = 0 // 列表循环
+      }
+    }
+
+    const nextSong = playlist.value[nextIndex]
+    await playMusic(nextSong.id)
+  }
+
+  // 2. 播放上一首
+  const playPrev = async () => {
+    if (playlist.value.length === 0) return
+
+    let prevIndex = 0
+    if (playMode.value === 'random') {
+      prevIndex = Math.floor(Math.random() * playlist.value.length)
+    } else {
+      prevIndex = currentIndex.value - 1
+      if (prevIndex < 0) {
+        prevIndex = playlist.value.length - 1
+      }
+    }
+
+    const prevSong = playlist.value[prevIndex]
+    await playMusic(prevSong.id)
+  }
+
   const waitForEnd = async (songId: number) => {
     try {
       await window.api.wait_finished()
-
-      // ❗如果已经切歌，直接忽略
       if (currentSongId.value !== songId) return
 
       isPlaying.value = false
       stopTimer()
       currentTime.value = duration.value
 
-      // 👉 自动下一首 / 单曲循环 放这里
+      // 关键：播放结束后自动根据模式播放下一首
+      await playNext(true)
     } catch {
       // ignore
     }
   }
 
-  // 初始化：从本地存储恢复歌曲信息
+  // 修改：播放音乐时，如果歌曲不在列表中，则添加到列表
+  const playMusic = async (song_id: number, startTime: number = 0) => {
+    currentTime.value = startTime
+    const song = await getSongDetail(song_id)
+    if (!song) return
+
+    const url = await getSongUrl(song_id)
+    if (!url) return
+
+    setPlayerData(song, true)
+    isHistorySong.value = false
+
+    // 如果当前列表里没有这首歌，则插入到下一首
+    const exists = playlist.value.some(s => s.id === song_id)
+    if (!exists) {
+      const newSong: CurrentSong = {
+        id: song.id,
+        name: song.name,
+        artist: song.ar.map((a: any) => a.name).join(', '),
+        cover: song.al.picUrl,
+        duration: song.dt
+      }
+      playlist.value.splice(currentIndex.value + 1, 0, newSong)
+    }
+
+    await window.api.play_url(url, startTime / 1000)
+    waitForEnd(song_id)
+  }
+
+  // 3. 播放列表管理
+  const setPlaylist = (list: CurrentSong[]) => {
+    playlist.value = list
+  }
+
+  const clearPlaylist = () => {
+    playlist.value = []
+  }
+
+  const addToPlaylist = (song: CurrentSong) => {
+    if (!playlist.value.some(s => s.id === song.id)) {
+      playlist.value.push(song)
+    }
+  }
+
+  const togglePlayMode = () => {
+    const modes: PlayMode[] = ['sequence', 'loop', 'random', 'single']
+    const nextIdx = (modes.indexOf(playMode.value) + 1) % modes.length
+    playMode.value = modes[nextIdx]
+  }
+
+  // --- 原有逻辑保持 ---
   const initFromStorage = async () => {
     if (!currentSongId.value) return
     const song = await getSongDetail(currentSongId.value)
     if (song) {
       setPlayerData(song, false)
-      isHistorySong.value = true // 标记这是历史记录，需要特殊逻辑恢复
+      isHistorySong.value = true
     }
   }
 
@@ -113,51 +214,20 @@ const syncProgress = async () => {
     isPlaying.value = playing
   }
 
-  // 播放新歌曲
-  const playMusic = async (song_id: number, startTime: number = 0) => {
-    // 设置当前时间（如果是新歌则为0，如果是恢复历史则为旧进度）
-    currentTime.value = startTime
-
-    const song = await getSongDetail(song_id)
-    if (!song) return
-
-    const url = await getSongUrl(song_id)
-    if (!url) return
-
-    console.log(url)
-
-    // 更新播放器状态
-    setPlayerData(song, true) // 内部通常会设置 isPlaying.value = true
-    isHistorySong.value = false
-
-    // 调用 API 播放，并传入起始时间（秒）
-    await window.api.play_url(url, startTime / 1000)
-
-    // 监听结束
-    waitForEnd(song_id)
-  }
-
   const togglePlay = async () => {
-    // 1. 如果正在播放 -> 暂停
     if (isPlaying.value) {
       await window.api.pause()
       isPlaying.value = false
       return
     }
-
-    // 2. 如果是历史记录中的歌曲（例如刚打开 App 或切换回来）
     if (isHistorySong.value && currentSongId.value) {
-      // 调用 playMusic，传入记录的当前时间
       await playMusic(currentSongId.value, currentTime.value)
       return
     }
-
-    // 3. 普通的从暂停中恢复
     await window.api.resume()
     isPlaying.value = true
   }
 
-  // 跳转进度
   const seek = async (timeInMs: number) => {
     currentTime.value = timeInMs
     await window.api.seek(timeInMs / 1000)
@@ -182,6 +252,15 @@ const syncProgress = async () => {
     else stopTimer()
   }, { immediate: true })
 
+  // 持久化播放列表和模式
+  watch(playlist, (newList) => {
+    localStorage.setItem('playlist', JSON.stringify(newList))
+  }, { deep: true })
+
+  watch(playMode, (newMode) => {
+    localStorage.setItem('playMode', newMode)
+  })
+
   return {
     currentSong,
     currentSongId,
@@ -190,10 +269,19 @@ const syncProgress = async () => {
     isFullScreen,
     duration,
     progressPercent,
+    playlist,
+    playMode,
+    currentIndex,
     initFromStorage,
     playMusic,
     togglePlay,
     seek,
-    toggleFullScreen
+    toggleFullScreen,
+    playNext,
+    playPrev,
+    setPlaylist,
+    clearPlaylist,
+    addToPlaylist,
+    togglePlayMode
   }
 })
