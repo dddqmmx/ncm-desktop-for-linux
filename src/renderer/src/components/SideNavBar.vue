@@ -13,6 +13,12 @@ const toggleLoginModal = () => {
     showLoginModal.value = true
   }
 }
+const handleLoginSuccess = async () => {
+  showLoginModal.value = false
+  setTimeout(() => {
+    window.location.reload()
+  }, 300)
+}
 
 const handleLogout = () => {
   // 假设 store 中有 logout 方法，没有的话请根据实际情况清除状态
@@ -64,7 +70,7 @@ const navItems = [
     <LoginModal
       v-if="showLoginModal"
       @close="showLoginModal = false"
-      @login-success="showLoginModal = false"/>
+      @login-success="handleLoginSuccess"/>
   </Transition>
 
   <aside class="sidebar-floating glass-panel">
