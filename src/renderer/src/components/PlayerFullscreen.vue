@@ -101,7 +101,7 @@ const onImageLoad = () => {
       <header class="top-bar">
         <button class="back-btn" @click="playerStore.toggleFullScreen">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M15 18l-6-6 6-6"/>
+            <path d="M6 9l6 6 6-6"/>
           </svg>
         </button>
         <div class="playing-status">Now Playing</div>
@@ -147,7 +147,7 @@ const onImageLoad = () => {
 
             <!-- 控制按钮 -->
             <div class="btns-row">
-              <button class="icon-btn secondary">
+              <button class="icon-btn secondary" @click="playerStore.playPrev()">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
               </button>
 
@@ -160,7 +160,7 @@ const onImageLoad = () => {
                 </svg>
               </button>
 
-              <button class="icon-btn secondary">
+              <button class="icon-btn secondary" @click="playerStore.playNext()">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
               </button>
             </div>
