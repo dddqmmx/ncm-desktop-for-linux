@@ -18,14 +18,14 @@ onMounted(async ()=>{
 <template>
   <div class="app-background">
     <div class="app-layout">
-      <!-- 1. 左侧导航组件 -->
+      <!-- 左侧导航组件 -->
       <SideNavBar />
 
       <!-- 右侧内容区 (保留布局结构) -->
       <div class="content-area-blended">
         <RouterView />
 
-        <!-- 4. 底部播放器组件 -->
+        <!-- 底部播放器组件 -->
         <MusicPlayer />
 
         <Transition name="player-fade">
