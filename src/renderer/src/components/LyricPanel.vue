@@ -3,8 +3,12 @@ import { ref, computed, watch, nextTick } from 'vue'
 
 const props = defineProps<{
   songId?: number
-  currentTime: number
+  currentTime: number // 假设是毫秒
 }>()
+
+// --- 配置常量 ---
+const LYRIC_OFFSET_MS = 200 // 提前 200ms 触发高亮和滚动，补偿人眼感知和动画启动
+const SCROLL_ANIMATION_DURATION = 400 // 与 CSS transition 保持一致
 
 interface LyricLine {
   time: number
@@ -14,10 +18,9 @@ interface LyricLine {
 const loading = ref(false)
 const lyrics = ref<LyricLine[]>([])
 const lyricsContainer = ref<HTMLElement | null>(null)
-// 引用所有的歌词行
 const lineRefs = ref<HTMLElement[]>([])
 
-// 解析函数保持不变...
+// 解析逻辑保持不变...
 const parseLyric = (lrcString: string): LyricLine[] => {
   const lines = lrcString.split('\n')
   const result: LyricLine[] = []
@@ -54,24 +57,23 @@ watch(() => props.songId, (newId) => {
   if (newId) fetchLyrics(newId)
 }, { immediate: true })
 
+// --- 逻辑优化：提前量计算 ---
 const currentLyricIndex = computed(() => {
-  const currSeconds = (props.currentTime || 0) / 1000
-  return lyrics.value.findLastIndex(l => currSeconds >= l.time)
+  // 加上偏移量，让 index 的切换提前发生
+  const adjustedTime = (props.currentTime + LYRIC_OFFSET_MS) / 1000
+  return lyrics.value.findLastIndex(l => adjustedTime >= l.time)
 })
 
-// --- 自动滚动逻辑 ---
+// --- 滚动逻辑 ---
 watch(currentLyricIndex, (newIndex) => {
   if (newIndex === -1) return
   nextTick(() => {
-    // 获取当前高亮的 DOM 元素
     const activeEl = lineRefs.value[newIndex]
     if (activeEl) {
       activeEl.scrollIntoView({
         behavior: 'smooth',
-        block: 'center', // 将高亮行滚动到容器中心
+        block: 'center',
       })
-
-      
     }
   })
 })
@@ -81,9 +83,6 @@ watch(currentLyricIndex, (newIndex) => {
   <section class="lyrics-panel">
     <div v-if="loading" class="lyric-status">加载中...</div>
     <div v-else class="lyrics-scroll-container" ref="lyricsContainer">
-      <!-- 占位，让第一句歌词能滚到中间 -->
-      <div class="lyric-spacer"></div>
-
       <div
         v-for="(line, index) in lyrics"
         :key="index"
@@ -91,54 +90,88 @@ watch(currentLyricIndex, (newIndex) => {
         class="lyric-line"
         :class="{ 'active': index === currentLyricIndex }"
       >
-        {{ line.text }}
+        <span class="lyric-text">{{ line.text }}</span>
       </div>
-
-      <!-- 占位，让最后一句歌词能滚到中间 -->
-      <div class="lyric-spacer"></div>
     </div>
   </section>
 </template>
 
 <style scoped>
 .lyrics-panel {
-  height: 100%; /* 必须：占据父级 grid/flex 的全高 */
+  height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden; /* 防止溢出 */
-  mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+  overflow: hidden;
+  /* 增加遮罩的平滑度 */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 20%,
+    black 80%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 20%,
+    black 80%,
+    transparent 100%
+  );
 }
 
 .lyrics-scroll-container {
   flex: 1;
   overflow-y: auto;
-  padding: 0 20px;
+  overflow-x: hidden; /* 严禁左右滚动 */
+  padding: 50% 40px; /* 左右 Padding 必须足够大，防止 scale 后的文字被 mask 截断 */
   scroll-behavior: smooth;
-  /* 隐藏滚动条 */
   scrollbar-width: none;
+  /* 启用硬件加速 */
+  will-change: scroll-position;
 }
 .lyrics-scroll-container::-webkit-scrollbar { display: none; }
 
-.lyric-spacer {
-  height: 40%; /* 上下留白，保证歌词能居中 */
-}
-
 .lyric-line {
-  font-size: 28px;
-  font-weight: 700;
-  padding: 18px 0;
+  /* 使用 margin 而不是 padding 来控制行间距，这样 scale 不会影响行高布局 */
+  margin: 12px 0;
+  padding: 8px 0;
   line-height: 1.4;
+  text-align: center;
+
+  /* 优化过渡曲线：out-expo 风格，开始快，结束慢，视觉上更灵敏 */
+  transition:
+    transform 0.4s cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 0.4s cubic-bezier(0.23, 1, 0.32, 1),
+    filter 0.4s ease;
+
   opacity: 0.3;
-  transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  transform-origin: left center;
-  cursor: default;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 26px;
+  font-weight: 500;
+
+  /* 关键：防止抖动的核心属性 */
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform-origin: center center;
+  filter: blur(0.5px); /* 未激活时轻微模糊，增加层次感 */
 }
 
 .lyric-line.active {
   opacity: 1;
-  transform: scale(1.08); /* 稍微放大一点 */
+  font-weight: 700;
+  /* 缩放控制在 1.1 以内，配合 padding 40px 绝不会截断 */
+  transform: scale(1.1);
+  filter: blur(0);
   color: #ffffff;
-  text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+  text-shadow: 0 0 18px rgba(255, 255, 255, 0.4);
+}
+
+.lyric-text {
+  display: inline-block;
+  /* 限制宽度防止溢出容器 */
+  max-width: 100%;
+  word-wrap: break-word;
+  white-space: pre-wrap;
 }
 
 .lyric-status {
@@ -146,7 +179,7 @@ watch(currentLyricIndex, (newIndex) => {
   display: flex;
   justify-content: center;
   align-items: center;
-  font-size: 20px;
-  opacity: 0.6;
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.5);
 }
 </style>
