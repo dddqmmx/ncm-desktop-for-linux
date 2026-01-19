@@ -40,13 +40,20 @@ defineProps<{
 
 <style scoped>
 .large-card {
-  aspect-ratio: 1 / 1.25; border-radius: 18px; overflow: hidden; position: relative;
+  aspect-ratio: 1 / 1.25; border-radius: 18px; position: relative;
   background-color: #e0e0e6;
   background-size: cover; background-position: center;
   box-shadow: 0 4px 20px rgba(0,0,0,0.06);
-  transition: transform 0.25s; cursor: pointer;
+  overflow: visible; /* 改为 visible，或者删除这一行 */
+  transition: transform 0.25s, box-shadow 0.25s; /* 增加阴影过渡动画 */
 }
-.large-card:hover { transform: translateY(-4px); }
+.card-overlay, .card-content {
+  border-radius: 18px;
+}
+.large-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+}
 .card-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,0) 30%, rgba(0,0,0,0.7)); }
 .bg-gradient-orange { background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); }
 .bg-gradient-pink { background: linear-gradient(45deg, #85FFBD 0%, #FFFB7D 100%); }
