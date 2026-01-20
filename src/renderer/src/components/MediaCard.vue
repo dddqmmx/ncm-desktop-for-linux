@@ -59,7 +59,18 @@ defineProps<{
 .bg-gradient-pink { background: linear-gradient(45deg, #85FFBD 0%, #FFFB7D 100%); }
 .card-content { position: absolute; inset: 0; padding: 24px; display: flex; flex-direction: column; justify-content: space-between; color: white; z-index: 2; }
 .logo-text { font-size: 11px; font-weight: 700; opacity: 0.9; }
-.card-center h3 { font-size: 28px; line-height: 1.05; font-weight: 800; margin: 0; }
+.card-center h3 {
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 800;
+  margin: 0;
+  display: -webkit-box;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-all;
+}
 .card-center h4 { font-size: 28px; font-weight: 300; margin: 0; opacity: 0.95; }
 .card-bottom p { font-size: 13px; font-weight: 500; opacity: 0.9; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 0; }
 .play-btn-circle { position: absolute; bottom: 20px; right: 20px; width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.25); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.4); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; }
