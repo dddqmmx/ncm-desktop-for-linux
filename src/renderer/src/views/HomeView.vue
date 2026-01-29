@@ -13,9 +13,6 @@ const playerStore = usePlayerStore()
 const recommendPlaylists = ref<RecommendItem[]>([])
 const dailySongs = ref<Song[]>([])
 
-// 引用 DOM 元素用于控制滚动
-const playlistRow = ref<HTMLElement | null>(null)
-const songsRow = ref<HTMLElement | null>(null)
 
 onMounted(async () => {
   try {
@@ -48,18 +45,6 @@ const handleWheel = (e: WheelEvent) => {
   }
 }
 
-/**
- * 按钮点击滚动
- */
-const scrollByButton = (refElement: HTMLElement | null, direction: 'left' | 'right') => {
-  if (!refElement) return
-  const scrollAmount = refElement.clientWidth * 0.8 // 每次滚动容器宽度的80%
-  refElement.scrollBy({
-    left: direction === 'left' ? -scrollAmount : scrollAmount,
-    behavior: 'smooth'
-  })
-}
-
 const formatArtists = (artists: any[]) => artists.map(ar => ar.name).join(' / ')
 const playSong = (song: Song) => playerStore.playMusic(song.id)
 </script>
@@ -72,10 +57,6 @@ const playSong = (song: Song) => playerStore.playMusic(song.id)
     <section class="section"  v-if="userStore.isLoggedIn">
       <div class="section-header">
         <h2>每日推荐歌单</h2>
-        <div class="nav-btns">
-          <button @click="scrollByButton(playlistRow, 'left')" class="nav-btn">‹</button>
-          <button @click="scrollByButton(playlistRow, 'right')" class="nav-btn">›</button>
-        </div>
       </div>
 
       <div
@@ -83,7 +64,7 @@ const playSong = (song: Song) => playerStore.playMusic(song.id)
         ref="playlistRow"
         @wheel="handleWheel"
       >
-        <div class="cards-grid">
+        <div class="cards-grid media-card">
           <MediaCard
             v-for="(item, index) in recommendPlaylists"
             :key="item.id"
@@ -102,10 +83,6 @@ const playSong = (song: Song) => playerStore.playMusic(song.id)
     <section class="section">
       <div class="section-header">
         <h2>每日推荐歌曲</h2>
-        <div class="nav-btns">
-          <button @click="scrollByButton(songsRow, 'left')" class="nav-btn">‹</button>
-          <button @click="scrollByButton(songsRow, 'right')" class="nav-btn">›</button>
-        </div>
       </div>
 
       <div
@@ -224,6 +201,13 @@ const playSong = (song: Song) => playerStore.playMusic(song.id)
   scroll-snap-align: start;
   width: 180px;
 }
+
+.media-card {
+  width: 200px;
+  height: 260px;
+  flex-shrink: 0; /* 横向滚动必加 */
+}
+
 
 /* 针对 MediaCard 的特殊宽度处理 */
 .cards-grid :deep(.large-card) {
