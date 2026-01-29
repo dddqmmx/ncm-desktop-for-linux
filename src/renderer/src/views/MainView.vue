@@ -5,6 +5,7 @@ import { onMounted } from 'vue';
 import { useUserStore } from '@renderer/stores/userStore';
 import PlayerFullscreen from '@renderer/components/PlayerFullscreen.vue';
 import { usePlayerStore } from '@renderer/stores/playerStore';
+import Settings from '@renderer/components/Settings.vue';
 const userStore = useUserStore()
 const playerStore = usePlayerStore()
 
@@ -31,6 +32,7 @@ onMounted(async ()=>{
         <Transition name="player-fade">
           <PlayerFullscreen v-if="playerStore.isFullScreen"/>
         </Transition>
+
       </div>
 
     </div>

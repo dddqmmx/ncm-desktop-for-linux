@@ -3,9 +3,11 @@ import { computed, ref, watch } from 'vue';
 import LoginModal from './LoginModal.vue';
 import { useUserStore } from '@renderer/stores/userStore';
 import { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist';
+import Settings from './Settings.vue';
 
 const userStore = useUserStore()
 const showLoginModal = ref(false)
+const showSettingsModal = ref(false)
 const createdPlaylists = ref<Playlist[]>([])
 
 const toggleLoginModal = () => {
@@ -63,6 +65,8 @@ const navItems = [
   { id: 'search', name: '搜索', icon: 'search', path: '/search' },
   { id: 1, name: '主页', icon: 'home', path: '/home' },
 ]
+
+
 </script>
 
 <template>
@@ -71,6 +75,13 @@ const navItems = [
       v-if="showLoginModal"
       @close="showLoginModal = false"
       @login-success="handleLoginSuccess"/>
+  </Transition>
+
+  <Transition name="modal-fade">
+    <Settings
+      v-if="showSettingsModal"
+      @close="showSettingsModal = false"
+    />
   </Transition>
 
   <aside class="sidebar-floating glass-panel">
@@ -116,7 +127,7 @@ const navItems = [
         <!-- 悬浮出现的菜单 (仅登录后) -->
         <div v-if="userStore.userInfo" class="bubble-menu">
           <div class="menu-item">修改个人信息</div>
-          <div class="menu-item">设置</div>
+          <div class="menu-item" @click.stop="showSettingsModal = true">设置</div>
           <div class="menu-item logout" @click.stop="handleLogout">退出登录</div>
         </div>
 
