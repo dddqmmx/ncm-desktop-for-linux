@@ -142,7 +142,23 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  // 修改：播放音乐时，如果歌曲不在列表中，则添加到列表
+  /**
+   * 播放整份列表
+   * @param list 歌曲列表
+   * @param startIndex 从哪一首开始播放，默认为第0首
+   */
+  const playAll = async (list: CurrentSong[], startIndex = 0) => {
+    if (list.length === 0) return
+
+    // 1. 替换整个播放列表
+    playlist.value = [...list]
+
+    // 2. 播放指定位置的歌曲
+    const targetSong = list[startIndex]
+    await playMusic(targetSong.id)
+  }
+
+  // 修改 playMusic，避免在 playAll 时产生冗余逻辑
   const playMusic = async (song_id: number, startTime: number = 0) => {
     currentTime.value = startTime
     const song = await getSongDetail(song_id)
@@ -154,7 +170,8 @@ export const usePlayerStore = defineStore('player', () => {
     setPlayerData(song, true)
     isHistorySong.value = false
 
-    // 如果当前列表里没有这首歌，则插入到下一首
+    // 关键优化：如果当前列表里没有这首歌，则插入到下一首
+    // 如果是通过 playAll 进来的，playlist 已经包含了这首歌，这里不会重复插入
     const exists = playlist.value.some(s => s.id === song_id)
     if (!exists) {
       const newSong: CurrentSong = {
@@ -170,6 +187,7 @@ export const usePlayerStore = defineStore('player', () => {
     await window.api.play_url(url, startTime / 1000)
     waitForEnd(song_id)
   }
+
 
   // 3. 播放列表管理
   const setPlaylist = (list: CurrentSong[]) => {
@@ -273,6 +291,7 @@ export const usePlayerStore = defineStore('player', () => {
     playMode,
     currentIndex,
     initFromStorage,
+    playAll,
     playMusic,
     togglePlay,
     seek,

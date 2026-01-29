@@ -2,7 +2,7 @@
 import { useRoute } from 'vue-router'
 import { onMounted, ref, computed, watch } from 'vue'
 import { PlaylistDetail, Track } from '@renderer/types/playlistDetail'
-import { usePlayerStore } from '@renderer/stores/playerStore'
+import { CurrentSong, usePlayerStore } from '@renderer/stores/playerStore'
 
 const route = useRoute()
 
@@ -30,6 +30,7 @@ const formatDate = (timestamp: number) => {
   return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
 }
 
+
 // --- 数据获取 ---
 const fetchPlaylistDetail = async (playlistId) => {
   try {
@@ -45,6 +46,31 @@ const fetchPlaylistDetail = async (playlistId) => {
   }
 }
 
+// --- 辅助方法：将 Track 转换为 CurrentSong ---
+const mapTrackToCurrentSong = (track: any): CurrentSong => ({
+  id: track.id,
+  name: track.name,
+  artist: track.ar.map((a: any) => a.name).join(', '),
+  cover: track.al.picUrl,
+  duration: track.dt
+})
+
+
+// --- 处理“播放全部”按钮点击 ---
+const handlePlayAll = () => {
+  if (!tracks.value.length) return
+
+  // 转换整个列表
+  const songList = tracks.value.map(mapTrackToCurrentSong)
+
+  // 调用 store 里的 playAll
+  playerStore.playAll(songList)
+
+  // 更新当前活跃 ID（可选，用于 UI 高亮）
+  activeSongId.value = songList[0].id
+}
+
+
 const handlePlaySong = (song: Track) => {
   activeSongId.value = song.id
   playerStore.playMusic(song.id)
@@ -55,8 +81,25 @@ watch(() => route.params.id, (playlistId) => {
   fetchPlaylistDetail(playlistId)
 }, { immediate: true })
 
+const searchQuery = ref('')
+
 const playlist = computed(() => detail.value?.playlist)
 const tracks = computed(() => detail.value?.playlist.tracks || [])
+
+
+const filteredTracks = computed(() => {
+  if (!searchQuery.value.trim()) {
+    return tracks.value
+  }
+  const query = searchQuery.value.toLowerCase()
+  return tracks.value.filter(track => {
+    return (
+      track.name.toLowerCase().includes(query) || // 搜索歌名
+      track.al.name.toLowerCase().includes(query) || // 搜索专辑名
+      track.ar.some(artist => artist.name.toLowerCase().includes(query)) // 搜索歌手名
+    )
+  })
+})
 
 const playerStore = usePlayerStore()
 </script>
@@ -95,10 +138,22 @@ const playerStore = usePlayerStore()
           </div>
 
           <div class="action-bar">
-            <button class="play-main-btn" @click="handlePlaySong(tracks[0])">
+            <button class="play-main-btn" @click="handlePlayAll()">
               <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M8 5v14l11-7z" /></svg>
               播放全部
             </button>
+            <div class="search-box-container">
+              <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <input
+                v-model="searchQuery"
+                type="text"
+                placeholder="在歌单内搜索..."
+                class="search-input"
+              >
+              <button v-if="searchQuery" class="clear-btn" @click="searchQuery = ''">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
             <button class="secondary-btn">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.5 4.04 3 5.5l7 7 7-7z"></path>
@@ -127,10 +182,10 @@ const playerStore = usePlayerStore()
 
         <div class="tracks-list">
           <div
-            v-for="(track, index) in tracks"
+            v-for="(track, index) in filteredTracks"
             :key="track.id"
             class="track-row"
-            :class="{ 'is-active': track.id === activeSongId }"
+            :class="{ 'is-active': track.id === playerStore.currentSongId }"
             @dblclick="handlePlaySong(track)"
           >
             <div class="col-index">
@@ -160,13 +215,17 @@ const playerStore = usePlayerStore()
             </div>
           </div>
         </div>
+
+        <div v-if="filteredTracks.length === 0" class="no-results">
+          没有找到匹配 "{{ searchQuery }}" 的歌曲
+        </div>
       </section>
 
       <div class="spacer-bottom"></div>
     </div>
   </div>
 </template>
-
+5
 <style scoped>
 /* 核心容器：去除背景色 */
 .main-content-scroll-wrapper {
@@ -174,6 +233,17 @@ const playerStore = usePlayerStore()
   overflow-y: auto;
   scrollbar-width: thin;
 }
+
+/* 隐藏滚动条但保留功能 */
+.main-content-scroll-wrapper::-webkit-scrollbar {
+  width: 4px;
+}
+
+.main-content-scroll-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.1);
+  border-radius: 10px;
+}
+
 
 .playlist-container {
   padding: 32px 40px;
@@ -408,6 +478,74 @@ const playerStore = usePlayerStore()
   border-top-color: #111;
   border-radius: 50%;
   animation: spin 1s linear infinite;
+}
+
+/* 搜索框容器 */
+.search-box-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-left: auto; /* 将搜索框推向右侧 */
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  padding: 0 12px;
+  transition: all 0.3s ease;
+  width: 200px;
+}
+
+.search-box-container:focus-within {
+  background: rgba(0, 0, 0, 0.08);
+  width: 260px; /* 聚焦时变长 */
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
+}
+
+.search-icon {
+  color: #999;
+  margin-right: 8px;
+}
+
+.search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  height: 36px;
+  width: 100%;
+  font-size: 13px;
+  color: #333;
+}
+
+.clear-btn {
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.clear-btn:hover {
+  color: #333;
+}
+
+/* 无结果样式 */
+.no-results {
+  padding: 40px;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+}
+
+/* 移动端适配修改 */
+@media (max-width: 900px) {
+  .search-box-container {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 10px;
+  }
+  .action-bar {
+    flex-wrap: wrap;
+  }
 }
 
 @keyframes spin {
