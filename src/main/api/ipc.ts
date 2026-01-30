@@ -3,74 +3,43 @@ import { MusicService, NativeService } from './service'
 import { SoundQualityType } from 'NeteaseCloudMusicApi'
 
 
+// 1. 定义一个通用的转发辅助函数，减少闭包逻辑
+const handle = (channel: string, serviceMethod: (params: any) => Promise<any>) => {
+  // 直接传递函数，不使用 async/await 包装，减少微任务层级
+  ipcMain.handle(channel, (_, params) => serviceMethod(params));
+};
+
 export function registerMusicApi(): void {
-  ipcMain.handle('music:login', async (_, params) => {
-    return await MusicService.login(params)
-  })
+  // 基础的一对一映射
+  const simpleMappings: Record<string, (params: any) => Promise<any>> = {
+    'music:login': MusicService.login,
+    'music:userCloud': MusicService.getUserCloud,
+    'music:search': MusicService.search,
+    'music:songDetail': MusicService.song_detail,
+    'music:loginQrKey': MusicService.login_qr_key,
+    'music:loginQrCreate': MusicService.login_qr_create,
+    'music:loginQrCheck': MusicService.login_qr_check,
+    'music:userAccount': MusicService.user_account,
+    'music:playlistCatlist': MusicService.playlist_catlist,
+    'music:userPlaylist': MusicService.user_playlist,
+    'music:playlistDetail': MusicService.playlist_detail,
+    'music:lyric': MusicService.lyric,
+    'music:recommendResource': MusicService.recommend_resource,
+    'music:recommendSongs': MusicService.recommend_songs,
+    'music:songUrl': MusicService.song_url, // 如果参数结构一致，也可以放这里
+  };
 
-  ipcMain.handle('music:banner', async (_, type) => {
-    return await MusicService.getBanner({ type })
-  })
+  // 批量注册
+  Object.entries(simpleMappings).forEach(([channel, method]) => {
+    ipcMain.handle(channel, (_, params) => method(params));
+  });
 
-  ipcMain.handle('music:userCloud', async (_, params) => {
-    return await MusicService.getUserCloud(params)
-  })
+  // 2. 特殊逻辑单独处理 (参数结构转换)
+  ipcMain.handle('music:banner', (_, type) => MusicService.getBanner({ type }));
 
-  ipcMain.handle('music:search', async (_, params) => {
-    return await MusicService.search(params)
-  })
-
-  ipcMain.handle('music:songDetail', async (_, params) => {
-    return await MusicService.song_detail(params)
-  })
-
-  ipcMain.handle('music:loginQrKey', async (_, params) => {
-    return await MusicService.login_qr_key(params)
-  })
-
-  ipcMain.handle('music:loginQrCreate', async (_, params) => {
-    return await MusicService.login_qr_create(params)
-  })
-
-  ipcMain.handle('music:loginQrCheck', async (_, params) => {
-    return await MusicService.login_qr_check(params)
-  })
-
-  ipcMain.handle('music:userAccount', async (_, params) => {
-      return await MusicService.user_account(params)
-  })
-  ipcMain.handle(
-    'music:songUrl',
-    async (
-      _,
-      params: {
-        id: string | number
-        level: SoundQualityType
-      },
-    ) => {
-      return await MusicService.song_url(params)
-    },
-  )
-  ipcMain.handle('music:playlistCatlist', async (_, params) => {
-      return await MusicService.playlist_catlist(params)
-  })
-  ipcMain.handle('music:userPlaylist', async (_, params) => {
-      return await MusicService.user_playlist(params)
-  })
-  ipcMain.handle("music:playlistDetail", async (_, params)=>{
-    return await MusicService.playlist_detail(params)
-  })
-  ipcMain.handle("music:lyric", async (_, params)=>{
-    return await MusicService.lyric(params)
-  })
-  ipcMain.handle("music:recommendResource", async (_, params)=>{
-    return await MusicService.recommend_resource(params)
-  })
-  ipcMain.handle("music:recommendSongs", async (_, params)=>{
-    return await MusicService.recommend_songs(params)
-  })
-  console.log('Netease Music API registered successfully.')
+  console.log('Netease Music API registered successfully.');
 }
+
 export function registerNativeApi(): void {
   ipcMain.handle('player:playUrl',  (_, url:string, startSecs?: number) => {
     return NativeService.playUrl(url, startSecs)

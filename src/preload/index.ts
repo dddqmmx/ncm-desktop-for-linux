@@ -1,37 +1,47 @@
-import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import { ipcRenderer } from 'electron';
+import { contextBridge } from 'electron/renderer';
 
-// Custom APIs for renderer
+/**
+ * 优化点：工厂函数
+ * 预先绑定 IPC 调度逻辑，减少重复代码解析开销
+ */
+const invoke = (channel: string) => (params?: any) => ipcRenderer.invoke(channel, params);
+const invokeArgs = (channel: string) => (...args: any[]) => ipcRenderer.invoke(channel, ...args);
+
 const api = {
-  // 网易云api操作
-  login: (p: unknown) => ipcRenderer.invoke('music:login', p),
-  banner: (p: unknown) => ipcRenderer.invoke('music:banner', p),
-  userCloud: (p: unknown) => ipcRenderer.invoke('music:userCloud', p),
-  search: (p: unknown) => ipcRenderer.invoke('music:search', p),
-  song_detail: (p: unknown) => ipcRenderer.invoke('music:songDetail', p),
-  login_qr_key: (p: unknown) => ipcRenderer.invoke('music:loginQrKey', p),
-  login_qr_create: (p: unknown) => ipcRenderer.invoke('music:loginQrCreate', p),
-  login_qr_check: (p: unknown) => ipcRenderer.invoke('music:loginQrCheck', p),
-  user_account: (p: unknown) => ipcRenderer.invoke('music:userAccount', p),
-  playlist_catlist: (p:unknown)  => ipcRenderer.invoke('music:playlistCatlist', p),
-  user_playlist: (p:unknown)  => ipcRenderer.invoke('music:userPlaylist', p),
-  playlist_detail: (p:unknown)  => ipcRenderer.invoke('music:playlistDetail', p),
-  lyric: (p:unknown)  => ipcRenderer.invoke('music:lyric', p),
-  recommend_resource: (p:unknown)  => ipcRenderer.invoke('music:recommendResource', p),
-  recommend_songs: (p:unknown) => ipcRenderer.invoke("music:recommendSongs", p),
-  // rust后端播放器操作
-  song_url: (p: unknown) => ipcRenderer.invoke('music:songUrl', p),
-  play_url: (url:string, startSecs?: number) => ipcRenderer.invoke('player:playUrl', url,startSecs),
-  play_file: (filePath:string, startSecs?: number) => ipcRenderer.invoke('player:playFile', filePath,startSecs),
-  pause: () => ipcRenderer.invoke('player:pause'),
-  resume: () => ipcRenderer.invoke('player:resume'),
-  stop: () => ipcRenderer.invoke('player:stop'),
-  get_progress: () => ipcRenderer.invoke('player:getProgress'),
-  seek: (time:number)  => ipcRenderer.invoke('player:seek', time),
-  wait_finished: () => ipcRenderer.invoke('player:waitFinished'),
-  song_url_and_wait: (url:string, startSecs?: number) => ipcRenderer.invoke('music:playUrlAndWait', url, startSecs),
+  // --- 网易云 API (单参数模式) ---
+  login: invoke('music:login'),
+  banner: invoke('music:banner'),
+  userCloud: invoke('music:userCloud'),
+  search: invoke('music:search'),
+  song_detail: invoke('music:songDetail'),
+  login_qr_key: invoke('music:loginQrKey'),
+  login_qr_create: invoke('music:loginQrCreate'),
+  login_qr_check: invoke('music:loginQrCheck'),
+  user_account: invoke('music:userAccount'),
+  playlist_catlist: invoke('music:playlistCatlist'),
+  user_playlist: invoke('music:userPlaylist'),
+  playlist_detail: invoke('music:playlistDetail'),
+  lyric: invoke('music:lyric'),
+  recommend_resource: invoke('music:recommendResource'),
+  recommend_songs: invoke('music:recommendSongs'),
+  song_url: invoke('music:songUrl'),
+
+  // --- Rust 播放器操作 (多参数或特定逻辑) ---
+  // 使用 invokeArgs 支持多参数透传，避免手动展开
+  play_url: invokeArgs('player:playUrl'),
+  play_file: invokeArgs('player:playFile'),
+  pause: invoke('player:pause'),
+  resume: invoke('player:resume'),
+  stop: invoke('player:stop'),
+  get_progress: invoke('player:getProgress'),
+  seek: invoke('player:seek'),
+  wait_finished: invoke('player:waitFinished'),
+  song_url_and_wait: invokeArgs('music:playUrlAndWait'),
 }
 
+// 保持不变
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
@@ -42,6 +52,6 @@ if (process.contextIsolated) {
 } else {
   // @ts-ignore (define in dts)
   window.electron = electronAPI
-  // @ts-ignore (define in dts)
+  // @ts-ignore
   window.api = api
 }

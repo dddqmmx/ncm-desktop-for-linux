@@ -36,88 +36,54 @@ type ServiceResult<T = APIBaseResponse> = {
   error?: string
 }
 
-const responseHandler = async <T = APIBaseResponse>(
+/**
+ * 优化后的响应处理器
+ * 1. 使用 .then/.catch 减少 async 状态机开销
+ * 2. 移除冗余的 await
+ */
+const responseHandler = <T = APIBaseResponse>(
   apiCall: Promise<Response<T>>,
 ): Promise<ServiceResult<T>> => {
-  try {
-    const res = await apiCall
-    return {
+  return apiCall
+    .then((res) => ({
       status: res.status,
       body: res.body,
-      cookie: res.cookie
-    }
-  } catch (e) {
-    const err = e as Error
-    return {
+      cookie: res.cookie,
+    }))
+    .catch((e: Error) => ({
       status: 500,
       body: null,
-      error: err.message
-    }
-  }
-}
+      error: e.message,
+    }));
+};
+
+
+const createMethod = <P, T>(fn: (params: P) => Promise<Response<T>>) => {
+  return (params: P) => responseHandler(fn(params));
+};
 
 export const MusicService = {
-  login(params: Parameters<typeof login_cellphone>[0]) {
-    return responseHandler(login_cellphone(params))
-  },
+  login: createMethod(login_cellphone),
+  getBanner: createMethod(banner),
+  getUserCloud: createMethod(user_cloud),
+  search: createMethod(search),
+  login_qr_key: createMethod(login_qr_key),
+  login_qr_create: createMethod(login_qr_create),
+  login_qr_check: createMethod(login_qr_check),
+  user_account: createMethod(user_account),
+  song_url: createMethod(song_url_v1),
+  playlist_catlist: createMethod(playlist_catlist),
+  user_playlist: createMethod(user_playlist),
+  playlist_detail: createMethod(playlist_detail),
+  lyric: createMethod(lyric_new),
+  recommend_resource: createMethod(recommend_resource),
+  recommend_songs: createMethod(recommend_songs),
 
-  getBanner(params: Parameters<typeof banner>[0]) {
-    return responseHandler(banner(params))
+  song_detail(params: { ids: number[] | string | any }) {
+    const ids = Array.isArray(params.ids) ? params.ids.join(',') : params.ids;
+    return responseHandler(song_detail({ ...params, ids }));
   },
-
-  getUserCloud(params: Parameters<typeof user_cloud>[0]) {
-    return responseHandler(user_cloud(params))
-  },
-
-  search(params: Parameters<typeof search>[0]) {
-    return responseHandler(search(params))
-  },
-
-  song_detail(params: { ids: number[] | string }) {
-    const idsStr = Array.isArray(params.ids) ? params.ids.join(',') : params.ids
-    return responseHandler(song_detail({ ...params, ids: idsStr }))
-  },
-
-  login_qr_key(params: Parameters<typeof login_qr_key>[0]) {
-    return responseHandler(login_qr_key(params))
-  },
-
-  login_qr_create(params: Parameters<typeof login_qr_create>[0]) {
-    return responseHandler(login_qr_create(params))
-  },
-
-  login_qr_check(params: Parameters<typeof login_qr_check>[0]) {
-    return responseHandler(login_qr_check(params))
-  },
-
-  user_account(params: Parameters<typeof user_account>[0]) {
-    return responseHandler(user_account(params))
-  },
-
-  song_url(params: Parameters<typeof song_url_v1>[0]){
-    return responseHandler(song_url_v1(params))
-  },
-
-  playlist_catlist(params: Parameters<typeof playlist_catlist>[0]){
-    return responseHandler(playlist_catlist(params))
-  },
-
-  user_playlist(params: Parameters<typeof user_playlist>[0]){
-    return responseHandler(user_playlist(params))
-  },
-  playlist_detail(params: Parameters<typeof playlist_detail>[0]){
-    return responseHandler(playlist_detail(params))
-  },
-  lyric(params: Parameters<typeof lyric_new>[0]){
-    return responseHandler(lyric_new(params))
-  },
-  recommend_resource(params: Parameters<typeof recommend_resource>[0]){
-    return responseHandler(recommend_resource(params))
-  },
-  recommend_songs(params: Parameters<typeof recommend_songs>[0]){
-    return responseHandler(recommend_songs(params))
-  }
-}
+};
 
 const player = new PlayerService();
 
