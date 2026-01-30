@@ -126,12 +126,16 @@ export const usePlayerStore = defineStore('player', () => {
     await playMusic(prevSong.id)
   }
 
+  // 在 playToken 定义旁加上 switching
   let playToken = 0
+  const isSwitching = ref(false)
 
   const waitForEnd = async (songId: number, token: number) => {
     try {
       await window.api.wait_finished()
+      // 丢弃在切歌期间或过期 token 的结束事件
       if (token !== playToken) return
+      if (isSwitching.value) return
       if (currentSongId.value !== songId) return
 
       isPlaying.value = false
@@ -158,28 +162,52 @@ export const usePlayerStore = defineStore('player', () => {
     await playMusic(targetSong.id)
   }
 
-  const playMusic = async (song_id: number, startTime: number = 0) => {
-    if (currentSongId.value === song_id && isPlaying.value) {
-      return
-    }
-    if (currentSongId.value === song_id && !isPlaying.value) {
-      await window.api.resume()
-      isPlaying.value = true
-      return
-    }
-    playToken++
-    const token = playToken
-    currentTime.value = startTime
-    const song = await getSongDetail(song_id)
-    if (!song) return
+const playMusic = async (song_id: number, startTime: number = 0) => {
+  // 如果正在切歌，拒绝新的切换（避免竞态）
+  if (isSwitching.value) return
 
-    const url = await getSongUrl(song_id)
-    if (!url) return
+  // 同歌并且正在播 -> 不做事
+  if (currentSongId.value === song_id && isPlaying.value) {
+    return
+  }
+  // 同歌但暂停/历史 -> resume（从 currentTime 继续）
+  if (currentSongId.value === song_id && !isPlaying.value) {
+    await window.api.resume()
+    isPlaying.value = true
+    return
+  }
 
+  // 开始切歌临界区
+  isSwitching.value = true
+  playToken++
+  const token = playToken
+
+  // 先准备数据
+  currentTime.value = startTime
+  const song = await getSongDetail(song_id)
+  if (!song) {
+    isSwitching.value = false
+    return
+  }
+  const url = await getSongUrl(song_id)
+  if (!url) {
+    isSwitching.value = false
+    return
+  }
+
+  try {
+    // 先尝试平滑停掉旧播放器（如果能停），减少旧 wait_finished 的触发概率
+    try { await window.api.pause() } catch {}
+
+    // 真正请求播放（等待 play_url 返回）
+    await window.api.play_url(url, startTime / 1000)
+
+    // 只有在 play_url 成功返回后才更新状态（避免提前将状态指向新歌）
     setPlayerData(song, true)
     isHistorySong.value = false
+    currentTime.value = startTime
 
-    // 插入 playlist 逻辑保持不变
+    // 插入 playlist（如果不存在）
     const exists = playlist.value.some(s => s.id === song_id)
     if (!exists) {
       playlist.value.splice(currentIndex.value + 1, 0, {
@@ -191,11 +219,13 @@ export const usePlayerStore = defineStore('player', () => {
       })
     }
 
-    await window.api.play_url(url, startTime / 1000)
+    // 开始监听结束（只有当前 token 有效）
     waitForEnd(song_id, token)
+  } finally {
+    // 结束临界区（注意：waitForEnd 仍会通过 token 判断是否过期）
+    isSwitching.value = false
   }
-
-
+}
 
   // 3. 播放列表管理
   const setPlaylist = (list: CurrentSong[]) => {
