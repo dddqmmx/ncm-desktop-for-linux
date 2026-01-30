@@ -126,21 +126,21 @@ export const usePlayerStore = defineStore('player', () => {
     await playMusic(prevSong.id)
   }
 
-  const waitForEnd = async (songId: number) => {
+  let playToken = 0
+
+  const waitForEnd = async (songId: number, token: number) => {
     try {
       await window.api.wait_finished()
+      if (token !== playToken) return
       if (currentSongId.value !== songId) return
 
       isPlaying.value = false
       stopTimer()
       currentTime.value = duration.value
-
-      // 关键：播放结束后自动根据模式播放下一首
       await playNext(true)
-    } catch {
-      // ignore
-    }
+    } catch { }
   }
+
 
   /**
    * 播放整份列表
@@ -158,8 +158,17 @@ export const usePlayerStore = defineStore('player', () => {
     await playMusic(targetSong.id)
   }
 
-  // 修改 playMusic，避免在 playAll 时产生冗余逻辑
   const playMusic = async (song_id: number, startTime: number = 0) => {
+    if (currentSongId.value === song_id && isPlaying.value) {
+      return
+    }
+    if (currentSongId.value === song_id && !isPlaying.value) {
+      await window.api.resume()
+      isPlaying.value = true
+      return
+    }
+    playToken++
+    const token = playToken
     currentTime.value = startTime
     const song = await getSongDetail(song_id)
     if (!song) return
@@ -170,23 +179,22 @@ export const usePlayerStore = defineStore('player', () => {
     setPlayerData(song, true)
     isHistorySong.value = false
 
-    // 关键优化：如果当前列表里没有这首歌，则插入到下一首
-    // 如果是通过 playAll 进来的，playlist 已经包含了这首歌，这里不会重复插入
+    // 插入 playlist 逻辑保持不变
     const exists = playlist.value.some(s => s.id === song_id)
     if (!exists) {
-      const newSong: CurrentSong = {
+      playlist.value.splice(currentIndex.value + 1, 0, {
         id: song.id,
         name: song.name,
         artist: song.ar.map((a: any) => a.name).join(', '),
         cover: song.al.picUrl,
         duration: song.dt
-      }
-      playlist.value.splice(currentIndex.value + 1, 0, newSong)
+      })
     }
 
     await window.api.play_url(url, startTime / 1000)
-    waitForEnd(song_id)
+    waitForEnd(song_id, token)
   }
+
 
 
   // 3. 播放列表管理
