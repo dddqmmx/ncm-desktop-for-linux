@@ -1,8 +1,9 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { registerMusicApi, registerNativeApi } from './api/ipc'
 import icon from '../../resources/icon.png?asset'
+import { registerMusicApi } from './api/ipc/registerMusicApi'
+import { registerNativeApi } from './api/ipc/registerNativeApi'
 
 function createWindow(): void {
   // Create the browser window.
