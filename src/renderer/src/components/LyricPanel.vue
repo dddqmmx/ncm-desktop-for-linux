@@ -8,7 +8,6 @@ const props = defineProps<{
 
 // --- 配置常量 ---
 const LYRIC_OFFSET_MS = 200 // 提前 200ms 触发高亮和滚动，补偿人眼感知和动画启动
-const SCROLL_ANIMATION_DURATION = 400 // 与 CSS transition 保持一致
 
 interface LyricLine {
   time: number

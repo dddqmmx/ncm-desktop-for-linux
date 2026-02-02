@@ -1,13 +1,5 @@
 import { ipcMain } from 'electron'
 import { MusicService, NativeService } from './service'
-import { SoundQualityType } from 'NeteaseCloudMusicApi'
-
-
-// 1. 定义一个通用的转发辅助函数，减少闭包逻辑
-const handle = (channel: string, serviceMethod: (params: any) => Promise<any>) => {
-  // 直接传递函数，不使用 async/await 包装，减少微任务层级
-  ipcMain.handle(channel, (_, params) => serviceMethod(params));
-};
 
 export function registerMusicApi(): void {
   // 基础的一对一映射
