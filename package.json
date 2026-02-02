@@ -1,9 +1,9 @@
 {
-  "name": "music",
+  "name": "ncm-desktop-for-linux",
   "version": "1.0.0",
-  "description": "An Electron application with Vue and TypeScript",
+  "description": "A third-party NetEase Cloud Music client for the Linux desktop",
   "main": "./out/main/index.js",
-  "author": "example.com",
+  "author": "PaulPerkenstein",
   "homepage": "https://electron-vite.org",
   "scripts": {
     "format": "prettier --write .",
@@ -14,7 +14,8 @@
     "start": "electron-vite preview",
     "dev:native": "cd native && npx napi build --watch",
     "dev": "concurrently \"npm run dev:native\" \"electron-vite dev\"",
-    "build": "npm run typecheck && electron-vite build",
+    "build:native": "cd native && npx napi build --release",
+    "build": "npm run typecheck && npm run build:native && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
@@ -26,7 +27,6 @@
     "@electron-toolkit/utils": "^4.0.0",
     "axios": "^1.13.2",
     "colorthief": "^2.6.0",
-    "concurrently": "^9.2.1",
     "electron-updater": "^6.3.9",
     "NeteaseCloudMusicApi": "^4.28.0",
     "pinia": "^3.0.4",
@@ -49,6 +49,31 @@
     "typescript": "^5.9.3",
     "vite": "^7.1.6",
     "vue": "^3.5.21",
-    "vue-tsc": "^3.0.7"
+    "vue-tsc": "^3.0.7",
+    "concurrently": "^9.2.1"
+  },
+  "build": {
+    "asar": true,
+    "files": [
+      "out/**",
+      "package.json"
+    ],
+    "asarUnpack": ["**/*.node"],
+    "extraResources": [
+      {
+        "from": "native/index.node",
+        "to": "native/index.node"
+      }
+    ],
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        }
+      ]
+    }
   }
+
+
 }
