@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
-import { onMounted, ref, computed, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { PlaylistDetail, Track } from '@renderer/types/playlistDetail'
 import { CurrentSong, usePlayerStore } from '@renderer/stores/playerStore'
 

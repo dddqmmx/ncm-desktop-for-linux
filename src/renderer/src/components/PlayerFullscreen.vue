@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { usePlayerStore } from '@renderer/stores/playerStore'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import ColorThief from 'colorthief'
 import LyricPanel from './LyricPanel.vue'
 
@@ -179,13 +179,12 @@ const onImageLoad = () => {
 </template>
 
 <style scoped>
-/* 1. 基础布局与背景 - 使用 CSS 变量 */
 .player-fullscreen {
   position: fixed;
   inset: 0;
   z-index: 1000;
   font-family: 'Inter', -apple-system, sans-serif;
-  color: var(--text-color); /* 动态文本颜色 */
+  color: var(--text-color);
   transition: color 0.8s ease;
 }
 
@@ -200,7 +199,6 @@ const onImageLoad = () => {
 .vignette {
   position: absolute;
   inset: 0;
-  /* 这里的阴影也根据背景亮度微调 */
   background: radial-gradient(circle at 30% 50%, transparent 0%, rgba(0,0,0,0.2) 100%);
   z-index: -1;
 }
@@ -211,9 +209,10 @@ const onImageLoad = () => {
   flex-direction: column;
   padding: 40px 60px;
   backdrop-filter: blur(40px);
+  box-sizing: border-box;
 }
 
-/* 2. 顶部栏 */
+/* 顶部栏 */
 .top-bar {
   display: flex;
   justify-content: space-between;
@@ -235,24 +234,38 @@ const onImageLoad = () => {
   transition: all 0.3s;
 }
 
-.playing-status { font-weight: 600; font-size: 14px; text-transform: uppercase; letter-spacing: 2px; opacity: 0.8; }
+.playing-status {
+  font-weight: 600;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  opacity: 0.8;
+}
 
-/* 3. 主布局结构 */
+/* 主布局 */
 .main-layout {
   flex: 1;
   min-height: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  align-items: stretch;
+  gap: 60px;
+  align-items: center;
   overflow: hidden;
 }
 
-/* 4. 左侧封面区 */
-.visual-panel {
+/* 防止子项被撑开 */
+.visual-panel,
+.lyric-section {
+  min-width: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
+}
+
+/* 左侧内容/封面 */
+.visual-panel {
   justify-content: center;
+  align-items: center;
   text-align: center;
 }
 
@@ -260,6 +273,8 @@ const onImageLoad = () => {
   width: 100%;
   max-width: 450px;
   aspect-ratio: 1;
+  flex-shrink: 1;
+  min-height: 0;
 }
 
 .main-cover {
@@ -273,12 +288,37 @@ const onImageLoad = () => {
 
 .main-cover.playing { transform: scale(1.02); }
 
-.track-meta { margin-top: 40px; margin-bottom: 30px; }
-.track-title { font-size: 38px; font-weight: 800; margin: 0 0 8px 0; }
-.track-artist { font-size: 18px; opacity: 0.7; }
+.track-meta {
+  margin-top: 40px;
+  margin-bottom: 30px;
+  width: 100%;
+  max-width: 450px;
+  text-align: center;
+  overflow: hidden;
+}
 
-/* 5. 进度条与控制 */
+.track-title {
+  font-size: 38px;
+  font-weight: 800;
+  margin: 0 0 8px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  display: block;
+}
+
+.track-artist {
+  font-size: 18px;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 进度条与控制 */
 .playback-controls { width: 100%; max-width: 450px; }
+
 .progress-container { display: flex; align-items: center; gap: 15px; margin-bottom: 30px; }
 .time-text { font-size: 12px; font-weight: 600; opacity: 0.6; min-width: 45px; }
 
@@ -310,22 +350,41 @@ const onImageLoad = () => {
 .btns-row { display: flex; align-items: center; justify-content: center; gap: 40px; }
 
 .play-main-btn {
-  width: 72px; height: 72px; border-radius: 50%; border: none;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: none;
   background: var(--btn-bg);
   color: var(--btn-text);
   cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 0.2s, background 0.5s;
 }
-
 .play-main-btn:hover { transform: scale(1.1); }
+
 .icon-btn { background: none; border: none; color: var(--text-color); opacity: 0.8; cursor: pointer; }
 .icon-btn:hover { opacity: 1; }
+
+/* 响应式 */
+@media (max-width: 1100px) {
+  .main-layout { gap: 30px; }
+  .player-content { padding: 30px; }
+}
 
 @media (max-width: 1000px) {
   .main-layout { grid-template-columns: 1fr; gap: 40px; }
   .player-content { padding: 20px; }
   .visual-panel { order: 1; }
+  .track-title { font-size: 28px; }
+}
+
+@media (max-width: 900px) {
+  .main-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
   .track-title { font-size: 28px; }
 }
 </style>
