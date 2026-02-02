@@ -430,10 +430,13 @@ const playerStore = usePlayerStore()
 
 /* 激活态仅通过轻微遮罩和文字变色区分 */
 .track-row.is-active {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.08); /* 稍微深一点点 */
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.5); /* 内部顶部微光，增加立体感 */
 }
 
-.track-row.is-active .song-name { color: #ff4d4f; }
+.track-row.is-active .song-name {
+    color: #111;
+}
 
 .col-index { width: 40px; color: #ccc; }
 .col-title { flex: 3; display: flex; align-items: center; gap: 14px; min-width: 0; }
