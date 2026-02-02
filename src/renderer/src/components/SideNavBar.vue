@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import LoginModal from './LoginModal.vue';
 import { useUserStore } from '@renderer/stores/userStore';
 import { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist';
-import Settings from './Settings.vue';
+import SettingsModal from './SettingsModal.vue';
 
 const userStore = useUserStore()
 const showLoginModal = ref(false)
@@ -78,7 +78,7 @@ const navItems = [
   </Transition>
 
   <Transition name="modal-fade">
-    <Settings
+    <SettingsModal
       v-if="showSettingsModal"
       @close="showSettingsModal = false"
     />
