@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { usePlayerStore } from '@renderer/stores/playerStore'
 import { computed, ref } from 'vue'
-import ColorThief from 'colorthief'
 import LyricPanel from './LyricPanel.vue'
+import { colord } from 'colord'
+import { extractColors } from 'extract-colors'
 
 const playerStore = usePlayerStore()
 const isDragging = ref(false)
@@ -43,41 +44,56 @@ const handleInput = (e: Event) => {
   playerStore.currentTime = (val / 100) * (playerStore.currentSong?.duration ?? 0)
 }
 
+
 /**
  * 核心逻辑：提取颜色并计算对比度
  */
-const updateTheme = () => {
-  if (!imgRef.value) return
+const updateTheme = async () => {
+  // 必须确保图片已加载且有地址
+  if (!imgRef.value || !playerStore.currentSong?.cover) return
 
-  const colorThief = new ColorThief()
   try {
-    // 获取调色板（取前 3 个颜色确保质量）
-    const palette = colorThief.getPalette(imgRef.value, 3)
-    if (!palette) return
+    // extractColors 支持传入图片 URL
+    // 它会自动处理 Canvas 绘制和像素提取
+    const colors = await extractColors(imgRef.value.src, {
+      crossOrigin: 'anonymous',
+      pixels: 30000, // 采样像素，越高越准但越慢，30000是平衡点
+    })
 
-    const [r, g, b] = palette[0] // 主色
-    const [r2, g2, b2] = palette[1] // 辅色
+    if (!colors || colors.length === 0) return
 
-    // 计算亮度 (Relative Luminance)
-    // 算法：0.299R + 0.587G + 0.114B
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    // 1. 获取主色和辅助色 (extractColors 已按面积占比排序)
+    const primaryColor = colors[0]
+    const secondaryColor = colors[1] || colors[0]
+
+    // 2. 使用 colord 处理颜色数学
+    const pColor = colord(primaryColor.hex)
+    const isDark = pColor.isDark() // 自动计算亮度并判断是否为深色
 
     theme.value = {
-      primary: `rgb(${r}, ${g}, ${b})`,
-      secondary: `rgb(${r2}, ${g2}, ${b2})`,
-      // 如果亮度大于 0.6，认为是浅色背景，使用黑色文字；否则使用白色文字
-      text: luminance > 0.6 ? '#000000' : '#ffffff',
-      isDark: luminance <= 0.6
+      primary: primaryColor.hex,
+      secondary: secondaryColor.hex,
+      // 智能文本色：如果是浅色背景则黑字，反之白字
+      text: isDark ? '#ffffff' : '#000000',
+      isDark: isDark
     }
   } catch (err) {
     console.error("提取颜色失败", err)
+    // 失败时回退到默认主题
+    theme.value = {
+      primary: '#4a3f81',
+      secondary: '#1d1b31',
+      text: '#ffffff',
+      isDark: true
+    }
   }
 }
 
-// 监听歌曲变化，当图片加载完成后提取颜色
+// 当图片加载完成后触发
 const onImageLoad = () => {
   updateTheme()
 }
+
 </script>
 
 <template>

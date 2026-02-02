@@ -26,8 +26,9 @@
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "axios": "^1.13.2",
-    "colorthief": "^2.6.0",
+    "colord": "^2.9.3",
     "electron-updater": "^6.3.9",
+    "extract-colors": "^4.2.1",
     "NeteaseCloudMusicApi": "^4.28.0",
     "pinia": "^3.0.4",
     "tough-cookie": "^6.0.0",
@@ -41,6 +42,7 @@
     "@types/tough-cookie": "^4.0.5",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/devtools": "^8.0.5",
+    "concurrently": "^9.2.1",
     "electron": "^38.1.2",
     "electron-builder": "^25.1.8",
     "electron-vite": "^4.0.1",
@@ -49,8 +51,7 @@
     "typescript": "^5.9.3",
     "vite": "^7.1.6",
     "vue": "^3.5.21",
-    "vue-tsc": "^3.0.7",
-    "concurrently": "^9.2.1"
+    "vue-tsc": "^3.0.7"
   },
   "build": {
     "asar": true,
@@ -58,7 +59,9 @@
       "out/**",
       "package.json"
     ],
-    "asarUnpack": ["**/*.node"],
+    "asarUnpack": [
+      "**/*.node"
+    ],
     "extraResources": [
       {
         "from": "native/index.node",
@@ -69,11 +72,11 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     }
   }
-
-
 }
