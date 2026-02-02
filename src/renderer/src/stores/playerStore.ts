@@ -6,7 +6,7 @@ import { SoundQualityType } from 'NeteaseCloudMusicApi'
 import { SongUrl } from '@renderer/types/song'
 
 // 播放模式定义
-export type PlayMode = 'sequence' | 'loop' | 'random' | 'single'
+export type PlayMode =  'loop' | 'random' | 'single'
 
 export interface CurrentSong {
   id: number
@@ -27,7 +27,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   // --- 播放列表相关状态 ---
   const playlist = ref<CurrentSong[]>(JSON.parse(localStorage.getItem('playlist') || '[]'))
-  const playMode = ref<PlayMode>((localStorage.getItem('playMode') as PlayMode) || 'sequence')
+  const playMode = ref<PlayMode>((localStorage.getItem('playMode') as PlayMode) || 'loop')
 
   const userStore = useUserStore()
   let progressTimer: ReturnType<typeof setInterval> | null = null
@@ -84,29 +84,33 @@ export const usePlayerStore = defineStore('player', () => {
 
   // --- 核心操作 (Actions) ---
 
-  // 1. 播放下一首 (isAuto: 是否为播放结束自动触发)
-  const playNext = async (isAuto = false) => {
-    if (playlist.value.length === 0) return
+const playNext = async (isAuto = false) => {
+  if (playlist.value.length === 0) return
 
-    // 单曲循环逻辑
-    if (isAuto && playMode.value === 'single') {
-      await playMusic(currentSongId.value!, 0)
-      return
+  // 1. 处理单曲循环
+  if (isAuto && playMode.value === 'single' && currentSongId.value) {
+    // 强制重新播放当前歌曲
+    await playMusic(currentSongId.value, 0, true)
+    return
+  }
+
+  // 2. 计算下一首的索引
+  let nextIndex = 0
+  if (playMode.value === 'random') {
+    nextIndex = Math.floor(Math.random() * playlist.value.length)
+  } else {
+    nextIndex = currentIndex.value + 1
+    // 如果是最后一首，循环回第一首
+    if (nextIndex >= playlist.value.length) {
+      nextIndex = 0
     }
+  }
 
-    let nextIndex = 0
-    if (playMode.value === 'random') {
-      nextIndex = Math.floor(Math.random() * playlist.value.length)
-    } else {
-      nextIndex = currentIndex.value + 1
-      if (nextIndex >= playlist.value.length) {
-        nextIndex = 0 // 列表循环
-      }
-    }
-
-    const nextSong = playlist.value[nextIndex]
+  const nextSong = playlist.value[nextIndex]
+  if (nextSong) {
     await playMusic(nextSong.id)
   }
+}
 
   // 2. 播放上一首
   const playPrev = async () => {
@@ -162,52 +166,55 @@ export const usePlayerStore = defineStore('player', () => {
     await playMusic(targetSong.id)
   }
 
-const playMusic = async (song_id: number, startTime: number = 0) => {
-  // 如果正在切歌，拒绝新的切换（避免竞态）
+/**
+ * @param song_id 歌曲ID
+ * @param startTime 起始时间
+ * @param forceRestart 是否强制重新加载资源（用于单曲循环）
+ */
+const playMusic = async (song_id: number, startTime: number = 0, forceRestart: boolean = false) => {
   if (isSwitching.value) return
 
-  // 同歌并且正在播 -> 不做事
-  if (currentSongId.value === song_id && isPlaying.value) {
+  // 只有在【非强制重启】且【歌曲相同】且【正在播放】时才拦截
+  if (!forceRestart && currentSongId.value === song_id && isPlaying.value) {
     return
   }
-  // 同歌但暂停/历史 -> resume（从 currentTime 继续）
-  if (currentSongId.value === song_id && !isPlaying.value) {
+
+  // 如果是同首歌且暂停中，但不是自动播放触发的重播（即用户手动点播放）
+  // 且不是历史歌曲，则执行恢复
+  if (!forceRestart && currentSongId.value === song_id && !isPlaying.value && !isHistorySong.value) {
     await window.api.resume()
     isPlaying.value = true
     return
   }
 
-  // 开始切歌临界区
+  // 开始切歌/重播流程
   isSwitching.value = true
   playToken++
   const token = playToken
 
-  // 先准备数据
-  currentTime.value = startTime
-  const song = await getSongDetail(song_id)
-  if (!song) {
-    isSwitching.value = false
-    return
-  }
-  const url = await getSongUrl(song_id)
-  if (!url) {
-    isSwitching.value = false
-    return
-  }
-
   try {
-    // 先尝试平滑停掉旧播放器（如果能停），减少旧 wait_finished 的触发概率
+    // 1. 获取详情和 URL
+    const song = await getSongDetail(song_id)
+    const url = await getSongUrl(song_id)
+
+    if (!song || !url) {
+      isSwitching.value = false
+      return
+    }
+
+    // 2. 停止旧播放（重要：确保底层状态重置）
     try { await window.api.pause() } catch {}
 
-    // 真正请求播放（等待 play_url 返回）
+    // 3. 调用底层播放
+    // 注意：如果是单曲循环，startTime 为 0
     await window.api.play_url(url, startTime / 1000)
 
-    // 只有在 play_url 成功返回后才更新状态（避免提前将状态指向新歌）
+    // 4. 更新 UI 状态
     setPlayerData(song, true)
     isHistorySong.value = false
     currentTime.value = startTime
 
-    // 插入 playlist（如果不存在）
+    // 5. 维护播放列表
     const exists = playlist.value.some(s => s.id === song_id)
     if (!exists) {
       playlist.value.splice(currentIndex.value + 1, 0, {
@@ -219,10 +226,11 @@ const playMusic = async (song_id: number, startTime: number = 0) => {
       })
     }
 
-    // 开始监听结束（只有当前 token 有效）
+    // 6. 重新监听结束事件
     waitForEnd(song_id, token)
+  } catch (error) {
+    console.error("播放失败:", error)
   } finally {
-    // 结束临界区（注意：waitForEnd 仍会通过 token 判断是否过期）
     isSwitching.value = false
   }
 }
@@ -243,7 +251,7 @@ const playMusic = async (song_id: number, startTime: number = 0) => {
   }
 
   const togglePlayMode = () => {
-    const modes: PlayMode[] = ['sequence', 'loop', 'random', 'single']
+    const modes: PlayMode[] = ['loop', 'random', 'single']
     const nextIdx = (modes.indexOf(playMode.value) + 1) % modes.length
     playMode.value = modes[nextIdx]
   }
