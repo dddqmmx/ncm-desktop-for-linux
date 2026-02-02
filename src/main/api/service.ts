@@ -1,10 +1,29 @@
-import path from 'path'
+import path from "path";
+import { app } from "electron";
 
-const native = require(
-  import.meta.env.DEV
-    ? path.join(__dirname, '../../native/index.node')
-    : path.join(process.resourcesPath, 'index.node')
-)
+function resolveNative() {
+  // 打包态（AppImage / linux-unpacked 都对）
+  if (app.isPackaged) {
+    return path.join(
+      process.resourcesPath,
+      "native",
+      "index.node"
+    );
+  }
+
+  // 开发态
+  return path.join(
+    __dirname,
+    "..",
+    "..",
+    "native",
+    "index.node"
+  );
+}
+
+const native = require(resolveNative());
+
+
 
 const { PlayerService } = native
 
