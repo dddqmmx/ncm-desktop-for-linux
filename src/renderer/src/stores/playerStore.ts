@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { ref, watch, computed } from 'vue'
 import { useUserStore } from './userStore'
 import { SongUrl, type SoundQualityType } from '@renderer/types/song'
+import { useConfigStore } from './configStore'
 
 // 播放模式定义
 export type PlayMode =  'loop' | 'random' | 'single'
@@ -29,6 +30,7 @@ export const usePlayerStore = defineStore('player', () => {
   const playMode = ref<PlayMode>((localStorage.getItem('playMode') as PlayMode) || 'loop')
 
   const userStore = useUserStore()
+  const configStore = useConfigStore()
   let progressTimer: ReturnType<typeof setInterval> | null = null
 
   // --- 计算属性 (Getters) ---
@@ -242,7 +244,7 @@ const playMusic = async (song_id: number, startTime: number = 0, forceRestart: b
   try {
     // 1. 获取详情和 URL
     const song = await getSongDetail(song_id)
-    const url = await getSongUrl(song_id)
+    const url = await getSongUrl(song_id,  configStore.soundQuality)
 
     if (!song || !url) {
       isSwitching.value = false

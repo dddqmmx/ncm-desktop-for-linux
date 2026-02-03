@@ -7,7 +7,6 @@ export const useUserStore = defineStore('user', () => {
   const cookie = ref(localStorage.getItem('app_cookie') || '')
   const userInfo = ref<UserAccount | undefined>(undefined)
   const isLoggedIn = ref(!!localStorage.getItem('app_cookie'))
-5
   // === Action: 登录成功保存数据 ===
   function setLoginData(newCookie: string) {
     cookie.value = newCookie

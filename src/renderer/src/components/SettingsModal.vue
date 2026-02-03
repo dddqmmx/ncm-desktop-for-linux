@@ -4,6 +4,7 @@ import SettingsSidebar from './SettingsSidebar.vue'
 import SettingGroup from './SettingGroup.vue'
 import SettingRow from './SettingRow.vue'
 import SegmentedSlider from './SegmentedSlider.vue'
+import { useConfigStore } from '@renderer/stores/configStore'
 
 const emit = defineEmits(['close'])
 
@@ -17,6 +18,9 @@ const tabs = [
 ]
 
 const activeTab = ref('general')
+
+const configStore = useConfigStore()
+
 const settings = reactive({
   autoLaunch: true,
   trayMinimize: true,
@@ -76,9 +80,9 @@ const checkUpdate = () => {
           <div v-if="activeTab === 'audio'" class="section-fade">
             <SettingGroup title="音频质量">
               <SettingRow title="默认播放音质" description="选择流媒体播放或下载的默认音质级别">
-                <select class="modern-select" v-model="settings.quality">
+                <select class="modern-select" v-model="configStore.soundQuality">
                   <option value="standard">标准 (128kbps)</option>
-                  <option value="higher">极高 (320kbps)</option>
+                  <option value="exhigh">极高 (320kbps)</option>
                   <option value="lossless">无损(最高48khz,16bit)</option>
                   <option value="hires">Hi-Res (最高192khz,24bit)</option>
                   <option value="jyeffect">高清臻音 (96khz,24bit)</option>
