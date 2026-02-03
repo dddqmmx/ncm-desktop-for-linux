@@ -79,8 +79,9 @@ const checkUpdate = () => {
                 <select class="modern-select" v-model="settings.quality">
                   <option value="standard">标准 (128kbps)</option>
                   <option value="higher">极高 (320kbps)</option>
-                  <option value="lossless">无损 (FLAC/ALAC)</option>
-                  <option value="hires">Hi-Res (高解析度音频)</option>
+                  <option value="lossless">无损(最高48khz,16bit)</option>
+                  <option value="hires">Hi-Res (最高192khz,24bit)</option>
+                  <option value="jyeffect">高清臻音 (96khz,24bit)</option>
                 </select>
               </SettingRow>
             </SettingGroup>
