@@ -4,9 +4,9 @@ use napi::{Error, Result};
 use napi_derive::napi;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 use tokio::runtime::Runtime;
 use tokio::sync::{mpsc, oneshot};
-use std::time::Duration;
 
 use crate::audio_player::AudioPlayer;
 
@@ -36,7 +36,6 @@ enum PlayerCommand {
 
 struct SharedState {
     progress_ms: AtomicU32,
-    duration_ms: AtomicU32,
     is_playing: AtomicU32, // 0: Stopped, 1: Playing, 2: Paused
 }
 
@@ -53,7 +52,6 @@ impl PlayerService {
         let (tx, mut rx) = mpsc::unbounded_channel::<PlayerCommand>();
         let shared_state = Arc::new(SharedState {
             progress_ms: AtomicU32::new(0),
-            duration_ms: AtomicU32::new(0),
             is_playing: AtomicU32::new(0),
         });
 
@@ -78,14 +76,14 @@ impl PlayerService {
                     cmd_opt = rx.recv() => {
                         match cmd_opt {
                             Some(cmd) => match cmd {
-                                PlayerCommand::PlayFile(path, start) => {
+                                PlayerCommand::PlayFile(path, _start) => {
                                     state_clone.progress_ms.store(0, Ordering::SeqCst);
                                     if player.play_file(&path).await.is_ok() {
                                         // if let Some(s) = start { player.seek(s); }
                                         state_clone.is_playing.store(1, Ordering::SeqCst);
                                     }
                                 }
-                                PlayerCommand::PlayUrl(url, start) => {
+                                PlayerCommand::PlayUrl(url, _start) => {
                                     state_clone.progress_ms.store(0, Ordering::SeqCst);
                                     match player.play_url(&url).await {
                                         Ok(_) => {
@@ -156,13 +154,15 @@ impl PlayerService {
 
     #[napi]
     pub fn play_file(&self, path: String, start_secs: Option<u32>) -> Result<()> {
-        self.sender.send(PlayerCommand::PlayFile(path, start_secs))
+        self.sender
+            .send(PlayerCommand::PlayFile(path, start_secs))
             .map_err(|_| Error::from_reason("Background worker died"))
     }
 
     #[napi]
     pub fn play_url(&self, url: String, start_secs: Option<u32>) -> Result<()> {
-        self.sender.send(PlayerCommand::PlayUrl(url, start_secs))
+        self.sender
+            .send(PlayerCommand::PlayUrl(url, start_secs))
             .map_err(|_| Error::from_reason("Background worker died"))
     }
 
@@ -212,8 +212,10 @@ impl PlayerService {
     #[napi]
     pub async fn wait_finished(&self) -> Result<()> {
         let (tx, rx) = oneshot::channel();
-        self.sender.send(PlayerCommand::WaitFinished(tx))
+        self.sender
+            .send(PlayerCommand::WaitFinished(tx))
             .map_err(|_| Error::from_reason("Worker shutdown"))?;
-        rx.await.map_err(|_| Error::from_reason("Playback task interrupted"))
+        rx.await
+            .map_err(|_| Error::from_reason("Playback task interrupted"))
     }
 }

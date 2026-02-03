@@ -15,10 +15,12 @@ use stream_download::storage::temp::TempStorageProvider;
 use stream_download::{Settings, StreamDownload};
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{CODEC_TYPE_NULL, Decoder, DecoderOptions};
+use symphonia::core::conv::ConvertibleSample;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
 use symphonia::core::io::{MediaSource, MediaSourceStream};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
+use symphonia::core::sample::{Sample, SampleFormat as SymphoniaSampleFormat};
 use tokio::sync::Notify;
 
 // --- 类型定义与辅助结构 ---
@@ -55,10 +57,11 @@ impl<R: Read + Seek + Send + Sync> MediaSource for SeekableSource<R> {
     }
 }
 
-
 struct AudioMetadata {
     sample_rate: u32,
     channels: u16,
+    bits_per_sample: Option<u32>,
+    sample_format: Option<SymphoniaSampleFormat>,
     track_id: u32,
     decoder: Box<dyn Decoder>,
     format_reader: Box<dyn FormatReader>,
@@ -68,7 +71,6 @@ pub(crate) struct SharedState {
     pub(crate) is_paused: AtomicBool,
     pub(crate) current_frame: AtomicU64,
     pub(crate) sample_rate: AtomicU32,
-    pub(crate) channels: AtomicU32,          // 新：每帧的声道数
     pub(crate) has_seek_request: AtomicBool, // 新增：轻量级标记
     pub(crate) seek_request: Mutex<Option<Duration>>,
     pub(crate) is_terminating: AtomicBool,
@@ -77,7 +79,6 @@ pub(crate) struct SharedState {
     pub(crate) is_finished: AtomicBool,
     pub(crate) finish_notify: Notify,
     pub(crate) buffered_frames: AtomicU64, // 新：缓冲的帧数（每帧含 channels 个采样）
-    pub(crate) min_buffer_frames: AtomicU64, // 新：seek 后需要的最小帧数（阈值）
     pub(crate) waiting_for_seek: AtomicBool, // 新：seek 后等待缓冲完成标记
 }
 pub struct AudioPlayer {
@@ -89,13 +90,61 @@ pub struct AudioPlayer {
 impl AudioPlayer {
     pub fn new(device_name_filter: Option<&str>) -> Result<Self, Box<dyn Error>> {
         let host = cpal::default_host();
+
+        // Bit-perfect on Linux requires bypassing any ALSA "plug"/mixer layers.
+        // Best-effort: prefer a direct `hw:*` device when the caller didn't request a device.
         let device = if let Some(name) = device_name_filter {
             host.output_devices()?
-                .find(|d| d.name().map(|n| n.contains(name)).unwrap_or(false))
+                .find(|d| {
+                    d.description()
+                        .map(|desc| desc.name().contains(name))
+                        .unwrap_or(false)
+                })
                 .ok_or("Device not found")?
         } else {
-            host.default_output_device().ok_or("No default device")?
+            #[cfg(target_os = "linux")]
+            {
+                if let Ok(mut devices) = host.output_devices() {
+                    if let Some(dev) = devices.find(|d| {
+                        d.description()
+                            .map(|desc| {
+                                desc.name().contains("hw:") && !desc.name().contains("plughw:")
+                            })
+                            .unwrap_or(false)
+                    }) {
+                        dev
+                    } else {
+                        host.default_output_device().ok_or("No default device")?
+                    }
+                } else {
+                    host.default_output_device().ok_or("No default device")?
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                host.default_output_device().ok_or("No default device")?
+            }
         };
+
+        println!(
+            "[audio] using output device: {}",
+            device
+                .description()
+                .map(|desc| desc.to_string())
+                .unwrap_or_else(|_| "<unknown>".to_string())
+        );
+        #[cfg(target_os = "linux")]
+        {
+            let is_hw = device
+                .description()
+                .map(|desc| desc.name().contains("hw:") && !desc.name().contains("plughw:"))
+                .unwrap_or(false);
+            if !is_hw {
+                println!(
+                    "[audio] WARNING: non-`hw:*` device selected; bit-perfect may NOT be guaranteed (system mixer/resampler may be active)."
+                );
+            }
+        }
 
         Ok(Self {
             device,
@@ -104,15 +153,13 @@ impl AudioPlayer {
                 is_paused: AtomicBool::new(false),
                 current_frame: AtomicU64::new(0),
                 sample_rate: AtomicU32::new(44100),
-                channels: AtomicU32::new(2), // 新增字段，默认 2 声道
                 seek_request: Mutex::new(None),
                 is_terminating: AtomicBool::new(false),
                 discard_buffer: AtomicBool::new(false),
                 decoder_done: AtomicBool::new(false),
                 is_finished: AtomicBool::new(false),
                 finish_notify: Notify::new(),
-                buffered_frames: AtomicU64::new(0),   // 新增字段
-                min_buffer_frames: AtomicU64::new(0), // 新增字段
+                buffered_frames: AtomicU64::new(0), // 新增字段
                 waiting_for_seek: AtomicBool::new(false),
                 has_seek_request: AtomicBool::new(false), // 新增字段
             }),
@@ -199,79 +246,104 @@ impl AudioPlayer {
 
         let sr = track.codec_params.sample_rate.unwrap_or(44100);
         let channels = track.codec_params.channels.unwrap().count() as u16;
+        let bits_per_sample = track.codec_params.bits_per_sample;
+        let sample_format = track.codec_params.sample_format;
         let decoder = symphonia::default::get_codecs()
             .make(&track.codec_params, &DecoderOptions::default())?;
 
         Ok(AudioMetadata {
             sample_rate: sr,
             channels,
+            bits_per_sample,
+            sample_format,
             track_id: track.id,
             decoder,
             format_reader: format,
         })
     }
 
-fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> {
-    // 1. 先调用 stop 确保旧流销毁，旧 state 被标记为终止
-    self.stop();
+    fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> {
+        // 1. 先调用 stop 确保旧流销毁，旧 state 被标记为终止
+        self.stop();
 
-    // 2. 彻底替换 state，确保新旧音频状态完全隔离
-    // 这样旧线程永远看不到新音频的 false 标记，它只能看到旧 state 的 is_terminating = true
-    self.state = Arc::new(SharedState {
-        is_paused: AtomicBool::new(false),
-        current_frame: AtomicU64::new(0),
-        sample_rate: AtomicU32::new(meta.sample_rate),
-        channels: AtomicU32::new(meta.channels as u32),
-        seek_request: Mutex::new(None),
-        is_terminating: AtomicBool::new(false), // 新 state 初始为 false
-        discard_buffer: AtomicBool::new(false),
-        decoder_done: AtomicBool::new(false),
-        is_finished: AtomicBool::new(false),
-        finish_notify: Notify::new(),
-        buffered_frames: AtomicU64::new(0),
-        min_buffer_frames: AtomicU64::new(0),
-        waiting_for_seek: AtomicBool::new(false),
-        has_seek_request: AtomicBool::new(false),
-    });
+        // 2. 彻底替换 state，确保新旧音频状态完全隔离
+        // 这样旧线程永远看不到新音频的 false 标记，它只能看到旧 state 的 is_terminating = true
+        self.state = Arc::new(SharedState {
+            is_paused: AtomicBool::new(false),
+            current_frame: AtomicU64::new(0),
+            sample_rate: AtomicU32::new(meta.sample_rate),
+            seek_request: Mutex::new(None),
+            is_terminating: AtomicBool::new(false), // 新 state 初始为 false
+            discard_buffer: AtomicBool::new(false),
+            decoder_done: AtomicBool::new(false),
+            is_finished: AtomicBool::new(false),
+            finish_notify: Notify::new(),
+            buffered_frames: AtomicU64::new(0),
+            waiting_for_seek: AtomicBool::new(false),
+            has_seek_request: AtomicBool::new(false),
+        });
 
-    let sr = meta.sample_rate;
-    let channels = meta.channels;
+        let sr = meta.sample_rate;
+        let channels = meta.channels;
 
-    // 3. 硬件配置检查
-    let (config, sample_format) = self.find_best_config(sr, channels)?;
+        // 3. 硬件配置检查
+        let (config, sample_format) =
+            self.find_best_config(sr, channels, meta.bits_per_sample, meta.sample_format)?;
 
-    // 修正：cpal 的 config.sample_rate 是一个结构体，需通过 .0 取值
-    if config.sample_rate != sr {
-        return Err(format!(
-            "Sample-rate mismatch: file={}Hz, output={}Hz",
-            sr, config.sample_rate
-        ).into());
+        // 修正：cpal 的 config.sample_rate 是一个结构体，需通过 .0 取值
+        if config.sample_rate != sr {
+            return Err(format!(
+                "Sample-rate mismatch: file={}Hz, output={}Hz",
+                sr, config.sample_rate
+            )
+            .into());
+        }
+
+        // 4. 创建全新的缓冲区和解码线程（为 bit-perfect 避免不必要的格式转换）
+        let state_for_cb = self.state.clone();
+        let stream = match sample_format {
+            cpal::SampleFormat::I16 => {
+                // 只允许在源 <= 16bit 时使用 i16 输出（避免 24/32bit 被截断）
+                if meta.bits_per_sample.unwrap_or(16) > 16 {
+                    return Err(format!(
+                    "Bit-perfect requires 32-bit output for {}-bit source; device doesn't support i32",
+                    meta.bits_per_sample.unwrap_or(0)
+                )
+                .into());
+                }
+
+                let rb = HeapRb::<i16>::new(sr as usize * channels as usize * 2);
+                let (producer, consumer) = rb.split();
+                self.start_decode_thread::<i16>(meta, producer);
+                self.build_stream::<i16, _>(&config, consumer, state_for_cb, channels as usize)?
+            }
+            cpal::SampleFormat::I32 => {
+                let rb = HeapRb::<i32>::new(sr as usize * channels as usize * 2);
+                let (producer, consumer) = rb.split();
+                self.start_decode_thread::<i32>(meta, producer);
+                self.build_stream::<i32, _>(&config, consumer, state_for_cb, channels as usize)?
+            }
+            cpal::SampleFormat::F32 => {
+                let rb = HeapRb::<f32>::new(sr as usize * channels as usize * 2);
+                let (producer, consumer) = rb.split();
+                self.start_decode_thread::<f32>(meta, producer);
+                self.build_stream::<f32, _>(&config, consumer, state_for_cb, channels as usize)?
+            }
+            _ => return Err(format!("Unsupported sample format: {:?}", sample_format).into()),
+        };
+
+        stream.play()?;
+        self.stream = Some(stream);
+        Ok(())
     }
 
-    // 4. 创建全新的缓冲区和解码线程
-    let rb = HeapRb::<i32>::new(sr as usize * channels as usize * 2);
-    let (producer, consumer) = rb.split();
-
-    self.start_decode_thread(meta, producer);
-
-    let state_for_cb = self.state.clone();
-    let stream = match sample_format {
-        cpal::SampleFormat::I16 => self.build_stream::<i16, _>(&config, consumer, state_for_cb, channels as usize)?,
-        cpal::SampleFormat::I32 => self.build_stream::<i32, _>(&config, consumer, state_for_cb, channels as usize)?,
-        cpal::SampleFormat::F32 => self.build_stream::<f32, _>(&config, consumer, state_for_cb, channels as usize)?,
-        _ => return Err(format!("Unsupported sample format: {:?}", sample_format).into()),
-    };
-
-    stream.play()?;
-    self.stream = Some(stream);
-    Ok(())
-}
-
-    fn start_decode_thread(
+    fn start_decode_thread<S>(
         &self,
         meta: AudioMetadata,
-        mut producer: impl Producer<Item = i32> + Send + 'static,
-    ) {
+        mut producer: impl Producer<Item = S> + Send + 'static,
+    ) where
+        S: ConvertibleSample + Copy + Send + 'static,
+    {
         let state = self.state.clone();
         let mut decoder = meta.decoder;
         let mut format = meta.format_reader;
@@ -288,7 +360,7 @@ fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> 
 
                 if !producer.is_full() {
                     // 如果 decode_next_packet 返回 false，说明文件读取完毕或出错
-                    if !Self::decode_next_packet(
+                    if !Self::decode_next_packet::<S, _>(
                         &mut *format,
                         &mut *decoder,
                         track_id,
@@ -362,13 +434,17 @@ fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> 
         }
     }
 
-    fn decode_next_packet<P: Producer<Item = i32>>(
+    fn decode_next_packet<S, P>(
         format: &mut dyn FormatReader,
         decoder: &mut dyn Decoder,
         track_id: u32,
         producer: &mut P,
         state: &SharedState,
-    ) -> bool {
+    ) -> bool
+    where
+        S: ConvertibleSample + Copy,
+        P: Producer<Item = S>,
+    {
         match format.next_packet() {
             Ok(packet) => {
                 if packet.track_id() != track_id {
@@ -378,9 +454,9 @@ fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> 
                     Ok(decoded) => {
                         let spec = *decoded.spec();
                         let num_frames = decoded.frames();
-                        let mut sample_buf = SampleBuffer::<i32>::new(num_frames as u64, spec);
+                        let mut sample_buf = SampleBuffer::<S>::new(num_frames as u64, spec);
                         sample_buf.copy_interleaved_ref(decoded);
-                        Self::push_samples_blocking(producer, sample_buf.samples(), state);
+                        Self::push_samples_blocking::<S, _>(producer, sample_buf.samples(), state);
                     }
                     Err(symphonia::core::errors::Error::DecodeError(e)) => {
                         // Seek 之后经常会出现解码错误，跳过即可，不要退出线程
@@ -407,11 +483,11 @@ fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> 
             }
         }
     }
-    fn push_samples_blocking<P: Producer<Item = i32>>(
-        producer: &mut P,
-        samples: &[i32],
-        state: &SharedState,
-    ) {
+    fn push_samples_blocking<S, P>(producer: &mut P, samples: &[S], state: &SharedState)
+    where
+        S: Sample + Copy,
+        P: Producer<Item = S>,
+    {
         let mut written = 0;
         let mut retry_count = 0;
         while written < samples.len() {
@@ -443,7 +519,7 @@ fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> 
             }
         }
     }
-    fn build_stream<T, C>(
+    fn build_stream<S, C>(
         &self,
         config: &cpal::StreamConfig,
         mut consumer: C,
@@ -451,12 +527,12 @@ fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> 
         channels: usize,
     ) -> Result<cpal::Stream, Box<dyn Error>>
     where
-        T: cpal::SizedSample + cpal::FromSample<i32>,
-        C: Consumer<Item = i32> + Observer<Item = i32> + Send + 'static,
+        S: cpal::SizedSample + Send + 'static,
+        C: Consumer<Item = S> + Observer<Item = S> + Send + 'static,
     {
         let stream = self.device.build_output_stream(
             config,
-            move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+            move |data: &mut [S], _: &cpal::OutputCallbackInfo| {
                 // 1. 处理 Seek 触发的强制清理
                 if state.discard_buffer.swap(false, Ordering::SeqCst) {
                     while consumer.try_pop().is_some() {}
@@ -478,7 +554,7 @@ fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> 
                         state.waiting_for_seek.store(false, Ordering::Relaxed);
                         println!("[Audio] 缓冲结束，当前 Buffer: {} 采样", buffered_samples);
                     } else {
-                        data.fill(T::EQUILIBRIUM);
+                        data.fill(S::EQUILIBRIUM);
                         return;
                     }
                 }
@@ -498,14 +574,14 @@ fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> 
                         // println!("[Audio] Buffering complete, resuming...");
                     } else {
                         // 数据不够，直接填静音并返回，不消费 consumer
-                        data.fill(T::EQUILIBRIUM);
+                        data.fill(S::EQUILIBRIUM);
                         return;
                     }
                 }
 
                 // 3. 暂停处理
                 if state.is_paused.load(Ordering::Relaxed) {
-                    data.fill(T::EQUILIBRIUM);
+                    data.fill(S::EQUILIBRIUM);
                     return;
                 }
 
@@ -513,11 +589,11 @@ fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> 
                 let mut samples_read = 0usize;
                 for sample in data.iter_mut() {
                     if let Some(s) = consumer.try_pop() {
-                        *sample = T::from_sample(s);
+                        *sample = s;
                         samples_read += 1;
                     } else {
                         // Buffer 在消费过程中抽干了
-                        *sample = T::EQUILIBRIUM;
+                        *sample = S::EQUILIBRIUM;
                     }
                 }
 
@@ -533,7 +609,7 @@ fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> 
                     }
                 }
             },
-            |err| {
+            |_err| {
                 // 此时 err 如果还是 Underrun，通常是驱动级别的警告，
                 // 但因为我们填充了静音，它不会导致音频咔哒声或死锁。
                 // eprintln!("Driver message: {}", err);
@@ -547,6 +623,8 @@ fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> 
         &self,
         target_sr: u32,
         channels: u16,
+        bits_per_sample: Option<u32>,
+        source_sample_format: Option<SymphoniaSampleFormat>,
     ) -> Result<(cpal::StreamConfig, cpal::SampleFormat), Box<dyn Error>> {
         println!(
             "[audio] target request: sample_rate={}Hz, channels={}",
@@ -570,20 +648,30 @@ fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> 
             }
         }
 
-        let prefer = [
-            cpal::SampleFormat::I32,
-            cpal::SampleFormat::I16,
-            cpal::SampleFormat::F32,
-        ];
+        // Bit-perfect rules:
+        // - Prefer integer output (i32 > i16) for integer PCM.
+        // - For >16-bit integer sources, require i32 (avoid truncation).
+        // - For float PCM sources, require f32 (avoid quantization).
+        let prefer: &[cpal::SampleFormat] = match source_sample_format {
+            Some(SymphoniaSampleFormat::F32 | SymphoniaSampleFormat::F64) => {
+                &[cpal::SampleFormat::F32]
+            }
+            _ => match bits_per_sample {
+                // Unknown: avoid truncation (prefer i32), but allow i16 for compatibility.
+                None => &[cpal::SampleFormat::I32, cpal::SampleFormat::I16],
+                Some(0..=16) => &[cpal::SampleFormat::I16, cpal::SampleFormat::I32],
+                Some(_) => &[cpal::SampleFormat::I32],
+            },
+        };
 
         for fmt in prefer {
-            if let Some(c) = candidates.iter().find(|c| c.sample_format() == fmt) {
+            if let Some(c) = candidates.iter().find(|c| c.sample_format() == *fmt) {
                 println!(
                     "[audio] SELECTED: fmt={:?}, sample_rate={}Hz, channels={}",
                     fmt, target_sr, channels
                 );
                 let config: cpal::StreamConfig = c.with_sample_rate(target_sr).into();
-                return Ok((config, fmt));
+                return Ok((config, *fmt));
             }
         }
 
@@ -619,17 +707,17 @@ fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> 
         self.state.has_seek_request.store(true, Ordering::SeqCst);
     }
 
-pub fn stop(&mut self) {
-    // 1. 先设置旧状态的终止标记，让旧线程在任何检查点都能发现并退出
-    self.state.is_terminating.store(true, Ordering::SeqCst);
+    pub fn stop(&mut self) {
+        // 1. 先设置旧状态的终止标记，让旧线程在任何检查点都能发现并退出
+        self.state.is_terminating.store(true, Ordering::SeqCst);
 
-    // 2. 销毁 cpal 流，这会触发旧 consumer 的 Drop
-    self.stream = None;
+        // 2. 销毁 cpal 流，这会触发旧 consumer 的 Drop
+        self.stream = None;
 
-    // 3. 唤醒所有在 wait_finished 上的等待者
-    self.state.is_finished.store(true, Ordering::SeqCst);
-    self.state.finish_notify.notify_waiters();
-}
+        // 3. 唤醒所有在 wait_finished 上的等待者
+        self.state.is_finished.store(true, Ordering::SeqCst);
+        self.state.finish_notify.notify_waiters();
+    }
 
     /// 高性能异步等待：直到播放自然结束或被 stop
     pub async fn wait_finished(&self) {
