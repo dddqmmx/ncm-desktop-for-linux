@@ -2,8 +2,7 @@ import { Song, SongDetailResult } from '@renderer/types/songDetail'
 import { defineStore } from 'pinia'
 import { ref, watch, computed } from 'vue'
 import { useUserStore } from './userStore'
-import { SoundQualityType } from 'NeteaseCloudMusicApi'
-import { SongUrl } from '@renderer/types/song'
+import { SongUrl, type SoundQualityType } from '@renderer/types/song'
 
 // 播放模式定义
 export type PlayMode =  'loop' | 'random' | 'single'
@@ -44,20 +43,68 @@ export const usePlayerStore = defineStore('player', () => {
     return playlist.value.findIndex(s => s.id === currentSongId.value)
   })
 
+  // --- 音质映射 ---
+  const qualityMap: Partial<Record<SoundQualityType, { key: keyof Song; rate: number }>> = {
+    standard: { key: 'l', rate: 128000 },
+    exhigh: { key: 'h', rate: 320000 },
+    lossless: { key: 'sq', rate: 964935 },
+    hires: { key: 'hr', rate: 192000 },
+    jyeffect: { key: 'jyeffect', rate: 999000 },
+  }
+
+  // 降级顺序（从高到低）
+  const downgradeOrder: SoundQualityType[] = ['hires', 'lossless', 'exhigh', 'standard']
+
   // --- 私有辅助函数 ---
   const getSongDetail = async (id: number): Promise<Song | undefined> => {
     const res = await window.api.song_detail({ ids: [id] }) as { body?: SongDetailResult }
+    console.log(res)
     return res.body?.songs?.[0]
   }
 
-  const getSongUrl = async (song_id: number): Promise<string> => {
-    const res = await window.api.song_url({
-      id: song_id,
-      level: "hires" as SoundQualityType,
-      cookie: userStore.cookie
-    }) as { body?: { data?: SongUrl[] } }
-    return res.body?.data?.[0].url ?? ""
+  // 获取支持的音质列表
+  const getAvailableQualities = (song: Song): SoundQualityType[] => {
+    const available: SoundQualityType[] = []
+    for (const [name, value] of Object.entries(qualityMap)) {
+      if (!value) continue
+      if (song[value.key as keyof Song]) available.push(name as SoundQualityType)
+    }
+    return available
   }
+
+  // 根据目标音质选择可用音质（不可用则降级）
+  const getPlayableQuality = (song: Song, targetQuality: SoundQualityType): SoundQualityType | null => {
+    const available = getAvailableQualities(song)
+    if (available.includes(targetQuality)) return targetQuality
+
+    const targetIndex = downgradeOrder.indexOf(targetQuality)
+    for (let i = targetIndex + 1; i < downgradeOrder.length; i++) {
+      if (available.includes(downgradeOrder[i])) return downgradeOrder[i]
+    }
+
+    // 如果都没有，则返回最低可用
+    return available[available.length - 1] || null
+  }
+
+  // 获取歌曲播放 URL（自动降级音质）
+  const getSongUrl = async (
+    song_id: number,
+    targetQuality: SoundQualityType = 'hires',
+  ): Promise<string> => {
+    const song = await getSongDetail(song_id)
+    if (!song) return ''
+
+    const playableQuality = getPlayableQuality(song, targetQuality) || 'standard'
+
+    const res = (await window.api.song_url({
+      id: song_id,
+      level: playableQuality,
+      cookie: userStore.cookie,
+    })) as { body?: { data?: SongUrl[] } }
+
+    return res.body?.data?.[0].url ?? ''
+  }
+
 
   const syncProgress = async () => {
     try {
