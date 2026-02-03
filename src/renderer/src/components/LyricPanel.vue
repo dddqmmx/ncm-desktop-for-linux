@@ -16,7 +16,6 @@ interface LyricLine {
 
 const loading = ref(false)
 const lyrics = ref<LyricLine[]>([])
-const lyricsContainer = ref<HTMLElement | null>(null)
 const lineRefs = ref<HTMLElement[]>([])
 
 // 解析逻辑保持不变...
@@ -81,7 +80,7 @@ watch(currentLyricIndex, (newIndex) => {
 <template>
   <section class="lyrics-panel">
     <div v-if="loading" class="lyric-status">加载中...</div>
-    <div v-else class="lyrics-scroll-container" ref="lyricsContainer">
+    <div v-else class="lyrics-scroll-container">
       <div
         v-for="(line, index) in lyrics"
         :key="index"
