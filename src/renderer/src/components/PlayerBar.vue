@@ -16,19 +16,33 @@ const displayTrack = computed(() => ({
 // --- 进度条逻辑 ---
 const isDragging = ref(false)
 
+const beginSeek = () => {
+  if (!isDragging.value) isDragging.value = true
+  if (!playerStore.isSeeking) playerStore.isSeeking = true
+}
+
+const endSeek = () => {
+  setTimeout(() => {
+    isDragging.value = false
+    playerStore.isSeeking = false
+  }, 500)
+}
+
 const handleInput = (e: Event) => {
-  isDragging.value = true
+  beginSeek()
   const val = Number((e.target as HTMLInputElement).value)
   playerStore.currentTime = (val / 100) * playerStore.duration
 }
 
 const handleSeek = async (e: Event) => {
+  beginSeek()
   const val = Number((e.target as HTMLInputElement).value)
   const targetTime = (val / 100) * playerStore.duration
-  await playerStore.seek(targetTime)
-  setTimeout(() => {
-    isDragging.value = false
-  }, 500)
+  try {
+    await playerStore.seek(targetTime)
+  } finally {
+    endSeek()
+  }
 }
 
 // 播放列表状态

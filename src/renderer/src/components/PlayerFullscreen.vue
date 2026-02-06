@@ -28,18 +28,32 @@ const formatTime = (ms: number) => {
 
 const progressPercent = computed(() => playerStore.progressPercent)
 
-// 处理进度跳转
-const handleSeek = async (e: Event) => {
-  const val = Number((e.target as HTMLInputElement).value)
-  const targetTime = (val / 100) * (playerStore.currentSong?.duration ?? 0)
-  await playerStore.seek(targetTime)
+const beginSeek = () => {
+  if (!isDragging.value) isDragging.value = true
+  if (!playerStore.isSeeking) playerStore.isSeeking = true
+}
+
+const endSeek = () => {
   setTimeout(() => {
     isDragging.value = false
+    playerStore.isSeeking = false
   }, 500)
 }
 
+// 处理进度跳转
+const handleSeek = async (e: Event) => {
+  beginSeek()
+  const val = Number((e.target as HTMLInputElement).value)
+  const targetTime = (val / 100) * (playerStore.currentSong?.duration ?? 0)
+  try {
+    await playerStore.seek(targetTime)
+  } finally {
+    endSeek()
+  }
+}
+
 const handleInput = (e: Event) => {
-  isDragging.value = true
+  beginSeek()
   const val = Number((e.target as HTMLInputElement).value)
   playerStore.currentTime = (val / 100) * (playerStore.currentSong?.duration ?? 0)
 }

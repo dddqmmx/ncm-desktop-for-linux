@@ -24,6 +24,7 @@ export const usePlayerStore = defineStore('player', () => {
   const isPlaying = ref(false)
   const isFullScreen = ref(false)
   const isHistorySong = ref(true)
+  const isSeeking = ref(false)
 
   // --- 播放列表相关状态 ---
   const playlist = ref<CurrentSong[]>(JSON.parse(localStorage.getItem('playlist') || '[]'))
@@ -109,6 +110,7 @@ export const usePlayerStore = defineStore('player', () => {
 
 
   const syncProgress = async () => {
+    if (isSeeking.value) return
     try {
       const progressMs = await window.api.get_progress();
       if (progressMs !== undefined && progressMs !== null) {
@@ -380,6 +382,7 @@ const playMusic = async (song_id: number, startTime: number = 0, forceRestart: b
     currentTime,
     isPlaying,
     isFullScreen,
+    isSeeking,
     duration,
     progressPercent,
     playlist,
