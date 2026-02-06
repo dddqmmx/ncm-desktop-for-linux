@@ -11,7 +11,7 @@ function createWindow(): void {
     width: 1435,
     height: 1000,
     minWidth: 1340,
-    minHeight: 860,
+    minHeight: 960,
     show: false,
     frame: false, // 关键：隐藏系统标题栏
     autoHideMenuBar: true,
