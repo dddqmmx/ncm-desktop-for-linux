@@ -7,7 +7,7 @@ const props = defineProps<{
 }>()
 
 // --- 配置常量 ---
-const LYRIC_OFFSET_MS = 200 // 提前 200ms 触发高亮和滚动，补偿人眼感知和动画启动
+const LYRIC_OFFSET_MS = 400 // 提前 400ms 触发高亮和滚动，补偿人眼感知和动画启动
 
 interface LyricLine {
   time: number

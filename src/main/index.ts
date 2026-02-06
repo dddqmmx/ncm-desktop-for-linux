@@ -13,6 +13,7 @@ function createWindow(): void {
     minWidth: 1340,
     minHeight: 860,
     show: false,
+    frame: false, // 关键：隐藏系统标题栏
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {

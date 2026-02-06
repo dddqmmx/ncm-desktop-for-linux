@@ -195,6 +195,7 @@ const onImageLoad = () => {
 </template>
 
 <style scoped>
+
 .player-fullscreen {
   position: fixed;
   inset: 0;
@@ -202,6 +203,7 @@ const onImageLoad = () => {
   font-family: 'Inter', -apple-system, sans-serif;
   color: var(--text-color);
   transition: color 0.8s ease;
+  -webkit-app-region: drag;
 }
 
 .dynamic-background {
@@ -248,6 +250,7 @@ const onImageLoad = () => {
   align-items: center;
   justify-content: center;
   transition: all 0.3s;
+  -webkit-app-region: no-drag;
 }
 
 .playing-status {
@@ -338,6 +341,12 @@ const onImageLoad = () => {
 .progress-container { display: flex; align-items: center; gap: 15px; margin-bottom: 30px; }
 .time-text { font-size: 12px; font-weight: 600; opacity: 0.6; min-width: 45px; }
 
+.progress-container,
+.progress-input {
+  -webkit-app-region: no-drag;
+}
+
+
 .progress-bar-bg {
   position: relative;
   flex: 1;
@@ -364,6 +373,9 @@ const onImageLoad = () => {
 }
 
 .btns-row { display: flex; align-items: center; justify-content: center; gap: 40px; }
+.btns-row button {
+  -webkit-app-region: no-drag;
+}
 
 .play-main-btn {
   width: 72px;

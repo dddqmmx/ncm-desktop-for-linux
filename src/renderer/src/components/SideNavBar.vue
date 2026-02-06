@@ -161,6 +161,7 @@ const navItems = [
   border: 1px solid rgba(255, 255, 255, 0.8);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.04);
   overflow: hidden;
+  -webkit-app-region: drag;
 }
 
 .sidebar-content {
@@ -171,7 +172,7 @@ const navItems = [
 }
 .sidebar-content::-webkit-scrollbar { display: none; }
 
-.nav-section { display: flex; flex-direction: column; gap: 4px; margin-bottom: 24px; }
+.nav-section { display: flex; flex-direction: column; gap: 4px; margin-bottom: 24px;-webkit-app-region: no-drag; }
 .nav-group-title { font-size: 12px; color: rgba(0,0,0,0.4); font-weight: 600; margin-bottom: 8px; padding-left: 12px; text-transform: uppercase; }
 
 .nav-item {
@@ -205,6 +206,7 @@ const navItems = [
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  -webkit-app-region: no-drag;
 }
 
 /* 触发区域（头像和名字） */
