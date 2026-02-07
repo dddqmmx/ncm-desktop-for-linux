@@ -1,9 +1,10 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
 import { registerMusicApi } from './api/ipc/registerMusicApi'
 import { registerNativeApi } from './api/ipc/registerNativeApi'
+
+const iconPath = join(__dirname, '../../resources/icon.png')
 
 function createWindow(): void {
   // Create the browser window.
@@ -15,7 +16,7 @@ function createWindow(): void {
     show: false,
     frame: false, // 关键：隐藏系统标题栏
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
+    ...(process.platform === 'linux' ? { icon: iconPath } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
