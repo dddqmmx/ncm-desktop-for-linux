@@ -59,9 +59,8 @@ const settings = reactive({
 })
 
 const appInfo = {
-  name: 'ncm-desktop-for-linux',
-  version: 'alpha',
-  author: 'Paul Perkenstein'
+  name: 'NCM DISKTOP FOR LINUX',
+  version: '1.0.0'
 }
 
 const checkingUpdate = ref(false)
