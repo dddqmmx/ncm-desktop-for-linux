@@ -59,7 +59,7 @@ const settings = reactive({
 })
 
 const appInfo = {
-  name: 'NCM DISKTOP FOR LINUX',
+  name: 'NCM Desktop For Linux',
   version: '1.0.0'
 }
 
