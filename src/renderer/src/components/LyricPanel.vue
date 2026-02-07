@@ -35,16 +35,16 @@ const parseLyric = (lrcString: string): LyricLine[] => {
   return result.sort((a, b) => a.time - b.time)
 }
 
-const fetchLyrics = async (id: number) => {
+const fetchLyrics = async (id: number): Promise<void> => {
   try {
     loading.value = true
-    const res = await window.api.lyric({ id }) as any
+    const res = (await window.api.lyric({ id })) as { body?: { lrc?: { lyric?: string } } }
     if (res.body?.lrc?.lyric) {
       lyrics.value = parseLyric(res.body.lrc.lyric)
     } else {
       lyrics.value = [{ time: 0, text: '暂无歌词' }]
     }
-  } catch (error) {
+  } catch {
     lyrics.value = [{ time: 0, text: '歌词加载失败' }]
   } finally {
     loading.value = false

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, onUnmounted, watch } from 'vue'
 import { useUserStore } from '../stores/userStore'
+import type { LoginQrCheck, LoginQrCreate, LoginQrKey } from '../types/loginQr'
 const emit = defineEmits(['login-success', 'close'])
 const userStore = useUserStore() // 使用全局 Store
 
@@ -18,7 +19,7 @@ const qrStatus = ref('') // 用于显示状态提示，如“二维码已过期�
 let qrCheckTimer: number | null = null
 
 // === 核心：获取二维码并启动轮询 ===
-const initQrLogin = async () => {
+const initQrLogin = async (): Promise<void> => {
   // 清除旧定时器
   if (qrCheckTimer) {
     clearInterval(qrCheckTimer)
@@ -105,16 +106,16 @@ onUnmounted(() => {
 const creds = reactive({ username: '', password: '' })
 const phoneData = reactive({ phone: '', code: '' })
 const verificationCodeTimer = ref(0)
-let timerId: any = null
+let timerId: ReturnType<typeof setInterval> | null = null
 
-const handleClose = () => emit('close')
+const handleClose = (): void => emit('close')
 
-const toggleLoginMode = () => {
+const toggleLoginMode = (): void => {
   errorMsg.value = ''
   loginMode.value = loginMode.value === 'form' ? 'qr' : 'form'
 }
 
-const sendCode = () => {
+const sendCode = (): void => {
   if (!phoneData.phone) {
     errorMsg.value = '请输入手机号码'
     return
@@ -123,11 +124,11 @@ const sendCode = () => {
   verificationCodeTimer.value = 60
   timerId = setInterval(() => {
     verificationCodeTimer.value--
-    if (verificationCodeTimer.value <= 0) clearInterval(timerId)
+    if (verificationCodeTimer.value <= 0 && timerId) clearInterval(timerId)
   }, 1000)
 }
 
-const handleLogin = () => {
+const handleLogin = (): void => {
   errorMsg.value = ''
   // ... (保留原有的表单验证逻辑)
 

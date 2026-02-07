@@ -18,7 +18,7 @@ const theme = ref({
 })
 
 // 格式化时间
-const formatTime = (ms: number) => {
+const formatTime = (ms: number): string => {
   if (!ms) return '0:00'
   const s = Math.floor(ms / 1000)
   const min = Math.floor(s / 60)
@@ -28,12 +28,12 @@ const formatTime = (ms: number) => {
 
 const progressPercent = computed(() => playerStore.progressPercent)
 
-const beginSeek = () => {
+const beginSeek = (): void => {
   if (!isDragging.value) isDragging.value = true
   if (!playerStore.isSeeking) playerStore.isSeeking = true
 }
 
-const endSeek = () => {
+const endSeek = (): void => {
   setTimeout(() => {
     isDragging.value = false
     playerStore.isSeeking = false
@@ -41,7 +41,7 @@ const endSeek = () => {
 }
 
 // 处理进度跳转
-const handleSeek = async (e: Event) => {
+const handleSeek = async (e: Event): Promise<void> => {
   beginSeek()
   const val = Number((e.target as HTMLInputElement).value)
   const targetTime = (val / 100) * (playerStore.currentSong?.duration ?? 0)
@@ -52,7 +52,7 @@ const handleSeek = async (e: Event) => {
   }
 }
 
-const handleInput = (e: Event) => {
+const handleInput = (e: Event): void => {
   beginSeek()
   const val = Number((e.target as HTMLInputElement).value)
   playerStore.currentTime = (val / 100) * (playerStore.currentSong?.duration ?? 0)
@@ -62,7 +62,7 @@ const handleInput = (e: Event) => {
 /**
  * 核心逻辑：提取颜色并计算对比度
  */
-const updateTheme = async () => {
+const updateTheme = async (): Promise<void> => {
   // 必须确保图片已加载且有地址
   if (!imgRef.value || !playerStore.currentSong?.cover) return
 
@@ -104,8 +104,8 @@ const updateTheme = async () => {
 }
 
 // 当图片加载完成后触发
-const onImageLoad = () => {
-  updateTheme()
+const onImageLoad = (): void => {
+  void updateTheme()
 }
 
 </script>

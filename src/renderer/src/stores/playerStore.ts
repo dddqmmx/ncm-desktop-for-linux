@@ -76,7 +76,10 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   // 根据目标音质选择可用音质（不可用则降级）
-  const getPlayableQuality = (song: Song, targetQuality: SoundQualityType): SoundQualityType | null => {
+  const getPlayableQuality = (
+    song: Song,
+    targetQuality: SoundQualityType
+  ): SoundQualityType | null => {
     const available = getAvailableQualities(song)
     if (available.includes(targetQuality)) return targetQuality
 
@@ -109,7 +112,7 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
 
-  const syncProgress = async () => {
+  const syncProgress = async (): Promise<void> => {
     if (isSeeking.value) return
     try {
       const progressMs = await window.api.get_progress();
@@ -121,12 +124,12 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  const startTimer = () => {
+  const startTimer = (): void => {
     if (progressTimer) return
     progressTimer = setInterval(syncProgress, 1000)
   }
 
-  const stopTimer = () => {
+  const stopTimer = (): void => {
     if (progressTimer) {
       clearInterval(progressTimer)
       progressTimer = null
@@ -135,7 +138,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   // --- 核心操作 (Actions) ---
 
-const playNext = async (isAuto = false) => {
+const playNext = async (isAuto = false): Promise<void> => {
   if (playlist.value.length === 0) return
 
   // 1. 处理单曲循环
@@ -164,7 +167,7 @@ const playNext = async (isAuto = false) => {
 }
 
   // 2. 播放上一首
-  const playPrev = async () => {
+  const playPrev = async (): Promise<void> => {
     if (playlist.value.length === 0) return
 
     let prevIndex = 0
@@ -185,7 +188,7 @@ const playNext = async (isAuto = false) => {
   let playToken = 0
   const isSwitching = ref(false)
 
-  const waitForEnd = async (songId: number, token: number) => {
+  const waitForEnd = async (songId: number, token: number): Promise<void> => {
     try {
       await window.api.wait_finished()
       // 丢弃在切歌期间或过期 token 的结束事件
@@ -197,7 +200,9 @@ const playNext = async (isAuto = false) => {
       stopTimer()
       currentTime.value = duration.value
       await playNext(true)
-    } catch { }
+    } catch {
+      // intentionally ignore end events when switching/ending
+    }
   }
 
 
@@ -206,7 +211,7 @@ const playNext = async (isAuto = false) => {
    * @param list 歌曲列表
    * @param startIndex 从哪一首开始播放，默认为第0首
    */
-  const playAll = async (list: CurrentSong[], startIndex = 0) => {
+  const playAll = async (list: CurrentSong[], startIndex = 0): Promise<void> => {
     if (list.length === 0) return
 
     // 1. 替换整个播放列表
@@ -222,7 +227,11 @@ const playNext = async (isAuto = false) => {
  * @param startTime 起始时间
  * @param forceRestart 是否强制重新加载资源（用于单曲循环）
  */
-const playMusic = async (song_id: number, startTime: number = 0, forceRestart: boolean = false) => {
+const playMusic = async (
+  song_id: number,
+  startTime: number = 0,
+  forceRestart: boolean = false
+): Promise<void> => {
   if (isSwitching.value) return
 
   // 只有在【非强制重启】且【歌曲相同】且【正在播放】时才拦截
@@ -254,7 +263,11 @@ const playMusic = async (song_id: number, startTime: number = 0, forceRestart: b
     }
 
     // 2. 停止旧播放（重要：确保底层状态重置）
-    try { await window.api.pause() } catch {}
+    try {
+      await window.api.pause()
+    } catch {
+      // ignore pause failure during track switch
+    }
 
     // 3. 调用底层播放
     // 注意：如果是单曲循环，startTime 为 0
@@ -271,7 +284,7 @@ const playMusic = async (song_id: number, startTime: number = 0, forceRestart: b
       playlist.value.splice(currentIndex.value + 1, 0, {
         id: song.id,
         name: song.name,
-        artist: song.ar.map((a: any) => a.name).join(', '),
+        artist: song.ar.map((artist) => artist.name).join(', '),
         cover: song.al.picUrl,
         duration: song.dt
       })
@@ -287,28 +300,28 @@ const playMusic = async (song_id: number, startTime: number = 0, forceRestart: b
 }
 
   // 3. 播放列表管理
-  const setPlaylist = (list: CurrentSong[]) => {
+  const setPlaylist = (list: CurrentSong[]): void => {
     playlist.value = list
   }
 
-  const clearPlaylist = () => {
+  const clearPlaylist = (): void => {
     playlist.value = []
   }
 
-  const addToPlaylist = (song: CurrentSong) => {
+  const addToPlaylist = (song: CurrentSong): void => {
     if (!playlist.value.some(s => s.id === song.id)) {
       playlist.value.push(song)
     }
   }
 
-  const togglePlayMode = () => {
+  const togglePlayMode = (): void => {
     const modes: PlayMode[] = ['loop', 'random', 'single']
     const nextIdx = (modes.indexOf(playMode.value) + 1) % modes.length
     playMode.value = modes[nextIdx]
   }
 
   // --- 原有逻辑保持 ---
-  const initFromStorage = async () => {
+  const initFromStorage = async (): Promise<void> => {
     if (!currentSongId.value) return
     const song = await getSongDetail(currentSongId.value)
     if (song) {
@@ -317,11 +330,11 @@ const playMusic = async (song_id: number, startTime: number = 0, forceRestart: b
     }
   }
 
-  const setPlayerData = (song: Song, playing: boolean = true) => {
+  const setPlayerData = (song: Song, playing: boolean = true): void => {
     currentSong.value = {
       id: song.id,
       name: song.name,
-      artist: song.ar.map((a: any) => a.name).join(', '),
+      artist: song.ar.map((artist) => artist.name).join(', '),
       cover: song.al.picUrl,
       duration: song.dt
     }
@@ -329,7 +342,7 @@ const playMusic = async (song_id: number, startTime: number = 0, forceRestart: b
     isPlaying.value = playing
   }
 
-  const togglePlay = async () => {
+  const togglePlay = async (): Promise<void> => {
     if (isPlaying.value) {
       await window.api.pause()
       isPlaying.value = false
@@ -343,12 +356,12 @@ const playMusic = async (song_id: number, startTime: number = 0, forceRestart: b
     isPlaying.value = true
   }
 
-  const seek = async (timeInMs: number) => {
+  const seek = async (timeInMs: number): Promise<void> => {
     currentTime.value = timeInMs
     await window.api.seek(timeInMs / 1000)
   }
 
-  const toggleFullScreen = () => {
+  const toggleFullScreen = (): void => {
     isFullScreen.value = !isFullScreen.value
   }
 

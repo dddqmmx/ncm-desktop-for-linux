@@ -3,9 +3,10 @@ import { usePlayerStore } from '@renderer/stores/playerStore'
 import { SongDetailResult } from '@renderer/types/songDetail'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { PlaylistCatlist, PlaylistCategory } from '@renderer/types/playlistCatlist'
+import type { SearchResult, Song as SearchSong } from '@renderer/types/search'
 
 const searchQuery = ref('')
-const searchResults = ref<any | null>(null) // 兼容类型
+const searchResults = ref<SearchResult | null>(null)
 const isSearching = ref(false)
 const coverMap = ref<Record<number, string>>({})
 
@@ -16,7 +17,7 @@ const lastScrollTop = ref(0)      // 记录上次滚动位置
 
 const hideProgress = ref(0) // 0 = 完全显示，1 = 完全划走
 
-const handleScroll = () => {
+const handleScroll = (): void => {
   if (!scrollContainer.value) return
   const cur = scrollContainer.value.scrollTop
   const delta = cur - lastScrollTop.value
@@ -69,7 +70,7 @@ const hasSearched = computed(() =>
   searchQuery.value.trim().length > 0 && searchResults.value !== null
 )
 
-const loadCover = async (id: number) => {
+const loadCover = async (id: number): Promise<void> => {
   if (coverMap.value[id]) return
   const res = await window.api.song_detail({ ids: [id] }) as { body?: SongDetailResult }
   const url = res.body?.songs?.[0]?.al?.picUrl
@@ -89,10 +90,10 @@ const handleSearch = async (): Promise<void> => {
     const res = await window.api.search({
       keywords: kw,
       limit: 20,
-    }) as { body?: { result?: any } }
+    }) as { body?: { result?: SearchResult } }
     if (res.body?.result?.songs) {
       searchResults.value = res.body.result
-      res.body.result.songs.forEach((s: any) => loadCover(s.id))
+      res.body.result.songs.forEach((song) => loadCover(song.id))
     } else {
       searchResults.value = null
     }
@@ -110,8 +111,8 @@ const clearSearch = (): void => {
 }
 
 const playerStore = usePlayerStore()
-const playSong = (song: any) => {
-  playerStore.playMusic(song.id)
+const playSong = (song: SearchSong): void => {
+  void playerStore.playMusic(song.id)
 }
 </script>
 
@@ -191,7 +192,7 @@ const playSong = (song: any) => {
               <div class="song-details">
                 <div class="song-title">{{ song.name }}</div>
                 <div class="song-artist">
-                  {{ song.artists.map((a: any) => a.name).join(', ') }}
+                  {{ song.artists.map((artist) => artist.name).join(', ') }}
                   <span v-if="song.album.name"> · {{ song.album.name }}</span>
                 </div>
               </div>

@@ -38,8 +38,8 @@ export interface UserAccount {
     description: string | null
     detailDescription: string | null
     defaultAvatar: boolean
-    expertTags: any[] | null
-    experts: any | null
+    expertTags: unknown[] | null
+    experts: unknown | null
     djStatus: number
     locationStatus: number
     vipType: number
@@ -51,7 +51,7 @@ export interface UserAccount {
     remarkName: string | null
     viptypeVersion: number
     authenticationTypes: number
-    avatarDetail: any | null
+    avatarDetail: unknown | null
     anchor: boolean
   }
 }

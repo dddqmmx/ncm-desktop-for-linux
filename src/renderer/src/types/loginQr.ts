@@ -1,4 +1,4 @@
-interface LoginQrKey {
+export interface LoginQrKey {
   code: number
   data: {
     code: number
@@ -6,7 +6,7 @@ interface LoginQrKey {
   }
 }
 
-interface LoginQrCreate {
+export interface LoginQrCreate {
   code: number
   data: {
     qrurl: string
@@ -14,7 +14,7 @@ interface LoginQrCreate {
   }
 }
 
-interface LoginQrCheck {
+export interface LoginQrCheck {
   code: number
   message: string
   cookie: string

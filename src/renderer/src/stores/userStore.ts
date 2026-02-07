@@ -8,7 +8,7 @@ export const useUserStore = defineStore('user', () => {
   const userInfo = ref<UserAccount | undefined>(undefined)
   const isLoggedIn = ref(!!localStorage.getItem('app_cookie'))
   // === Action: 登录成功保存数据 ===
-  function setLoginData(newCookie: string) {
+  function setLoginData(newCookie: string): void {
     cookie.value = newCookie
     isLoggedIn.value = true
     // 写入 localStorage 实现长期存储
@@ -17,7 +17,7 @@ export const useUserStore = defineStore('user', () => {
     document.cookie = newCookie
   }
 
-  async function getUserAccount(){
+  async function getUserAccount(): Promise<void> {
     if (isLoggedIn.value) {
       const res = await window.api.user_account({cookie: cookie.value}) as { body?: UserAccount }
       userInfo.value = res.body
@@ -25,7 +25,7 @@ export const useUserStore = defineStore('user', () => {
   }
 
   // === Action: 登出 ===
-  function logout() {
+  function logout(): void {
     cookie.value = ''
     userInfo.value = undefined
     isLoggedIn.value = false

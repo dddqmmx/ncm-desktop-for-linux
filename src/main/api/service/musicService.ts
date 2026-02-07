@@ -69,7 +69,7 @@ export const MusicService = {
   recommend_resource: createMethod(recommend_resource),
   recommend_songs: createMethod(recommend_songs),
 
-  song_detail(params: { ids: number[] | string | any }) {
+  song_detail(params: { ids: number[] | string; [key: string]: unknown }) {
     const ids = Array.isArray(params.ids) ? params.ids.join(',') : params.ids;
     return responseHandler(song_detail({ ...params, ids }));
   },

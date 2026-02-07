@@ -23,7 +23,7 @@ watch(() => playerStore.currentSong?.id, () => {
 /**
  * 移除单曲
  */
-const removeSong = (id: string | number) => {
+const removeSong = (id: string | number): void => {
   const index = playerStore.playlist.findIndex(item => item.id === id)
   if (index !== -1) {
     playerStore.playlist.splice(index, 1)
@@ -33,7 +33,7 @@ const removeSong = (id: string | number) => {
 /**
  * 拖拽结束回调
  */
-const onDragEnd = () => {
+const onDragEnd = (): void => {
   console.log('新播放顺序已同步')
 }
 </script>

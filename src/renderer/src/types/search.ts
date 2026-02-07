@@ -1,5 +1,5 @@
 
-interface Artist {
+export interface Artist {
   id: number;
   name: string;
   img1v1Url: string; // 对应 JSON 中的头像链接
@@ -14,7 +14,7 @@ interface Artist {
 /**
  * 专辑信息
  */
-interface Album {
+export interface Album {
   id: number;
   name: string;
   picId: number;     // JSON 中是大整数，但类型为 number
@@ -30,7 +30,7 @@ interface Album {
 /**
  * 歌曲详情
  */
-interface Song {
+export interface Song {
   id: number;
   name: string;
   duration: number;  // 时长 (毫秒)
@@ -51,7 +51,7 @@ interface Song {
 /**
  * 搜索结果主体 (对应 result)
  */
-interface SearchResult {
+export interface SearchResult {
   songs: Song[];
   songCount: number;
   hasMore: boolean;

@@ -41,7 +41,7 @@ const appInfo = {
 }
 
 const checkingUpdate = ref(false)
-const checkUpdate = () => {
+const checkUpdate = (): void => {
   checkingUpdate.value = true
   setTimeout(() => { checkingUpdate.value = false }, 2000)
 }

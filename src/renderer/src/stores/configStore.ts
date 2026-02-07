@@ -18,7 +18,7 @@ export const useConfigStore = defineStore("config", () => {
      localStorage.setItem("sound_quality", newVal);
   });
 
-  function setSoundQuality(q: SoundQualityType) {
+  function setSoundQuality(q: SoundQualityType): void {
     soundQuality.value = q;
     localStorage.setItem("sound_quality", q);
   }

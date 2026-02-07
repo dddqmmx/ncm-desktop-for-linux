@@ -25,14 +25,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed } from 'vue'
 
-const props = defineProps<{ tabs: any[], activeTab: string }>();
+type SettingsTab = {
+  id: string
+  name: string
+  icon: string
+}
 
-const indicatorStyle = computed(() => {
-  const index = props.tabs.findIndex(t => t.id === props.activeTab);
-  return { transform: `translateY(${index * 52}px)` };
-});
+const props = defineProps<{ tabs: SettingsTab[]; activeTab: string }>()
+
+const indicatorStyle = computed((): { transform: string } => {
+  const index = props.tabs.findIndex((t) => t.id === props.activeTab)
+  return { transform: `translateY(${index * 52}px)` }
+})
 </script>
 
 <style scoped>

@@ -3,15 +3,15 @@
  */
 export interface PlaylistDetail {
   code: number;
-  relatedVideos: any | null;
+  relatedVideos: unknown | null;
   playlist: Playlist;
-  urls: any | null;
+  urls: unknown | null;
   privileges: Privilege[];
-  sharedPrivilege: any | null;
-  resEntrance: any | null;
-  fromUsers: any | null;
+  sharedPrivilege: unknown | null;
+  resEntrance: unknown | null;
+  fromUsers: unknown | null;
   fromUserCount: number;
-  songFromUsers: any | null;
+  songFromUsers: unknown | null;
 }
 
 /**
@@ -43,39 +43,39 @@ export interface Playlist {
   ordered: boolean;
   description: string | null;
   tags: string[];
-  updateFrequency: any | null;
+  updateFrequency: unknown | null;
   backgroundCoverId: number;
   backgroundCoverUrl: string | null;
   titleImage: number;
   titleImageUrl: string | null;
   detailPageTitle: string | null;
   englishTitle: string | null;
-  officialPlaylistType: any | null;
+  officialPlaylistType: unknown | null;
   copied: boolean;
-  relateResType: any | null;
+  relateResType: unknown | null;
   coverStatus: number;
-  subscribers: any[];
-  subscribed: any | null;
+  subscribers: unknown[];
+  subscribed: unknown | null;
   creator: Creator;
   tracks: Track[];
   trackIds: TrackIdInfo[];
-  videoIds: any | null;
-  videos: any | null;
+  videoIds: unknown | null;
+  videos: unknown | null;
   shareCount: number;
   commentCount: number;
-  remixVideo: any | null;
-  newDetailPageRemixVideo: any | null;
-  sharedUsers: any | null;
-  historySharedUsers: any | null;
+  remixVideo: unknown | null;
+  newDetailPageRemixVideo: unknown | null;
+  sharedUsers: unknown | null;
+  historySharedUsers: unknown | null;
   gradeStatus: string;
-  score: any | null;
-  algTags: any | null;
-  distributeTags: any[];
+  score: unknown | null;
+  algTags: unknown | null;
+  distributeTags: unknown[];
   trialMode: number;
-  displayTags: any | null;
+  displayTags: unknown | null;
   displayUserInfoAsTagOnly: boolean;
   playlistType: string;
-  bizExtInfo: Record<string, any>;
+  bizExtInfo: Record<string, unknown>;
   mixPodcastPlaylist: boolean;
   podcastTrackCount: number;
 }
@@ -105,12 +105,12 @@ export interface Creator {
   authority: number;
   mutual: boolean;
   expertTags: string[] | null;
-  experts: any | null;
+  experts: unknown | null;
   djStatus: number;
   vipType: number;
   remarkName: string | null;
   authenticationTypes: number;
-  avatarDetail: any | null;
+  avatarDetail: unknown | null;
   avatarImgIdStr: string;
   backgroundImgIdStr: string;
   anchor: boolean;
@@ -132,7 +132,7 @@ export interface Track {
   rt: string | null;
   fee: number;
   v: number;
-  crbt: any | null;
+  crbt: unknown | null;
   cf: string;
   al: Album;
   dt: number;
@@ -141,31 +141,31 @@ export interface Track {
   l: AudioQuality | null;
   sq: AudioQuality | null;
   hr: AudioQuality | null;
-  a: any | null;
+  a: unknown | null;
   cd: string;
   no: number;
-  rtUrl: any | null;
+  rtUrl: unknown | null;
   ftype: number;
-  rtUrls: any[];
+  rtUrls: unknown[];
   djId: number;
   copyright: number;
   s_id: number;
   mark: number;
   originCoverType: number;
   originSongSimpleData: OriginSongData | null;
-  tagPicList: any | null;
+  tagPicList: unknown | null;
   resourceState: boolean;
   version: number;
-  songJumpInfo: any | null;
-  entertainmentTags: any | null;
-  awardTags: any | null;
-  displayTags: any | null;
+  songJumpInfo: unknown | null;
+  entertainmentTags: unknown | null;
+  awardTags: unknown | null;
+  displayTags: unknown | null;
   single: number;
-  noCopyrightRcmd: any | null;
-  alg: any | null;
-  displayReason: any | null;
+  noCopyrightRcmd: unknown | null;
+  alg: unknown | null;
+  displayReason: unknown | null;
   rtype: number;
-  rurl: any | null;
+  rurl: unknown | null;
   mst: number;
   cp: number;
   mv: number;
@@ -221,10 +221,10 @@ export interface TrackIdInfo {
   uid: number;
   rcmdReason: string;
   rcmdReasonTitle: string;
-  sc: any | null;
-  f: any | null;
-  sr: any | null;
-  dpr: any | null;
+  sc: unknown | null;
+  f: unknown | null;
+  sr: unknown | null;
+  dpr: unknown | null;
   tr: number;
 }
 
@@ -245,7 +245,7 @@ export interface Privilege {
   cs: boolean;
   maxbr: number;
   fl: number;
-  pc: any | null;
+  pc: unknown | null;
   toast: boolean;
   flag: number;
   paidBigBang: boolean;
@@ -258,7 +258,7 @@ export interface Privilege {
   plLevel: string;
   dlLevel: string;
   flLevel: string;
-  rscl: any | null;
+  rscl: unknown | null;
   freeTrialPrivilege: FreeTrialPrivilege;
   rightSource: number;
   chargeInfoList: ChargeInfo[];
@@ -269,10 +269,10 @@ export interface Privilege {
 export interface FreeTrialPrivilege {
   resConsumable: boolean;
   userConsumable: boolean;
-  listenType: any | null;
-  cannotListenReason: any | null;
-  playReason: any | null;
-  freeLimitTagType: any | null;
+  listenType: unknown | null;
+  cannotListenReason: unknown | null;
+  playReason: unknown | null;
+  freeLimitTagType: unknown | null;
 }
 
 export interface ChargeInfo {

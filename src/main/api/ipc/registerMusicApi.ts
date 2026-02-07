@@ -1,10 +1,12 @@
 import { ipcMain } from 'electron'
-import { MusicService } from '../service/musicService';
+import { MusicService } from '../service/musicService'
+
+type MusicApiHandler = (params: unknown) => Promise<unknown>
 
 
 export function registerMusicApi(): void {
   // 基础的一对一映射
-  const simpleMappings: Record<string, (params: any) => Promise<any>> = {
+  const simpleMappings = {
     'music:login': MusicService.login,
     'music:userCloud': MusicService.getUserCloud,
     'music:search': MusicService.search,
@@ -20,15 +22,15 @@ export function registerMusicApi(): void {
     'music:recommendResource': MusicService.recommend_resource,
     'music:recommendSongs': MusicService.recommend_songs,
     'music:songUrl': MusicService.song_url, // 如果参数结构一致，也可以放这里
-  };
+  } as Record<string, MusicApiHandler>
 
   // 批量注册
   Object.entries(simpleMappings).forEach(([channel, method]) => {
-    ipcMain.handle(channel, (_, params) => method(params));
-  });
+    ipcMain.handle(channel, (_event, params) => method(params))
+  })
 
   // 2. 特殊逻辑单独处理 (参数结构转换)
-  ipcMain.handle('music:banner', (_, type) => MusicService.getBanner({ type }));
+  ipcMain.handle('music:banner', (_event, type) => MusicService.getBanner({ type }))
 
-  console.log('Netease Music API registered successfully.');
+  console.log('Netease Music API registered successfully.')
 }

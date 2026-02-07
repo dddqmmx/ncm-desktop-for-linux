@@ -16,25 +16,25 @@ const displayTrack = computed(() => ({
 // --- 进度条逻辑 ---
 const isDragging = ref(false)
 
-const beginSeek = () => {
+const beginSeek = (): void => {
   if (!isDragging.value) isDragging.value = true
   if (!playerStore.isSeeking) playerStore.isSeeking = true
 }
 
-const endSeek = () => {
+const endSeek = (): void => {
   setTimeout(() => {
     isDragging.value = false
     playerStore.isSeeking = false
   }, 500)
 }
 
-const handleInput = (e: Event) => {
+const handleInput = (e: Event): void => {
   beginSeek()
   const val = Number((e.target as HTMLInputElement).value)
   playerStore.currentTime = (val / 100) * playerStore.duration
 }
 
-const handleSeek = async (e: Event) => {
+const handleSeek = async (e: Event): Promise<void> => {
   beginSeek()
   const val = Number((e.target as HTMLInputElement).value)
   const targetTime = (val / 100) * playerStore.duration
@@ -47,7 +47,7 @@ const handleSeek = async (e: Event) => {
 
 // 播放列表状态
 const isPlaylistVisible = ref(false)
-const togglePlaylist = () => {
+const togglePlaylist = (): void => {
   isPlaylistVisible.value = !isPlaylistVisible.value
 }
 

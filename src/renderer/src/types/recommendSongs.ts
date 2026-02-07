@@ -9,12 +9,12 @@ export interface RecommendSongs {
 export interface DailySongsData {
   fromCache: boolean;
   dailySongs: Song[];
-  orderSongs: any[];
+  orderSongs: unknown[];
   recommendReasons: RecommendReason[];
-  mvResourceInfos: any | null;
+  mvResourceInfos: unknown | null;
   demote: boolean;
   algReturnDemote: boolean;
-  dailyRecommendInfo: any | null;
+  dailyRecommendInfo: unknown | null;
 }
 
 /**
@@ -34,7 +34,7 @@ export interface Song {
   rt: string | null;
   fee: number;            // 费用标识
   v: number;              // 版本
-  crbt: any | null;
+  crbt: unknown | null;
   cf: string;
   al: Album;              // 专辑信息
   dt: number;             // 时长 (ms)
@@ -43,28 +43,28 @@ export interface Song {
   l: AudioQuality;        // 低品质音源
   sq: AudioQuality | null; // 无损音源
   hr: AudioQuality | null; // Hi-Res音源
-  a: any | null;
+  a: unknown | null;
   cd: string;             // CD编号
   no: number;             // 歌曲序号
   rtUrl: string | null;
   ftype: number;
-  rtUrls: any[];
+  rtUrls: unknown[];
   djId: number;
   copyright: number;
   s_id: number;
   mark: number;
   originCoverType: number;
-  originSongSimpleData: any | null;
-  tagPicList: any | null;
+  originSongSimpleData: unknown | null;
+  tagPicList: unknown | null;
   resourceState: boolean;
   version: number;
-  songJumpInfo: any | null;
-  entertainmentTags: any | null;
-  awardTags: any | null;
-  displayTags: any | null;
-  markTags: any[];
+  songJumpInfo: unknown | null;
+  entertainmentTags: unknown | null;
+  awardTags: unknown | null;
+  displayTags: unknown | null;
+  markTags: unknown[];
   single: number;
-  noCopyrightRcmd: any | null;
+  noCopyrightRcmd: unknown | null;
   rtype: number;
   rurl: string | null;
   mst: number;
@@ -128,7 +128,7 @@ export interface Privilege {
   cs: boolean;
   maxbr: number;
   fl: number;
-  pc: any | null;
+  pc: unknown | null;
   toast: boolean;
   flag: number;
   paidBigBang: boolean;
@@ -141,7 +141,7 @@ export interface Privilege {
   plLevel: string;
   dlLevel: string;
   flLevel: string;
-  rscl: any | null;
+  rscl: unknown | null;
   freeTrialPrivilege: FreeTrialPrivilege;
   rightSource: number;
   chargeInfoList: ChargeInfo[];
@@ -150,7 +150,7 @@ export interface Privilege {
   plLevels: string[] | null;
   dlLevels: string[] | null;
   ignoreCache: boolean | null;
-  bd: any | null;
+  bd: unknown | null;
 }
 
 /**
@@ -159,10 +159,10 @@ export interface Privilege {
 export interface FreeTrialPrivilege {
   resConsumable: boolean;
   userConsumable: boolean;
-  listenType: any | null;
-  cannotListenReason: any | null;
-  playReason: any | null;
-  freeLimitTagType: any | null;
+  listenType: unknown | null;
+  cannotListenReason: unknown | null;
+  playReason: unknown | null;
+  freeLimitTagType: unknown | null;
 }
 
 /**

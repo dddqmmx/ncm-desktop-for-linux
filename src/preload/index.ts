@@ -1,13 +1,19 @@
 import { electronAPI } from '@electron-toolkit/preload'
-import { ipcRenderer } from 'electron';
-import { contextBridge } from 'electron/renderer';
+import { ipcRenderer } from 'electron'
+import { contextBridge } from 'electron/renderer'
 
 /**
  * 优化点：工厂函数
  * 预先绑定 IPC 调度逻辑，减少重复代码解析开销
  */
-const invoke = (channel: string) => (params?: any) => ipcRenderer.invoke(channel, params);
-const invokeArgs = (channel: string) => (...args: any[]) => ipcRenderer.invoke(channel, ...args);
+const invoke =
+  (channel: string) =>
+  (params?: unknown): Promise<unknown> =>
+    ipcRenderer.invoke(channel, params)
+const invokeArgs =
+  (channel: string) =>
+  (...args: unknown[]): Promise<unknown> =>
+    ipcRenderer.invoke(channel, ...args)
 
 const api = {
   // --- 网易云 API (单参数模式) ---
@@ -50,8 +56,8 @@ if (process.contextIsolated) {
     console.error(error)
   }
 } else {
-  // @ts-ignore (define in dts)
+  // @ts-ignore -- defined in preload d.ts for non-isolated context
   window.electron = electronAPI
-  // @ts-ignore
+  // @ts-ignore -- defined in preload d.ts for non-isolated context
   window.api = api
 }

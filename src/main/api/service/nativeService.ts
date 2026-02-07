@@ -1,7 +1,7 @@
 import path from "path";
 import { app } from "electron";
 
-function resolveNative() {
+function resolveNative(): string {
   // 打包态（AppImage / linux-unpacked 都对）
   if (app.isPackaged) {
     return path.join(
@@ -21,6 +21,7 @@ function resolveNative() {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- native .node must be loaded via require
 const native = require(resolveNative());
 
 

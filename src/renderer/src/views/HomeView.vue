@@ -14,7 +14,7 @@ const recommendPlaylists = ref<RecommendItem[]>([])
 const dailySongs = ref<Song[]>([])
 
 
-onMounted(async () => {
+onMounted(async (): Promise<void> => {
   try {
     const recommendResource = await window.api.recommend_resource({
       cookie: userStore.cookie
@@ -37,7 +37,7 @@ onMounted(async () => {
 /**
  * 处理滚轮事件：将垂直滚动转换为水平滚动
  */
-const handleWheel = (e: WheelEvent) => {
+const handleWheel = (e: WheelEvent): void => {
   const container = e.currentTarget as HTMLElement
   if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) {
     container.scrollLeft += e.deltaY
@@ -45,8 +45,11 @@ const handleWheel = (e: WheelEvent) => {
   }
 }
 
-const formatArtists = (artists: any[]) => artists.map(ar => ar.name).join(' / ')
-const playSong = (song: Song) => playerStore.playMusic(song.id)
+const formatArtists = (artists: Song['ar']): string =>
+  artists.map((artist) => artist.name).join(' / ')
+const playSong = (song: Song): void => {
+  void playerStore.playMusic(song.id)
+}
 </script>
 
 <template>

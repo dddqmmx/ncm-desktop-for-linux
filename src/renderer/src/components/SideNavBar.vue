@@ -10,26 +10,26 @@ const showLoginModal = ref(false)
 const showSettingsModal = ref(false)
 const createdPlaylists = ref<Playlist[]>([])
 
-const toggleLoginModal = () => {
+const toggleLoginModal = (): void => {
   if (!userStore.userInfo) {
     showLoginModal.value = true
   }
 }
-const handleLoginSuccess = async () => {
+const handleLoginSuccess = async (): Promise<void> => {
   showLoginModal.value = false
   setTimeout(() => {
     window.location.reload()
   }, 300)
 }
 
-const handleLogout = () => {
+const handleLogout = (): void => {
   // 假设 store 中有 logout 方法，没有的话请根据实际情况清除状态
   userStore.logout()
   createdPlaylists.value = []
 }
 
 // 获取歌单的方法
-const fetchPlaylists = async () => {
+const fetchPlaylists = async (): Promise<void> => {
   const uid = userStore.userInfo?.account.id
   if (!uid) {
     createdPlaylists.value = []

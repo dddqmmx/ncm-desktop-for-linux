@@ -12,27 +12,27 @@ const loading = ref(true)
 const activeSongId = ref<number | null>(null)
 
 // --- 格式化工具 ---
-const formatDuration = (ms: number) => {
+const formatDuration = (ms: number): string => {
   const totalSeconds = Math.floor(ms / 1000)
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
-const formatCount = (num: number) => {
+const formatCount = (num: number): string => {
   if (num >= 100000000) return (num / 100000000).toFixed(1) + '亿'
   if (num >= 10000) return (num / 10000).toFixed(1) + '万'
   return num.toString()
 }
 
-const formatDate = (timestamp: number) => {
+const formatDate = (timestamp: number): string => {
   const date = new Date(timestamp)
   return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
 }
 
 
 // --- 数据获取 ---
-const fetchPlaylistDetail = async (playlistId) => {
+const fetchPlaylistDetail = async (playlistId: string | string[]): Promise<void> => {
   try {
     loading.value = true
     const res = await window.api.playlist_detail({ id: playlistId }) as { body?: PlaylistDetail }
@@ -47,33 +47,33 @@ const fetchPlaylistDetail = async (playlistId) => {
 }
 
 // --- 辅助方法：将 Track 转换为 CurrentSong ---
-const mapTrackToCurrentSong = (track: any): CurrentSong => ({
+const mapTrackToCurrentSong = (track: Track): CurrentSong => ({
   id: track.id,
   name: track.name,
-  artist: track.ar.map((a: any) => a.name).join(', '),
+  artist: track.ar.map((artist) => artist.name).join(', '),
   cover: track.al.picUrl,
   duration: track.dt
 })
 
 
 // --- 处理“播放全部”按钮点击 ---
-const handlePlayAll = () => {
+const handlePlayAll = (): void => {
   if (!tracks.value.length) return
 
   // 转换整个列表
   const songList = tracks.value.map(mapTrackToCurrentSong)
 
   // 调用 store 里的 playAll
-  playerStore.playAll(songList)
+  void playerStore.playAll(songList)
 
   // 更新当前活跃 ID（可选，用于 UI 高亮）
   activeSongId.value = songList[0].id
 }
 
 
-const handlePlaySong = (song: Track) => {
+const handlePlaySong = (song: Track): void => {
   activeSongId.value = song.id
-  playerStore.playMusic(song.id)
+  void playerStore.playMusic(song.id)
 }
 
 watch(() => route.params.id, (playlistId) => {
