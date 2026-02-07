@@ -1,0 +1,61 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*' # 当推送以 v 开头的标签（如 v1.0.0）时触发
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # 关键步骤：因为你有原生模块 (napi-rs)，需要安装 Rust 环境
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      # 缓存 Rust 编译产物，加速后续构建
+      - name: Cache Cargo
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            native/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install dependencies
+        run: npm install
+
+      # 执行检查（可选，确保发布的代码是没问题的）
+      - name: Lint and Typecheck
+        run: |
+          npm run lint
+          npm run typecheck
+
+      # 构建项目 (会自动触发 build:native 和 electron-vite build)
+      - name: Build project
+        run: npm run build
+
+      # 使用 electron-builder 打包并发布到 GitHub Release
+      - name: Build and Publish Electron App
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 根据你的 package.json，执行 build:linux
+          # electron-builder 会自动根据 tag 创建 GitHub Release 并上传文件
+          npx electron-builder --linux --publish always
