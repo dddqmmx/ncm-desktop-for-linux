@@ -15,5 +15,5 @@ cpal = "0.17.1"
 symphonia = { version = "0.5", features = ["all-formats", "all-codecs"] }
 ringbuf = "0.4.8"
 stream-download = {version ="0.23.0",  features = ["reqwest-rustls"]}
-reqwest = { version = "0.13.1", features = ["stream"] }
+reqwest = { version = "0.13.1", features = ["stream", "rustls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
