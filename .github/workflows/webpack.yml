@@ -25,6 +25,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
+          
+      - name: Install ALSA deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev
 
       # 缓存 Rust 编译产物
       - name: Cache Cargo
