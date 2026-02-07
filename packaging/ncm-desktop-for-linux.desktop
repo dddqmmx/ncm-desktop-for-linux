@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=NCM Linux
-Comment=NetEase Cloud Music client for Linux
-Exec=ncm-desktop-for-linux
-Icon=ncm-desktop-for-linux
-Terminal=false
-Categories=AudioVideo;Music;
-StartupWMClass=ncm-desktop-for-linux
