@@ -1,25 +1,34 @@
 import path from "path";
+import fs from "fs"; // 需要引入 fs 模块来做路径探测
 import { app } from "electron";
 
 function resolveNative(): string {
-  // 打包态（AppImage / linux-unpacked 都对）
-  if (app.isPackaged) {
-    return path.join(
-      process.resourcesPath,
-      "native",
-      "index.node"
-    );
+  // 1. 开发态 (Development)
+  if (!app.isPackaged) {
+    return path.join(__dirname, '..', '..', 'native', 'index.node')
   }
 
-  // 开发态
+  // 2. 打包态 (Packaged)
+
+  // 优先适配：Linux 系统安装模式 (例如 Arch Linux AUR)
+  // 在系统安装模式下，app.getAppPath() 通常指向 /usr/lib/项目名/app.asar
+  // 我们希望在 app.asar 的同级目录下寻找 native 文件夹
+  const asarDir = path.dirname(app.getAppPath());
+  const systemPath = path.join(asarDir, "native", "index.node");
+
+  if (process.platform === 'linux' && fs.existsSync(systemPath)) {
+    return systemPath;
+  }
+
+  // 默认/兜底：AppImage 或标准安装结构
+  // 在 AppImage 中，process.resourcesPath 指向挂载点内的 resources 目录
   return path.join(
-    __dirname,
-    "..",
-    "..",
+    process.resourcesPath,
     "native",
     "index.node"
   );
 }
+
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- native .node must be loaded via require
 const native = require(resolveNative());
