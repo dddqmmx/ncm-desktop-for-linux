@@ -5,14 +5,12 @@ on:
     tags:
       - 'v*' # 当推送以 v 开头的标签（如 v1.0.0）时触发
   workflow_dispatch: # 允许手动触发，用于测试编译
-  
-permissions:
-  contents: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
