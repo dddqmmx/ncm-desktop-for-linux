@@ -32,7 +32,8 @@ package() {
   cd "$srcdir/ncm-desktop-for-linux"
 
   # 主程序（AppImage）
-  install -Dm755 dist/*.AppImage \
+  appimage=$(ls dist/*.AppImage | grep -v blockmap)
+  install -Dm755 "$appimage" \
     "$pkgdir/usr/bin/ncm-desktop-for-linux"
 
   # desktop 文件

@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=NCM Desktop For linux
+Name=NCM Linux
 Comment=NetEase Cloud Music client for Linux
 Exec=ncm-desktop-for-linux
 Icon=ncm-desktop-for-linux
