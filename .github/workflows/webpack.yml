@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - 'v*' # 当推送以 v 开头的标签（如 v1.0.0）时触发
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch: # 允许手动触发，用于测试编译
 
 jobs:
   release:
@@ -20,13 +20,13 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      # 关键步骤：因为你有原生模块 (napi-rs)，需要安装 Rust 环境
+      # 安装 Rust 环境（针对 napi-rs 原生模块）
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
-      # 缓存 Rust 编译产物，加速后续构建
+      # 缓存 Rust 编译产物
       - name: Cache Cargo
         uses: actions/cache@v3
         with:
@@ -41,21 +41,34 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # 执行检查（可选，确保发布的代码是没问题的）
+      # 执行检查
       - name: Lint and Typecheck
         run: |
           npm run lint
           npm run typecheck
 
-      # 构建项目 (会自动触发 build:native 和 electron-vite build)
+      # 构建项目 (包含 build:native 和 electron-vite build)
       - name: Build project
         run: npm run build
 
-      # 使用 electron-builder 打包并发布到 GitHub Release
-      - name: Build and Publish Electron App
+      # 使用 electron-builder 打包
+      - name: Package and Publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 根据你的 package.json，执行 build:linux
-          # electron-builder 会自动根据 tag 创建 GitHub Release 并上传文件
-          npx electron-builder --linux --publish always
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "检测到 Tag，正在打包并发布到 Release..."
+            npx electron-builder --linux --publish always
+          else
+            echo "手动触发构建，仅打包不发布..."
+            npx electron-builder --linux --publish never
+          fi
+
+      # 将生成的 AppImage 上传为 Artifact，方便手动触发后下载测试
+      - name: Upload Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ncm-desktop-linux-appimage
+          path: dist/*.AppImage # electron-builder 默认打包输出在 dist 目录
+          retention-days: 5 # 测试包保留5天即可
