@@ -3,30 +3,28 @@ import fs from "fs"; // 需要引入 fs 模块来做路径探测
 import { app } from "electron";
 
 function resolveNative(): string {
-  // 1. 开发态 (Development)
+  // 1. dev（electron-vite dev）
   if (!app.isPackaged) {
     return path.join(__dirname, '..', '..', 'native', 'index.node')
   }
 
-  // 2. 打包态 (Packaged)
+  const appPath = app.getAppPath()
 
-  // 优先适配：Linux 系统安装模式 (例如 Arch Linux AUR)
-  // 在系统安装模式下，app.getAppPath() 通常指向 /usr/lib/项目名/app.asar
-  // 我们希望在 app.asar 的同级目录下寻找 native 文件夹
-  const asarDir = path.dirname(app.getAppPath());
-  const systemPath = path.join(asarDir, "native", "index.node");
-
-  if (process.platform === 'linux' && fs.existsSync(systemPath)) {
-    return systemPath;
+  // 2. system electron / AUR（无 asar）
+  // appPath 形如：/usr/lib/xxx/out 或 /home/.../out
+  if (!appPath.endsWith('.asar')) {
+    return path.join(appPath, 'native', 'index.node')
   }
 
-  // 默认/兜底：AppImage 或标准安装结构
-  // 在 AppImage 中，process.resourcesPath 指向挂载点内的 resources 目录
-  return path.join(
-    process.resourcesPath,
-    "native",
-    "index.node"
-  );
+  // 3. asar 安装（AppImage / deb）
+  const asarDir = path.dirname(appPath)
+  const asarNative = path.join(asarDir, 'native', 'index.node')
+  if (fs.existsSync(asarNative)) {
+    return asarNative
+  }
+
+  // 4. 最后兜底（AppImage）
+  return path.join(process.resourcesPath, 'native', 'index.node')
 }
 
 
