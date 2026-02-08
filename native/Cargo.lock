@@ -1058,6 +1058,7 @@ version = "0.1.0"
 dependencies = [
  "cpal 0.17.1",
  "napi",
+ "napi-build",
  "napi-derive",
  "once_cell",
  "reqwest",
