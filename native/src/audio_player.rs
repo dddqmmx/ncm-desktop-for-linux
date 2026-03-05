@@ -88,6 +88,172 @@ pub struct AudioPlayer {
 }
 
 impl AudioPlayer {
+    fn is_supported_output_format(fmt: cpal::SampleFormat) -> bool {
+        matches!(
+            fmt,
+            cpal::SampleFormat::I8
+                | cpal::SampleFormat::U8
+                | cpal::SampleFormat::I16
+                | cpal::SampleFormat::U16
+                | cpal::SampleFormat::I24
+                | cpal::SampleFormat::U24
+                | cpal::SampleFormat::I32
+                | cpal::SampleFormat::U32
+                | cpal::SampleFormat::F32
+                | cpal::SampleFormat::F64
+        )
+    }
+
+    fn device_desc(device: &cpal::Device) -> String {
+        device
+            .description()
+            .map(|desc| desc.to_string())
+            .unwrap_or_else(|_| "<unknown>".to_string())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn is_linux_hw_device(device: &cpal::Device) -> bool {
+        device
+            .description()
+            .map(|desc| desc.name().contains("hw:") && !desc.name().contains("plughw:"))
+            .unwrap_or(false)
+    }
+
+    fn preferred_output_formats(
+        bits_per_sample: Option<u32>,
+        source_sample_format: Option<SymphoniaSampleFormat>,
+    ) -> Vec<cpal::SampleFormat> {
+        let mut prefer = Vec::with_capacity(12);
+        let mut push_unique = |fmt: cpal::SampleFormat| {
+            if !prefer.contains(&fmt) {
+                prefer.push(fmt);
+            }
+        };
+
+        if let Some(fmt) = source_sample_format {
+            match fmt {
+                SymphoniaSampleFormat::S8 => {
+                    push_unique(cpal::SampleFormat::I8);
+                    push_unique(cpal::SampleFormat::I16);
+                    push_unique(cpal::SampleFormat::I24);
+                    push_unique(cpal::SampleFormat::I32);
+                }
+                SymphoniaSampleFormat::U8 => {
+                    push_unique(cpal::SampleFormat::U8);
+                    push_unique(cpal::SampleFormat::U16);
+                    push_unique(cpal::SampleFormat::U24);
+                    push_unique(cpal::SampleFormat::U32);
+                }
+                SymphoniaSampleFormat::S16 => {
+                    push_unique(cpal::SampleFormat::I16);
+                    push_unique(cpal::SampleFormat::I24);
+                    push_unique(cpal::SampleFormat::I32);
+                }
+                SymphoniaSampleFormat::U16 => {
+                    push_unique(cpal::SampleFormat::U16);
+                    push_unique(cpal::SampleFormat::U24);
+                    push_unique(cpal::SampleFormat::U32);
+                }
+                SymphoniaSampleFormat::S24 => {
+                    push_unique(cpal::SampleFormat::I24);
+                    push_unique(cpal::SampleFormat::I32);
+                }
+                SymphoniaSampleFormat::U24 => {
+                    push_unique(cpal::SampleFormat::U24);
+                    push_unique(cpal::SampleFormat::U32);
+                }
+                SymphoniaSampleFormat::S32 => {
+                    push_unique(cpal::SampleFormat::I32);
+                    push_unique(cpal::SampleFormat::I24);
+                }
+                SymphoniaSampleFormat::U32 => {
+                    push_unique(cpal::SampleFormat::U32);
+                    push_unique(cpal::SampleFormat::U24);
+                }
+                SymphoniaSampleFormat::F32 => {
+                    push_unique(cpal::SampleFormat::F32);
+                    push_unique(cpal::SampleFormat::F64);
+                }
+                SymphoniaSampleFormat::F64 => {
+                    push_unique(cpal::SampleFormat::F64);
+                    push_unique(cpal::SampleFormat::F32);
+                }
+            }
+        }
+
+        match bits_per_sample {
+            Some(0..=8) => {
+                push_unique(cpal::SampleFormat::I8);
+                push_unique(cpal::SampleFormat::U8);
+            }
+            Some(9..=16) => {
+                push_unique(cpal::SampleFormat::I16);
+                push_unique(cpal::SampleFormat::U16);
+            }
+            Some(17..=24) => {
+                push_unique(cpal::SampleFormat::I24);
+                push_unique(cpal::SampleFormat::U24);
+            }
+            Some(_) => {
+                push_unique(cpal::SampleFormat::I32);
+                push_unique(cpal::SampleFormat::U32);
+            }
+            None => {}
+        }
+
+        // Practical compatibility fallback order.
+        for fmt in [
+            cpal::SampleFormat::I32,
+            cpal::SampleFormat::U32,
+            cpal::SampleFormat::I24,
+            cpal::SampleFormat::U24,
+            cpal::SampleFormat::F32,
+            cpal::SampleFormat::F64,
+            cpal::SampleFormat::I16,
+            cpal::SampleFormat::U16,
+            cpal::SampleFormat::I8,
+            cpal::SampleFormat::U8,
+        ] {
+            push_unique(fmt);
+        }
+
+        prefer
+    }
+
+    fn maybe_fallback_to_default_device(&mut self) -> Result<bool, Box<dyn Error>> {
+        #[cfg(target_os = "linux")]
+        {
+            // Only fallback from direct `hw:*` selection. This keeps bit-perfect preferred
+            // while preserving compatibility if the direct device cannot satisfy the track.
+            if !Self::is_linux_hw_device(&self.device) {
+                return Ok(false);
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            return Ok(false);
+        }
+
+        let host = cpal::default_host();
+        let default_device = match host.default_output_device() {
+            Some(device) => device,
+            None => return Ok(false),
+        };
+
+        let current_desc = Self::device_desc(&self.device);
+        let default_desc = Self::device_desc(&default_device);
+        if current_desc == default_desc {
+            return Ok(false);
+        }
+
+        println!(
+            "[audio] fallback to default output device for compatibility: {}",
+            default_desc
+        );
+        self.device = default_device;
+        Ok(true)
+    }
+
     pub fn new(device_name_filter: Option<&str>) -> Result<Self, Box<dyn Error>> {
         let host = cpal::default_host();
 
@@ -128,17 +294,11 @@ impl AudioPlayer {
 
         println!(
             "[audio] using output device: {}",
-            device
-                .description()
-                .map(|desc| desc.to_string())
-                .unwrap_or_else(|_| "<unknown>".to_string())
+            Self::device_desc(&device)
         );
         #[cfg(target_os = "linux")]
         {
-            let is_hw = device
-                .description()
-                .map(|desc| desc.name().contains("hw:") && !desc.name().contains("plughw:"))
-                .unwrap_or(false);
+            let is_hw = Self::is_linux_hw_device(&device);
             if !is_hw {
                 println!(
                     "[audio] WARNING: non-`hw:*` device selected; bit-perfect may NOT be guaranteed (system mixer/resampler may be active)."
@@ -287,47 +447,163 @@ impl AudioPlayer {
         let channels = meta.channels;
 
         // 3. 硬件配置检查
-        let (config, sample_format) =
-            self.find_best_config(sr, channels, meta.bits_per_sample, meta.sample_format)?;
+        let (config, sample_format) = match self.find_best_config(
+            sr,
+            channels,
+            meta.bits_per_sample,
+            meta.sample_format,
+        ) {
+            Ok(cfg) => cfg,
+            Err(primary_err) => {
+                let primary_msg = primary_err.to_string();
 
-        // 修正：cpal 的 config.sample_rate 是一个结构体，需通过 .0 取值
-        if config.sample_rate != sr {
-            return Err(format!(
-                "Sample-rate mismatch: file={}Hz, output={}Hz",
-                sr, config.sample_rate
+                if self.maybe_fallback_to_default_device()? {
+                    println!("[audio] retrying config selection on default output device...");
+                    self.find_best_config(
+                            sr,
+                            channels,
+                            meta.bits_per_sample,
+                            meta.sample_format,
+                        )
+                        .map_err(|fallback_err| {
+                            format!(
+                                "No compatible output config for this track. primary_error={}; fallback_error={}",
+                                primary_msg, fallback_err
+                            )
+                        })?
+                } else {
+                    return Err(primary_msg.into());
+                }
+            }
+        };
+
+        if meta.bits_per_sample.unwrap_or(16) > 16
+            && matches!(
+                sample_format,
+                cpal::SampleFormat::I16 | cpal::SampleFormat::U16
             )
-            .into());
+        {
+            println!(
+                "[audio] WARNING: source is {}-bit but output uses {:?}; precision may be reduced.",
+                meta.bits_per_sample.unwrap_or(0),
+                sample_format
+            );
         }
 
-        // 4. 创建全新的缓冲区和解码线程（为 bit-perfect 避免不必要的格式转换）
+        // 4. 创建全新的缓冲区和解码线程
         let state_for_cb = self.state.clone();
         let stream = match sample_format {
             cpal::SampleFormat::I16 => {
-                // 只允许在源 <= 16bit 时使用 i16 输出（避免 24/32bit 被截断）
-                if meta.bits_per_sample.unwrap_or(16) > 16 {
-                    return Err(format!(
-                    "Bit-perfect requires 32-bit output for {}-bit source; device doesn't support i32",
-                    meta.bits_per_sample.unwrap_or(0)
-                )
-                .into());
-                }
-
                 let rb = HeapRb::<i16>::new(sr as usize * channels as usize * 2);
                 let (producer, consumer) = rb.split();
+                let stream = self.build_stream::<i16, _>(
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
                 self.start_decode_thread::<i16>(meta, producer);
-                self.build_stream::<i16, _>(&config, consumer, state_for_cb, channels as usize)?
+                stream
+            }
+            cpal::SampleFormat::U16 => {
+                let rb = HeapRb::<u16>::new(sr as usize * channels as usize * 2);
+                let (producer, consumer) = rb.split();
+                let stream = self.build_stream::<u16, _>(
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
+                self.start_decode_thread::<u16>(meta, producer);
+                stream
+            }
+            cpal::SampleFormat::I8 => {
+                let rb = HeapRb::<i8>::new(sr as usize * channels as usize * 2);
+                let (producer, consumer) = rb.split();
+                let stream =
+                    self.build_stream::<i8, _>(&config, consumer, state_for_cb, channels as usize)?;
+                self.start_decode_thread::<i8>(meta, producer);
+                stream
+            }
+            cpal::SampleFormat::U8 => {
+                let rb = HeapRb::<u8>::new(sr as usize * channels as usize * 2);
+                let (producer, consumer) = rb.split();
+                let stream =
+                    self.build_stream::<u8, _>(&config, consumer, state_for_cb, channels as usize)?;
+                self.start_decode_thread::<u8>(meta, producer);
+                stream
+            }
+            cpal::SampleFormat::I24 => {
+                let rb = HeapRb::<i32>::new(sr as usize * channels as usize * 2);
+                let (producer, consumer) = rb.split();
+                let stream = self.build_stream_converted::<i32, cpal::I24, _>(
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
+                self.start_decode_thread::<i32>(meta, producer);
+                stream
+            }
+            cpal::SampleFormat::U24 => {
+                let rb = HeapRb::<u32>::new(sr as usize * channels as usize * 2);
+                let (producer, consumer) = rb.split();
+                let stream = self.build_stream_converted::<u32, cpal::U24, _>(
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
+                self.start_decode_thread::<u32>(meta, producer);
+                stream
             }
             cpal::SampleFormat::I32 => {
                 let rb = HeapRb::<i32>::new(sr as usize * channels as usize * 2);
                 let (producer, consumer) = rb.split();
+                let stream = self.build_stream::<i32, _>(
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
                 self.start_decode_thread::<i32>(meta, producer);
-                self.build_stream::<i32, _>(&config, consumer, state_for_cb, channels as usize)?
+                stream
+            }
+            cpal::SampleFormat::U32 => {
+                let rb = HeapRb::<u32>::new(sr as usize * channels as usize * 2);
+                let (producer, consumer) = rb.split();
+                let stream = self.build_stream::<u32, _>(
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
+                self.start_decode_thread::<u32>(meta, producer);
+                stream
             }
             cpal::SampleFormat::F32 => {
                 let rb = HeapRb::<f32>::new(sr as usize * channels as usize * 2);
                 let (producer, consumer) = rb.split();
+                let stream = self.build_stream::<f32, _>(
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
                 self.start_decode_thread::<f32>(meta, producer);
-                self.build_stream::<f32, _>(&config, consumer, state_for_cb, channels as usize)?
+                stream
+            }
+            cpal::SampleFormat::F64 => {
+                let rb = HeapRb::<f64>::new(sr as usize * channels as usize * 2);
+                let (producer, consumer) = rb.split();
+                let stream = self.build_stream::<f64, _>(
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
+                self.start_decode_thread::<f64>(meta, producer);
+                stream
             }
             _ => return Err(format!("Unsupported sample format: {:?}", sample_format).into()),
         };
@@ -619,6 +895,85 @@ impl AudioPlayer {
         Ok(stream)
     }
 
+    fn build_stream_converted<In, Out, C>(
+        &self,
+        config: &cpal::StreamConfig,
+        mut consumer: C,
+        state: Arc<SharedState>,
+        channels: usize,
+    ) -> Result<cpal::Stream, Box<dyn Error>>
+    where
+        In: Copy + Send + 'static,
+        Out: cpal::SizedSample + cpal::FromSample<In> + Send + 'static,
+        C: Consumer<Item = In> + Observer<Item = In> + Send + 'static,
+    {
+        let stream = self.device.build_output_stream(
+            config,
+            move |data: &mut [Out], _: &cpal::OutputCallbackInfo| {
+                if state.discard_buffer.swap(false, Ordering::SeqCst) {
+                    while consumer.try_pop().is_some() {}
+                }
+
+                let buffered_samples = consumer.occupied_len();
+                let sr = state.sample_rate.load(Ordering::Relaxed) as usize;
+                let decoder_done = state.decoder_done.load(Ordering::Relaxed);
+                let min_samples_to_resume = sr * channels;
+
+                let mut is_buffering = state.waiting_for_seek.load(Ordering::Relaxed);
+                if is_buffering {
+                    if buffered_samples >= min_samples_to_resume || decoder_done {
+                        state.waiting_for_seek.store(false, Ordering::Relaxed);
+                    } else {
+                        data.fill(Out::EQUILIBRIUM);
+                        return;
+                    }
+                }
+
+                if !is_buffering && buffered_samples == 0 && !decoder_done {
+                    state.waiting_for_seek.store(true, Ordering::Relaxed);
+                    is_buffering = true;
+                }
+
+                if is_buffering {
+                    if buffered_samples >= min_samples_to_resume || decoder_done {
+                        state.waiting_for_seek.store(false, Ordering::Relaxed);
+                    } else {
+                        data.fill(Out::EQUILIBRIUM);
+                        return;
+                    }
+                }
+
+                if state.is_paused.load(Ordering::Relaxed) {
+                    data.fill(Out::EQUILIBRIUM);
+                    return;
+                }
+
+                let mut samples_read = 0usize;
+                for sample in data.iter_mut() {
+                    if let Some(s) = consumer.try_pop() {
+                        *sample = Out::from_sample(s);
+                        samples_read += 1;
+                    } else {
+                        *sample = Out::EQUILIBRIUM;
+                    }
+                }
+
+                if samples_read > 0 {
+                    state
+                        .current_frame
+                        .fetch_add((samples_read / channels) as u64, Ordering::Relaxed);
+                } else if decoder_done {
+                    if !state.is_finished.swap(true, Ordering::SeqCst) {
+                        state.finish_notify.notify_waiters();
+                    }
+                }
+            },
+            |_err| {},
+            None,
+        )?;
+        Ok(stream)
+    }
+
     fn find_best_config(
         &self,
         target_sr: u32,
@@ -648,23 +1003,8 @@ impl AudioPlayer {
             }
         }
 
-        // Bit-perfect rules:
-        // - Prefer integer output (i32 > i16) for integer PCM.
-        // - For >16-bit integer sources, require i32 (avoid truncation).
-        // - For float PCM sources, require f32 (avoid quantization).
-        let prefer: &[cpal::SampleFormat] = match source_sample_format {
-            Some(SymphoniaSampleFormat::F32 | SymphoniaSampleFormat::F64) => {
-                &[cpal::SampleFormat::F32]
-            }
-            _ => match bits_per_sample {
-                // Unknown: avoid truncation (prefer i32), but allow i16 for compatibility.
-                None => &[cpal::SampleFormat::I32, cpal::SampleFormat::I16],
-                Some(0..=16) => &[cpal::SampleFormat::I16, cpal::SampleFormat::I32],
-                Some(_) => &[cpal::SampleFormat::I32],
-            },
-        };
-
-        for fmt in prefer {
+        let prefer = Self::preferred_output_formats(bits_per_sample, source_sample_format);
+        for fmt in prefer.iter() {
             if let Some(c) = candidates.iter().find(|c| c.sample_format() == *fmt) {
                 println!(
                     "[audio] SELECTED: fmt={:?}, sample_rate={}Hz, channels={}",
@@ -675,8 +1015,23 @@ impl AudioPlayer {
             }
         }
 
-        println!("[audio] NO MATCH for requested config");
-        Err("Hardware doesn't support file's SR/Channels".into())
+        if let Some(c) = candidates
+            .iter()
+            .find(|c| Self::is_supported_output_format(c.sample_format()))
+        {
+            println!(
+                "[audio] WARNING: preferred sample formats not found, fallback to {:?}.",
+                c.sample_format()
+            );
+            let config: cpal::StreamConfig = c.with_sample_rate(target_sr).into();
+            return Ok((config, c.sample_format()));
+        }
+
+        println!("[audio] NO MATCH for requested sample_rate/channels in supported sample formats");
+        Err(
+            "Hardware doesn't support file's sample-rate/channels in compatible sample format"
+                .into(),
+        )
     }
 
     // --- 控制 API ---
@@ -764,19 +1119,11 @@ mod tests {
             None => return,
         };
 
-        let test_file =
-            "/home/dddqmmx/Downloads/74cd_0b57_db2f_70dca450aaf3f1ae70e88507811644c9.flac"; // 请确保路径正确
+        let test_file = "/home/dddqmmx/Music/生き様.flac"; // 请确保路径正确
 
         if std::path::Path::new(test_file).exists() {
             println!("Playing file...");
             player.play_file(test_file).await.unwrap();
-
-            sleep(Duration::from_secs(3));
-            player.seek(200);
-            sleep(Duration::from_secs(3));
-
-            player.seek(0);
-
             // 使用高性能等待
             println!("Waiting for audio to finish...");
             player.wait_finished().await;
