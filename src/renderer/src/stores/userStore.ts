@@ -19,7 +19,9 @@ export const useUserStore = defineStore('user', () => {
 
   async function getUserAccount(): Promise<void> {
     if (isLoggedIn.value) {
-      const res = await window.api.user_account({cookie: cookie.value}) as { body?: UserAccount }
+      const res = (await window.api.user_account({ cookie: cookie.value })) as {
+        body?: UserAccount
+      }
       userInfo.value = res.body
     }
   }

@@ -1,4 +1,4 @@
-import { Song, SongDetailResult } from '@renderer/types/songDetail'
+import { Song } from '@renderer/types/songDetail'
 import { defineStore } from 'pinia'
 import { ref, watch, computed } from 'vue'
 import { useUserStore } from './userStore'
@@ -6,7 +6,7 @@ import { SongUrl, type SoundQualityType } from '@renderer/types/song'
 import { useConfigStore } from './configStore'
 
 // 播放模式定义
-export type PlayMode =  'loop' | 'random' | 'single'
+export type PlayMode = 'loop' | 'random' | 'single'
 
 export interface CurrentSong {
   id: number
@@ -14,6 +14,19 @@ export interface CurrentSong {
   artist: string
   cover: string
   duration: number
+}
+
+// 新增：权限对象定义（用于判断新音质）
+interface Privilege {
+  id: number
+  playMaxBrLevel: string // 关键字段：jymaster, lossless, exhigh 等
+  chargeInfoList: unknown[]
+}
+
+// 扩展 API 返回类型
+interface ExtendedSongDetailResult {
+  songs: Song[]
+  privileges: Privilege[]
 }
 
 export const usePlayerStore = defineStore('player', () => {
@@ -41,92 +54,133 @@ export const usePlayerStore = defineStore('player', () => {
     return ((currentTime.value % duration.value) / duration.value) * 100
   })
 
-  // 获取当前歌曲在列表中的索引
   const currentIndex = computed(() => {
-    return playlist.value.findIndex(s => s.id === currentSongId.value)
+    return playlist.value.findIndex((s) => s.id === currentSongId.value)
   })
 
-  // --- 音质映射 ---
-  const qualityMap: Partial<Record<SoundQualityType, { key: keyof Song; rate: number }>> = {
-    standard: { key: 'l', rate: 128000 },
-    exhigh: { key: 'h', rate: 320000 },
-    lossless: { key: 'sq', rate: 964935 },
-    hires: { key: 'hr', rate: 192000 },
-    jyeffect: { key: 'jyeffect', rate: 999000 },
-  }
+  // --- 音质配置 ---
 
   // 降级顺序（从高到低）
-  const downgradeOrder: SoundQualityType[] = ['hires', 'lossless', 'exhigh', 'standard']
+  const downgradeOrder: SoundQualityType[] = [
+    'jymaster', // 超清母带
+    'sky',      // 沉浸声
+    'jyeffect', // 高清杜比
+    'hires',    // Hi-Res
+    'lossless', // 无损
+    'exhigh',   // 极高 (320k)
+    'standard'  // 标准 (128k)
+  ]
 
   // --- 私有辅助函数 ---
-  const getSongDetail = async (id: number): Promise<Song | undefined> => {
-    const res = await window.api.song_detail({ ids: [id] }) as { body?: SongDetailResult }
-    console.log(res)
-    return res.body?.songs?.[0]
-  }
 
-  // 获取支持的音质列表
-  const getAvailableQualities = (song: Song): SoundQualityType[] => {
-    const available: SoundQualityType[] = []
-    for (const [name, value] of Object.entries(qualityMap)) {
-      if (!value) continue
-      if (song[value.key as keyof Song]) available.push(name as SoundQualityType)
+  /**
+   * 获取歌曲详情和权限信息
+   * @returns 返回包含 song 和 privilege 的对象，如果失败返回 undefined
+   */
+  const getSongDetailData = async (id: number): Promise<{ song: Song; privilege: Privilege } | undefined> => {
+    try {
+      const res = (await window.api.song_detail({ ids: [id] })) as {
+        body?: ExtendedSongDetailResult
+      }
+      // 必须同时存在 songs 和 privileges 才算成功
+      if (res.body?.songs?.[0] && res.body?.privileges?.[0]) {
+        return {
+          song: res.body.songs[0],
+          privilege: res.body.privileges[0]
+        }
+      }
+    } catch (e) {
+      console.error('获取歌曲详情失败', e)
     }
-    return available
+    return undefined
   }
 
-  // 根据目标音质选择可用音质（不可用则降级）
-  const getPlayableQuality = (
-    song: Song,
+  /**
+   * 获取当前歌曲支持的所有音质列表
+   */
+  const getAvailableQualities = (song: Song, privilege: Privilege): SoundQualityType[] => {
+    const available: SoundQualityType[] = ['standard'] // 默认支持标准
+
+    // 1. 检查旧版字段 (存在即代表有资源)
+    if (song.h) available.push('exhigh')
+    if (song.sq) available.push('lossless')
+    if (song.hr) available.push('hires')
+
+    // 2. 检查新版权限字段 (Privilege)
+    const level = privilege.playMaxBrLevel
+
+    if (level === 'jymaster') {
+      available.push('jymaster')
+      // 通常支持 master 也意味着支持以下音质，补全以防万一
+      if (!available.includes('lossless')) available.push('lossless')
+      if (!available.includes('exhigh')) available.push('exhigh')
+    }
+
+    if (level === 'sky') available.push('sky')
+    if (level === 'jyeffect') available.push('jyeffect')
+
+    // 去重
+    return Array.from(new Set(available))
+  }
+
+  /**
+   * 根据目标音质计算最终请求的音质 (Level)
+   */
+  const computePlayableLevel = (
+    available: SoundQualityType[],
     targetQuality: SoundQualityType
-  ): SoundQualityType | null => {
-    const available = getAvailableQualities(song)
-    if (available.includes(targetQuality)) return targetQuality
-
-    const targetIndex = downgradeOrder.indexOf(targetQuality)
-    for (let i = targetIndex + 1; i < downgradeOrder.length; i++) {
-      if (available.includes(downgradeOrder[i])) return downgradeOrder[i]
+  ): SoundQualityType => {
+    // 如果目标音质直接可用
+    if (available.includes(targetQuality)) {
+      return targetQuality
     }
 
-    // 如果都没有，则返回最低可用
-    return available[available.length - 1] || null
+    // 否则按降级顺序查找
+    const targetIndex = downgradeOrder.indexOf(targetQuality)
+    // 从目标音质的下一级开始找
+    for (let i = targetIndex + 1; i < downgradeOrder.length; i++) {
+      const quality = downgradeOrder[i]
+      if (available.includes(quality)) {
+        console.log(`[音质降级] 目标: ${targetQuality} -> 实际: ${quality}`)
+        return quality
+      }
+    }
+
+    return 'standard' // 兜底
   }
 
-  // 获取歌曲播放 URL（自动降级音质）
-  const getSongUrl = async (
-    song_id: number,
-    targetQuality: SoundQualityType = 'hires',
-  ): Promise<string> => {
-    const song = await getSongDetail(song_id)
-    if (!song) return ''
-
-    const playableQuality = getPlayableQuality(song, targetQuality) || 'standard'
-
-    const res = (await window.api.song_url({
-      id: song_id,
-      level: playableQuality,
-      cookie: userStore.cookie,
-    })) as { body?: { data?: SongUrl[] } }
-
-    return res.body?.data?.[0].url ?? ''
+  /**
+   * 纯粹的 URL 获取函数
+   */
+  const fetchSongUrl = async (song_id: number, level: SoundQualityType): Promise<string> => {
+    try {
+      const res = (await window.api.song_url({
+        id: song_id,
+        level: level,
+        cookie: userStore.cookie
+      })) as { body?: { data?: SongUrl[] } }
+      return res.body?.data?.[0].url ?? ''
+    } catch (e) {
+      console.error('获取歌曲URL失败', e)
+      return ''
+    }
   }
-
 
   const syncProgress = async (): Promise<void> => {
     if (isSeeking.value) return
     try {
-      const progressMs = await window.api.get_progress();
+      const progressMs = await window.api.get_progress()
       if (progressMs !== undefined && progressMs !== null) {
-        currentTime.value = progressMs;
+        currentTime.value = progressMs
       }
     } catch (error) {
-      console.error('同步进度失败:', error);
+      console.error('同步进度失败:', error)
     }
   }
 
   const startTimer = (): void => {
     if (progressTimer) return
-    progressTimer = setInterval(syncProgress, 1000)
+    progressTimer = setInterval(syncProgress, 100)
   }
 
   const stopTimer = (): void => {
@@ -138,35 +192,32 @@ export const usePlayerStore = defineStore('player', () => {
 
   // --- 核心操作 (Actions) ---
 
-const playNext = async (isAuto = false): Promise<void> => {
-  if (playlist.value.length === 0) return
+  const playNext = async (isAuto = false): Promise<void> => {
+    if (playlist.value.length === 0) return
 
-  // 1. 处理单曲循环
-  if (isAuto && playMode.value === 'single' && currentSongId.value) {
-    // 强制重新播放当前歌曲
-    await playMusic(currentSongId.value, 0, true)
-    return
-  }
+    // 1. 处理单曲循环
+    if (isAuto && playMode.value === 'single' && currentSongId.value) {
+      await playMusic(currentSongId.value, 0, true)
+      return
+    }
 
-  // 2. 计算下一首的索引
-  let nextIndex = 0
-  if (playMode.value === 'random') {
-    nextIndex = Math.floor(Math.random() * playlist.value.length)
-  } else {
-    nextIndex = currentIndex.value + 1
-    // 如果是最后一首，循环回第一首
-    if (nextIndex >= playlist.value.length) {
-      nextIndex = 0
+    // 2. 计算下一首的索引
+    let nextIndex = 0
+    if (playMode.value === 'random') {
+      nextIndex = Math.floor(Math.random() * playlist.value.length)
+    } else {
+      nextIndex = currentIndex.value + 1
+      if (nextIndex >= playlist.value.length) {
+        nextIndex = 0
+      }
+    }
+
+    const nextSong = playlist.value[nextIndex]
+    if (nextSong) {
+      await playMusic(nextSong.id)
     }
   }
 
-  const nextSong = playlist.value[nextIndex]
-  if (nextSong) {
-    await playMusic(nextSong.id)
-  }
-}
-
-  // 2. 播放上一首
   const playPrev = async (): Promise<void> => {
     if (playlist.value.length === 0) return
 
@@ -184,14 +235,12 @@ const playNext = async (isAuto = false): Promise<void> => {
     await playMusic(prevSong.id)
   }
 
-  // 在 playToken 定义旁加上 switching
   let playToken = 0
   const isSwitching = ref(false)
 
   const waitForEnd = async (songId: number, token: number): Promise<void> => {
     try {
       await window.api.wait_finished()
-      // 丢弃在切歌期间或过期 token 的结束事件
       if (token !== playToken) return
       if (isSwitching.value) return
       if (currentSongId.value !== songId) return
@@ -201,105 +250,100 @@ const playNext = async (isAuto = false): Promise<void> => {
       currentTime.value = duration.value
       await playNext(true)
     } catch {
-      // intentionally ignore end events when switching/ending
+      // ignore
     }
   }
 
-
-  /**
-   * 播放整份列表
-   * @param list 歌曲列表
-   * @param startIndex 从哪一首开始播放，默认为第0首
-   */
   const playAll = async (list: CurrentSong[], startIndex = 0): Promise<void> => {
     if (list.length === 0) return
-
-    // 1. 替换整个播放列表
     playlist.value = [...list]
-
-    // 2. 播放指定位置的歌曲
     const targetSong = list[startIndex]
     await playMusic(targetSong.id)
   }
 
-/**
- * @param song_id 歌曲ID
- * @param startTime 起始时间
- * @param forceRestart 是否强制重新加载资源（用于单曲循环）
- */
-const playMusic = async (
-  song_id: number,
-  startTime: number = 0,
-  forceRestart: boolean = false
-): Promise<void> => {
-  if (isSwitching.value) return
+  /**
+   * 核心播放逻辑 (已修正音质选择)
+   */
+  const playMusic = async (
+    song_id: number,
+    startTime: number = 0,
+    forceRestart: boolean = false
+  ): Promise<void> => {
+    if (isSwitching.value) return
 
-  // 只有在【非强制重启】且【歌曲相同】且【正在播放】时才拦截
-  if (!forceRestart && currentSongId.value === song_id && isPlaying.value) {
-    return
-  }
-
-  // 如果是同首歌且暂停中，但不是自动播放触发的重播（即用户手动点播放）
-  // 且不是历史歌曲，则执行恢复
-  if (!forceRestart && currentSongId.value === song_id && !isPlaying.value && !isHistorySong.value) {
-    await window.api.resume()
-    isPlaying.value = true
-    return
-  }
-
-  // 开始切歌/重播流程
-  isSwitching.value = true
-  playToken++
-  const token = playToken
-
-  try {
-    // 1. 获取详情和 URL
-    const song = await getSongDetail(song_id)
-    const url = await getSongUrl(song_id,  configStore.soundQuality)
-
-    if (!song || !url) {
-      isSwitching.value = false
+    if (!forceRestart && currentSongId.value === song_id && isPlaying.value) {
       return
     }
 
-    // 2. 停止旧播放（重要：确保底层状态重置）
+    if (!forceRestart && currentSongId.value === song_id && !isPlaying.value && !isHistorySong.value) {
+      await window.api.resume()
+      isPlaying.value = true
+      return
+    }
+
+    isSwitching.value = true
+    playToken++
+    const token = playToken
+
     try {
-      await window.api.pause()
-    } catch {
-      // ignore pause failure during track switch
+      // 1. 获取完整详情 (含权限)
+      const detailData = await getSongDetailData(song_id)
+
+      if (!detailData) {
+        console.error('无法获取歌曲详情')
+        isSwitching.value = false
+        return
+      }
+
+      const { song, privilege } = detailData
+
+      // 2. 智能计算音质
+      const availableQualities = getAvailableQualities(song, privilege)
+      const targetLevel = computePlayableLevel(availableQualities, configStore.soundQuality)
+
+      console.log(`[播放信息] ID:${song_id} | 目标音质:${configStore.soundQuality} | 实际请求:${targetLevel}`)
+
+      // 3. 获取 URL
+      const url = await fetchSongUrl(song_id, targetLevel)
+
+      if (!url) {
+        console.error('无法获取播放链接')
+        // 这里可以添加自动切歌逻辑或者错误提示
+        isSwitching.value = false
+        return
+      }
+
+      try {
+        await window.api.pause()
+      } catch {
+        // ignore
+      }
+
+      await window.api.play_url(url, startTime / 1000)
+
+      setPlayerData(song, true)
+      isHistorySong.value = false
+      currentTime.value = startTime
+
+      const exists = playlist.value.some((s) => s.id === song_id)
+      if (!exists) {
+        playlist.value.splice(currentIndex.value + 1, 0, {
+          id: song.id,
+          name: song.name,
+          artist: song.ar.map((artist) => artist.name).join(', '),
+          cover: song.al.picUrl,
+          duration: song.dt
+        })
+      }
+
+      waitForEnd(song_id, token)
+    } catch (error) {
+      console.error('播放失败:', error)
+    } finally {
+      isSwitching.value = false
     }
-
-    // 3. 调用底层播放
-    // 注意：如果是单曲循环，startTime 为 0
-    await window.api.play_url(url, startTime / 1000)
-
-    // 4. 更新 UI 状态
-    setPlayerData(song, true)
-    isHistorySong.value = false
-    currentTime.value = startTime
-
-    // 5. 维护播放列表
-    const exists = playlist.value.some(s => s.id === song_id)
-    if (!exists) {
-      playlist.value.splice(currentIndex.value + 1, 0, {
-        id: song.id,
-        name: song.name,
-        artist: song.ar.map((artist) => artist.name).join(', '),
-        cover: song.al.picUrl,
-        duration: song.dt
-      })
-    }
-
-    // 6. 重新监听结束事件
-    waitForEnd(song_id, token)
-  } catch (error) {
-    console.error("播放失败:", error)
-  } finally {
-    isSwitching.value = false
   }
-}
 
-  // 3. 播放列表管理
   const setPlaylist = (list: CurrentSong[]): void => {
     playlist.value = list
   }
@@ -309,7 +353,7 @@ const playMusic = async (
   }
 
   const addToPlaylist = (song: CurrentSong): void => {
-    if (!playlist.value.some(s => s.id === song.id)) {
+    if (!playlist.value.some((s) => s.id === song.id)) {
       playlist.value.push(song)
     }
   }
@@ -320,12 +364,14 @@ const playMusic = async (
     playMode.value = modes[nextIdx]
   }
 
-  // --- 原有逻辑保持 ---
+  // --- 初始化逻辑 ---
   const initFromStorage = async (): Promise<void> => {
     if (!currentSongId.value) return
-    const song = await getSongDetail(currentSongId.value)
-    if (song) {
-      setPlayerData(song, false)
+    // 初始化时也需要获取新的 song 结构来更新 UI，虽然这里为了简单只取 song
+    // 注意：initFromStorage 只是为了 UI 显示，不需要 privilege
+    const data = await getSongDetailData(currentSongId.value)
+    if (data && data.song) {
+      setPlayerData(data.song, false)
       isHistorySong.value = true
     }
   }
@@ -375,15 +421,22 @@ const playMusic = async (
     localStorage.setItem('currentTime', Math.floor(time).toString())
   })
 
-  watch(isPlaying, (val) => {
-    if (val) startTimer()
-    else stopTimer()
-  }, { immediate: true })
+  watch(
+    isPlaying,
+    (val) => {
+      if (val) startTimer()
+      else stopTimer()
+    },
+    { immediate: true }
+  )
 
-  // 持久化播放列表和模式
-  watch(playlist, (newList) => {
-    localStorage.setItem('playlist', JSON.stringify(newList))
-  }, { deep: true })
+  watch(
+    playlist,
+    (newList) => {
+      localStorage.setItem('playlist', JSON.stringify(newList))
+    },
+    { deep: true }
+  )
 
   watch(playMode, (newMode) => {
     localStorage.setItem('playMode', newMode)

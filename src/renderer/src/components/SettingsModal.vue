@@ -118,6 +118,8 @@ const checkUpdate = (): void => {
                   <option value="lossless">无损(最高48khz,16bit)</option>
                   <option value="hires">Hi-Res (最高192khz,24bit)</option>
                   <option value="jyeffect">高清臻音 (96khz,24bit)</option>
+                  <option value="sky">沉浸环绕声 (最高5.1声道)</option>
+                  <option value="jymaster">超清母带 (192khz,24bit)</option>
                 </select>
               </SettingRow>
             </SettingGroup>

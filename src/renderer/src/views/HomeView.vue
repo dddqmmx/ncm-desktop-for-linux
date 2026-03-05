@@ -1,31 +1,30 @@
 <script setup lang="ts">
 import MediaCard from '../components/MediaCard.vue'
 import AlbumItem from '../components/AlbumItem.vue'
-import { onMounted, ref } from 'vue';
-import { useUserStore } from '@renderer/stores/userStore';
-import { RecommendResource, RecommendItem } from '@renderer/types/recommendResource';
-import router from '@renderer/router';
-import { RecommendSongs, Song } from '@renderer/types/recommendSongs';
-import { usePlayerStore } from '@renderer/stores/playerStore';
+import { onMounted, ref } from 'vue'
+import { useUserStore } from '@renderer/stores/userStore'
+import { RecommendResource, RecommendItem } from '@renderer/types/recommendResource'
+import router from '@renderer/router'
+import { RecommendSongs, Song } from '@renderer/types/recommendSongs'
+import { usePlayerStore } from '@renderer/stores/playerStore'
 
 const userStore = useUserStore()
 const playerStore = usePlayerStore()
 const recommendPlaylists = ref<RecommendItem[]>([])
 const dailySongs = ref<Song[]>([])
 
-
 onMounted(async (): Promise<void> => {
   try {
-    const recommendResource = await window.api.recommend_resource({
+    const recommendResource = (await window.api.recommend_resource({
       cookie: userStore.cookie
-    }) as { body?: RecommendResource }
+    })) as { body?: RecommendResource }
     if (recommendResource.body?.recommend) {
       recommendPlaylists.value = recommendResource.body.recommend
     }
 
-    const recommendSongsRes = await window.api.recommend_songs({
+    const recommendSongsRes = (await window.api.recommend_songs({
       cookie: userStore.cookie
-    }) as { body?: RecommendSongs }
+    })) as { body?: RecommendSongs }
     if (recommendSongsRes.body?.data?.dailySongs) {
       dailySongs.value = recommendSongsRes.body.data.dailySongs
     }
@@ -53,20 +52,16 @@ const playSong = (song: Song): void => {
 </script>
 
 <template>
-  <main class="scrollable-content" >
+  <main class="scrollable-content">
     <h1 class="page-title">主页</h1>
 
     <!-- 1. 每日推荐歌单部分 -->
-    <section class="section"  v-if="userStore.isLoggedIn">
+    <section v-if="userStore.isLoggedIn" class="section">
       <div class="section-header">
         <h2>每日推荐歌单</h2>
       </div>
 
-      <div
-        class="horizontal-scroll-container"
-        ref="playlistRow"
-        @wheel="handleWheel"
-      >
+      <div ref="playlistRow" class="horizontal-scroll-container" @wheel="handleWheel">
         <div class="cards-grid media-card">
           <MediaCard
             v-for="(item, index) in recommendPlaylists"
@@ -76,7 +71,7 @@ const playSong = (song: Song): void => {
             :image="item.picUrl"
             :is-first="index === 0"
             type="playlist"
-            @click="router.push('/playlist/'+item.id)"
+            @click="router.push('/playlist/' + item.id)"
           />
         </div>
       </div>
@@ -88,11 +83,7 @@ const playSong = (song: Song): void => {
         <h2>每日推荐歌曲</h2>
       </div>
 
-      <div
-        class="horizontal-scroll-container"
-        ref="songsRow"
-        @wheel="handleWheel"
-      >
+      <div ref="songsRow" class="horizontal-scroll-container" @wheel="handleWheel">
         <div v-if="dailySongs.length === 0" class="loading-text">加载中...</div>
         <div class="albums-row">
           <AlbumItem
@@ -191,7 +182,8 @@ const playSong = (song: Song): void => {
 }
 
 /* 内部内容布局 */
-.cards-grid, .albums-row {
+.cards-grid,
+.albums-row {
   display: flex;
   gap: 20px;
   /* 确保子元素顶部对齐，防止被拉伸 */
@@ -199,7 +191,8 @@ const playSong = (song: Song): void => {
 }
 
 /* 保持原有宽度逻辑不变 */
-.cards-grid > *, .albums-row > * {
+.cards-grid > *,
+.albums-row > * {
   flex: 0 0 auto;
   scroll-snap-align: start;
   width: 180px;
@@ -210,7 +203,6 @@ const playSong = (song: Song): void => {
   height: 260px;
   flex-shrink: 0; /* 横向滚动必加 */
 }
-
 
 /* 针对 MediaCard 的特殊宽度处理 */
 .cards-grid :deep(.large-card) {

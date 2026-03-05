@@ -4,7 +4,7 @@ import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 
 const DEFAULT_QUALITY: SoundQualityType = "hires";
-const SOUND_QUALITIES: SoundQualityType[] = ["standard", "exhigh", "lossless", "hires", "jyeffect"];
+const SOUND_QUALITIES: SoundQualityType[] = ["standard", "exhigh", "lossless", "hires", "jyeffect", "sky", "jymaster"];
 
 function getInitialQuality(): SoundQualityType {
   const saved = localStorage.getItem("sound_quality");
