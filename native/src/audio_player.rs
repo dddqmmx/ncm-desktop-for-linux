@@ -1,6 +1,7 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::HeapRb;
 use ringbuf::traits::{Consumer, Observer, Producer, Split};
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::io::{Read, Seek, SeekFrom};
 use std::num::NonZeroUsize;
@@ -67,6 +68,14 @@ struct AudioMetadata {
     format_reader: Box<dyn FormatReader>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutputDeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+    pub is_current: bool,
+}
+
 pub(crate) struct SharedState {
     pub(crate) is_paused: AtomicBool,
     pub(crate) current_frame: AtomicU64,
@@ -105,18 +114,97 @@ impl AudioPlayer {
     }
 
     fn device_desc(device: &cpal::Device) -> String {
+        let name = Self::device_display_name(device);
+        let id = Self::device_id(device);
+        if name == id {
+            name
+        } else {
+            format!("{name} [{id}]")
+        }
+    }
+
+    fn device_id(device: &cpal::Device) -> String {
+        device
+            .id()
+            .map(|id| id.to_string())
+            .or_else(|_| {
+                device
+                    .description()
+                    .map(|desc| desc.driver().unwrap_or(desc.name()).to_string())
+            })
+            .unwrap_or_else(|_| "<unknown>".to_string())
+    }
+
+    fn device_display_name(device: &cpal::Device) -> String {
         device
             .description()
-            .map(|desc| desc.to_string())
+            .map(|desc| desc.name().trim().to_string())
+            .or_else(|_| device.id().map(|id| id.to_string()))
             .unwrap_or_else(|_| "<unknown>".to_string())
     }
 
     #[cfg(target_os = "linux")]
+    fn linux_device_locator(device_id: &str) -> &str {
+        device_id.strip_prefix("alsa:").unwrap_or(device_id)
+    }
+
+    fn device_matches_filter(device: &cpal::Device, filter: &str) -> bool {
+        let id = Self::device_id(device);
+        if id == filter {
+            return true;
+        }
+
+        #[cfg(target_os = "linux")]
+        if Self::linux_device_locator(&id) == filter {
+            return true;
+        }
+
+        let name = Self::device_display_name(device);
+        name == filter || name.contains(filter)
+    }
+
+    #[cfg(target_os = "linux")]
     fn is_linux_hw_device(device: &cpal::Device) -> bool {
-        device
-            .description()
-            .map(|desc| desc.name().contains("hw:") && !desc.name().contains("plughw:"))
-            .unwrap_or(false)
+        Self::is_linux_hw_device_id(&Self::device_id(device))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn is_linux_hw_device_id(device_id: &str) -> bool {
+        let locator = Self::linux_device_locator(device_id);
+        locator.starts_with("hw:") && !locator.starts_with("plughw:")
+    }
+
+    #[cfg(target_os = "linux")]
+    fn should_list_linux_output_device(
+        device_id: &str,
+        current_id: Option<&str>,
+        default_id: Option<&str>,
+    ) -> bool {
+        if Some(device_id) == current_id
+            && Some(device_id) != default_id
+            && !Self::is_linux_hw_device_id(device_id)
+        {
+            return true;
+        }
+
+        if Some(device_id) == default_id && !Self::is_linux_hw_device_id(device_id) {
+            return false;
+        }
+
+        Self::is_linux_hw_device_id(device_id)
+    }
+
+    fn disambiguate_output_device_names(devices: &mut [OutputDeviceInfo]) {
+        let mut name_counts = HashMap::new();
+        for device in devices.iter() {
+            *name_counts.entry(device.name.clone()).or_insert(0usize) += 1;
+        }
+
+        for device in devices.iter_mut() {
+            if name_counts.get(&device.name).copied().unwrap_or_default() > 1 {
+                device.name = format!("{} [{}]", device.name, device.id);
+            }
+        }
     }
 
     fn preferred_output_formats(
@@ -240,57 +328,38 @@ impl AudioPlayer {
             None => return Ok(false),
         };
 
-        let current_desc = Self::device_desc(&self.device);
-        let default_desc = Self::device_desc(&default_device);
-        if current_desc == default_desc {
+        let current_id = Self::device_id(&self.device);
+        let default_id = Self::device_id(&default_device);
+        if current_id == default_id {
             return Ok(false);
         }
 
         println!(
             "[audio] fallback to default output device for compatibility: {}",
-            default_desc
+            Self::device_desc(&default_device)
         );
         self.device = default_device;
         Ok(true)
     }
 
-    pub fn new(device_name_filter: Option<&str>) -> Result<Self, Box<dyn Error>> {
-        let host = cpal::default_host();
-
-        // Bit-perfect on Linux requires bypassing any ALSA "plug"/mixer layers.
-        // Best-effort: prefer a direct `hw:*` device when the caller didn't request a device.
+    fn select_output_device(
+        host: &cpal::Host,
+        device_name_filter: Option<&str>,
+    ) -> Result<cpal::Device, Box<dyn Error>> {
         let device = if let Some(name) = device_name_filter {
             host.output_devices()?
-                .find(|d| {
-                    d.description()
-                        .map(|desc| desc.name().contains(name))
-                        .unwrap_or(false)
-                })
+                .find(|d| Self::device_matches_filter(d, name))
                 .ok_or("Device not found")?
         } else {
-            #[cfg(target_os = "linux")]
-            {
-                if let Ok(mut devices) = host.output_devices() {
-                    if let Some(dev) = devices.find(|d| {
-                        d.description()
-                            .map(|desc| {
-                                desc.name().contains("hw:") && !desc.name().contains("plughw:")
-                            })
-                            .unwrap_or(false)
-                    }) {
-                        dev
-                    } else {
-                        host.default_output_device().ok_or("No default device")?
-                    }
-                } else {
-                    host.default_output_device().ok_or("No default device")?
-                }
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                host.default_output_device().ok_or("No default device")?
-            }
+            host.default_output_device().ok_or("No default device")?
         };
+
+        Ok(device)
+    }
+
+    pub fn new(device_name_filter: Option<&str>) -> Result<Self, Box<dyn Error>> {
+        let host = cpal::default_host();
+        let device = Self::select_output_device(&host, device_name_filter)?;
 
         println!(
             "[audio] using output device: {}",
@@ -330,9 +399,50 @@ impl AudioPlayer {
         self.state.clone()
     }
 
+    pub fn output_devices(&self) -> Result<Vec<OutputDeviceInfo>, Box<dyn Error>> {
+        let host = cpal::default_host();
+        let default_id = host
+            .default_output_device()
+            .map(|device| Self::device_id(&device));
+        let current_id = Self::device_id(&self.device);
+
+        let mut devices = Vec::new();
+        let mut seen_ids = HashSet::new();
+        for device in host.output_devices()? {
+            let id = Self::device_id(&device);
+            if !seen_ids.insert(id.clone()) {
+                continue;
+            }
+
+            #[cfg(target_os = "linux")]
+            if !Self::should_list_linux_output_device(
+                &id,
+                Some(current_id.as_str()),
+                default_id.as_deref(),
+            ) {
+                continue;
+            }
+
+            devices.push(OutputDeviceInfo {
+                id: id.clone(),
+                name: Self::device_display_name(&device),
+                is_default: default_id.as_deref() == Some(id.as_str()),
+                is_current: id == current_id,
+            });
+        }
+
+        Self::disambiguate_output_device_names(&mut devices);
+        devices.sort_by(|left, right| left.name.cmp(&right.name));
+        Ok(devices)
+    }
+
     // --- 核心业务方法 ---
 
-    pub async fn play_url(&mut self, url: &str) -> Result<(), Box<dyn Error>> {
+    pub async fn play_url(
+        &mut self,
+        url: &str,
+        start_at: Option<Duration>,
+    ) -> Result<(), Box<dyn Error>> {
         let extension = std::path::Path::new(url)
             .extension()
             .and_then(|s| s.to_str())
@@ -354,10 +464,14 @@ impl AudioPlayer {
         // 传入长度
         let source = Box::new(SeekableSource::new(reader, content_len));
         let meta = self.spawn_probe_task(source, extension).await?;
-        self.setup_and_play(meta)
+        self.setup_and_play(meta, start_at)
     }
 
-    pub async fn play_file(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
+    pub async fn play_file(
+        &mut self,
+        path: &str,
+        start_at: Option<Duration>,
+    ) -> Result<(), Box<dyn Error>> {
         let path_buf = std::path::Path::new(path);
         let extension = path_buf
             .extension()
@@ -367,7 +481,7 @@ impl AudioPlayer {
         let source = Box::new(file);
 
         let meta = self.spawn_probe_task(source, extension).await?;
-        self.setup_and_play(meta)
+        self.setup_and_play(meta, start_at)
     }
 
     async fn spawn_probe_task(
@@ -422,7 +536,11 @@ impl AudioPlayer {
         })
     }
 
-    fn setup_and_play(&mut self, meta: AudioMetadata) -> Result<(), Box<dyn Error>> {
+    fn setup_and_play(
+        &mut self,
+        meta: AudioMetadata,
+        start_at: Option<Duration>,
+    ) -> Result<(), Box<dyn Error>> {
         // 1. 先调用 stop 确保旧流销毁，旧 state 被标记为终止
         self.stop();
 
@@ -607,6 +725,10 @@ impl AudioPlayer {
             }
             _ => return Err(format!("Unsupported sample format: {:?}", sample_format).into()),
         };
+
+        if let Some(start_at) = start_at.filter(|target| !target.is_zero()) {
+            Self::schedule_seek(&self.state, start_at);
+        }
 
         stream.play()?;
         self.stream = Some(stream);
@@ -1051,15 +1173,21 @@ impl AudioPlayer {
         Duration::from_secs_f64(frames as f64 / rate as f64)
     }
     // 修改 seek API：在外部调用时也设置 waiting_for_seek 以及清 0 buffered_frames
-    pub fn seek(&self, time_secs: u32) {
+    fn schedule_seek(state: &SharedState, target: Duration) {
         {
-            // 使用花括号缩小锁的作用域
-            let mut seek_req = self.state.seek_request.lock().unwrap();
-            *seek_req = Some(Duration::from_secs(time_secs as u64));
-        } // 锁在这里立即释放
+            let mut seek_req = state.seek_request.lock().unwrap();
+            *seek_req = Some(target);
+        }
 
-        // 这个标记一定要在锁释放后立即设为 true
-        self.state.has_seek_request.store(true, Ordering::SeqCst);
+        let target_frame =
+            (target.as_secs_f64() * state.sample_rate.load(Ordering::Relaxed) as f64) as u64;
+        state.current_frame.store(target_frame, Ordering::SeqCst);
+        state.waiting_for_seek.store(true, Ordering::SeqCst);
+        state.has_seek_request.store(true, Ordering::SeqCst);
+    }
+
+    pub fn seek(&self, target: Duration) {
+        Self::schedule_seek(&self.state, target);
     }
 
     pub fn stop(&mut self) {
@@ -1072,14 +1200,6 @@ impl AudioPlayer {
         // 3. 唤醒所有在 wait_finished 上的等待者
         self.state.is_finished.store(true, Ordering::SeqCst);
         self.state.finish_notify.notify_waiters();
-    }
-
-    /// 高性能异步等待：直到播放自然结束或被 stop
-    pub async fn wait_finished(&self) {
-        if self.state.is_finished.load(Ordering::Relaxed) {
-            return;
-        }
-        self.state.finish_notify.notified().await;
     }
 
     pub fn is_finished(&self) -> bool {
@@ -1096,97 +1216,128 @@ impl Drop for AudioPlayer {
 
 #[cfg(test)]
 mod tests {
-    use std::thread::sleep;
-
-    use tokio::time::interval;
-
     use super::*;
 
-    fn setup_player() -> Option<AudioPlayer> {
-        match AudioPlayer::new(None) {
-            Ok(p) => Some(p),
-            Err(e) => {
-                println!("Skipping test: No audio device available ({})", e);
-                None
-            }
+    fn create_state(sample_rate: u32) -> SharedState {
+        SharedState {
+            is_paused: AtomicBool::new(false),
+            current_frame: AtomicU64::new(0),
+            sample_rate: AtomicU32::new(sample_rate),
+            has_seek_request: AtomicBool::new(false),
+            seek_request: Mutex::new(None),
+            is_terminating: AtomicBool::new(false),
+            discard_buffer: AtomicBool::new(false),
+            decoder_done: AtomicBool::new(false),
+            is_finished: AtomicBool::new(false),
+            finish_notify: Notify::new(),
+            buffered_frames: AtomicU64::new(0),
+            waiting_for_seek: AtomicBool::new(false),
         }
     }
 
-    #[tokio::test]
-    async fn test_play_until_end() {
-        let mut player = match setup_player() {
-            Some(p) => p,
-            None => return,
-        };
+    #[test]
+    fn preferred_output_formats_prioritizes_source_format() {
+        let formats =
+            AudioPlayer::preferred_output_formats(Some(24), Some(SymphoniaSampleFormat::F32));
 
-        let test_file = "/home/dddqmmx/Music/生き様.flac"; // 请确保路径正确
-
-        if std::path::Path::new(test_file).exists() {
-            println!("Playing file...");
-            player.play_file(test_file).await.unwrap();
-            // 使用高性能等待
-            println!("Waiting for audio to finish...");
-            player.wait_finished().await;
-            println!("Playback finished naturally.");
-        }
+        assert_eq!(formats[0], cpal::SampleFormat::F32);
+        assert_eq!(formats[1], cpal::SampleFormat::F64);
+        assert!(formats.contains(&cpal::SampleFormat::I24));
     }
 
-    #[tokio::test]
-    async fn test_play_url_with_realtime_progress() -> Result<(), Box<dyn std::error::Error>> {
-        // 1. 初始化播放器
-        let mut player = match AudioPlayer::new(None) {
-            Ok(p) => p,
-            Err(e) => {
-                println!("跳过测试：未找到音频输出设备 ({})", e);
-                return Ok(());
-            }
-        };
+    #[test]
+    fn preferred_output_formats_keeps_fallbacks_unique() {
+        let formats =
+            AudioPlayer::preferred_output_formats(Some(16), Some(SymphoniaSampleFormat::S16));
 
-        // 2. 使用一个公共的测试音频 URL (SoundHelix 是常用的测试源)
-        let test_url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
-        println!("正在请求 URL: {}", test_url);
-
-        // 3. 开始播放
-        // play_url 会在预加载（Prefetch）完成后返回
-        player.play_url(test_url).await?;
-        println!("播放器已启动...");
-
-        // 4. 实时输出进度
-        let mut timer = interval(Duration::from_millis(1000));
-        let timeout = Duration::from_secs(30); // 我们只测试前 30 秒，防止测试运行时间过长
-        let start_inst = std::time::Instant::now();
-
-        loop {
-            timer.tick().await;
-
-            let progress = player.progress();
-            let is_finished = player.is_finished();
-
-            // 格式化输出进度
-            println!(
-                "进度: [{:02}:{:02}] | 是否结束: {}",
-                progress.as_secs() / 60,
-                progress.as_secs() % 60,
-                is_finished
-            );
-
-            // 检查是否播放自然结束
-            if is_finished {
-                println!("检测到播放自然结束。");
-                break;
-            }
-
-            // 达到测试设定的超时时间则强制退出
-            if start_inst.elapsed() >= timeout {
-                println!("已达到 30 秒测试时长限制，准备停止...");
-                break;
+        let mut unique_formats = Vec::new();
+        for format in &formats {
+            if !unique_formats.contains(format) {
+                unique_formats.push(*format);
             }
         }
 
-        // 5. 停止播放
-        player.stop();
-        println!("测试完成。");
+        let unique_count = unique_formats.len();
+        assert_eq!(unique_count, formats.len());
+        assert_eq!(formats[0], cpal::SampleFormat::I16);
+        assert!(formats.contains(&cpal::SampleFormat::F32));
+    }
 
-        Ok(())
+    #[test]
+    fn schedule_seek_updates_pending_request_and_progress() {
+        let state = create_state(48_000);
+        let target = Duration::from_millis(2_500);
+
+        AudioPlayer::schedule_seek(&state, target);
+
+        assert_eq!(*state.seek_request.lock().unwrap(), Some(target));
+        assert!(state.has_seek_request.load(Ordering::SeqCst));
+        assert!(state.waiting_for_seek.load(Ordering::SeqCst));
+        assert_eq!(state.current_frame.load(Ordering::SeqCst), 120_000);
+    }
+
+    #[test]
+    fn schedule_seek_handles_zero_position() {
+        let state = Arc::new(create_state(44_100));
+        AudioPlayer::schedule_seek(&state, Duration::ZERO);
+
+        assert_eq!(*state.seek_request.lock().unwrap(), Some(Duration::ZERO));
+        assert_eq!(state.current_frame.load(Ordering::SeqCst), 0);
+        assert!(state.has_seek_request.load(Ordering::SeqCst));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_output_device_filter_skips_virtual_defaults_but_keeps_real_devices() {
+        assert!(AudioPlayer::should_list_linux_output_device(
+            "hw:CARD=0,DEV=0",
+            Some("default"),
+            Some("default")
+        ));
+        assert!(!AudioPlayer::should_list_linux_output_device(
+            "default",
+            Some("default"),
+            Some("default")
+        ));
+        assert!(AudioPlayer::should_list_linux_output_device(
+            "pulse",
+            Some("pulse"),
+            Some("default")
+        ));
+        assert!(!AudioPlayer::should_list_linux_output_device(
+            "pulse",
+            Some("hw:CARD=0,DEV=0"),
+            Some("default")
+        ));
+    }
+
+    #[test]
+    fn duplicate_output_device_names_are_disambiguated_with_ids() {
+        let mut devices = vec![
+            OutputDeviceInfo {
+                id: "hw:CARD=0,DEV=0".to_string(),
+                name: "USB DAC".to_string(),
+                is_default: false,
+                is_current: false,
+            },
+            OutputDeviceInfo {
+                id: "hw:CARD=1,DEV=0".to_string(),
+                name: "USB DAC".to_string(),
+                is_default: false,
+                is_current: true,
+            },
+            OutputDeviceInfo {
+                id: "default".to_string(),
+                name: "System Default".to_string(),
+                is_default: true,
+                is_current: false,
+            },
+        ];
+
+        AudioPlayer::disambiguate_output_device_names(&mut devices);
+
+        assert_eq!(devices[0].name, "USB DAC [hw:CARD=0,DEV=0]");
+        assert_eq!(devices[1].name, "USB DAC [hw:CARD=1,DEV=0]");
+        assert_eq!(devices[2].name, "System Default");
     }
 }

@@ -35,7 +35,6 @@ const api = {
   song_url: invoke('music:songUrl'),
 
   // --- Rust 播放器操作 (多参数或特定逻辑) ---
-  // 使用 invokeArgs 支持多参数透传，避免手动展开
   play_url: invokeArgs('player:playUrl'),
   play_file: invokeArgs('player:playFile'),
   pause: invoke('player:pause'),
@@ -43,8 +42,10 @@ const api = {
   stop: invoke('player:stop'),
   get_progress: invoke('player:getProgress'),
   seek: invoke('player:seek'),
+  switch_output_device: invokeArgs('player:switchOutputDevice'),
+  get_output_devices: invoke('player:getOutputDevices'),
   wait_finished: invoke('player:waitFinished'),
-  song_url_and_wait: invokeArgs('music:playUrlAndWait'),
+  song_url_and_wait: invokeArgs('music:playUrlAndWait')
 }
 
 // 保持不变

@@ -4,6 +4,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 const props = defineProps<{
   songId?: number
   currentTime: number // 假设是毫秒
+  isDark: boolean
 }>()
 
 // --- 配置常量 ---
@@ -18,15 +19,28 @@ const loading = ref(false)
 const lyrics = ref<LyricLine[]>([])
 const lineRefs = ref<HTMLElement[]>([])
 
-// 解析逻辑保持不变...
+// --- 样式计算：优雅的主题切换 ---
+const themeVars = computed(() => {
+  const { isDark } = props
+  return {
+    '--lrc-text-color': isDark ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.9)',
+    '--lrc-text-active-color': isDark ? '#ffffff' : '#000000',
+    '--lrc-text-shadow': isDark ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.1)',
+    '--lrc-status-color': isDark ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.5)',
+  }
+})
+
+// 解析逻辑
 const parseLyric = (lrcString: string): LyricLine[] => {
   const lines = lrcString.split('\n')
   const result: LyricLine[] = []
   const timeExp = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/
-  lines.forEach(line => {
+  lines.forEach((line) => {
     const match = timeExp.exec(line)
     if (match) {
-      const m = parseInt(match[1]); const s = parseInt(match[2]); const ms = parseInt(match[3])
+      const m = parseInt(match[1])
+      const s = parseInt(match[2])
+      const ms = parseInt(match[3])
       const time = m * 60 + s + (ms > 99 ? ms / 1000 : ms / 100)
       const text = line.replace(timeExp, '').trim()
       if (text) result.push({ time, text })
@@ -38,7 +52,10 @@ const parseLyric = (lrcString: string): LyricLine[] => {
 const fetchLyrics = async (id: number): Promise<void> => {
   try {
     loading.value = true
-    const res = (await window.api.lyric({ id })) as { body?: { lrc?: { lyric?: string } } }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = (await (window as any).api.lyric({ id })) as {
+      body?: { lrc?: { lyric?: string } }
+    }
     if (res.body?.lrc?.lyric) {
       lyrics.value = parseLyric(res.body.lrc.lyric)
     } else {
@@ -51,15 +68,19 @@ const fetchLyrics = async (id: number): Promise<void> => {
   }
 }
 
-watch(() => props.songId, (newId) => {
-  if (newId) fetchLyrics(newId)
-}, { immediate: true })
+watch(
+  () => props.songId,
+  (newId) => {
+    if (newId) fetchLyrics(newId)
+  },
+  { immediate: true },
+)
 
 // --- 逻辑优化：提前量计算 ---
 const currentLyricIndex = computed(() => {
   // 加上偏移量，让 index 的切换提前发生
   const adjustedTime = (props.currentTime + LYRIC_OFFSET_MS) / 1000
-  return lyrics.value.findLastIndex(l => adjustedTime >= l.time)
+  return lyrics.value.findLastIndex((l) => adjustedTime >= l.time)
 })
 
 // --- 滚动逻辑 ---
@@ -78,15 +99,19 @@ watch(currentLyricIndex, (newIndex) => {
 </script>
 
 <template>
-  <section class="lyrics-panel">
+  <section class="lyrics-panel" :style="themeVars">
     <div v-if="loading" class="lyric-status">加载中...</div>
     <div v-else class="lyrics-scroll-container">
       <div
         v-for="(line, index) in lyrics"
         :key="index"
-        :ref="(el) => { if (el) lineRefs[index] = el as HTMLElement }"
+        :ref="
+          (el) => {
+            if (el) lineRefs[index] = el as HTMLElement
+          }
+        "
         class="lyric-line"
-        :class="{ 'active': index === currentLyricIndex }"
+        :class="{ active: index === currentLyricIndex }"
       >
         <span class="lyric-text">{{ line.text }}</span>
       </div>
@@ -127,7 +152,9 @@ watch(currentLyricIndex, (newIndex) => {
   /* 启用硬件加速 */
   will-change: scroll-position;
 }
-.lyrics-scroll-container::-webkit-scrollbar { display: none; }
+.lyrics-scroll-container::-webkit-scrollbar {
+  display: none;
+}
 
 .lyric-line {
   /* 使用 margin 而不是 padding 来控制行间距，这样 scale 不会影响行高布局 */
@@ -140,10 +167,12 @@ watch(currentLyricIndex, (newIndex) => {
   transition:
     transform 0.4s cubic-bezier(0.23, 1, 0.32, 1),
     opacity 0.4s cubic-bezier(0.23, 1, 0.32, 1),
-    filter 0.4s ease;
+    filter 0.4s ease,
+    color 0.3s ease; /* 增加颜色过渡 */
 
   opacity: 0.3;
-  color: rgba(255, 255, 255, 0.9);
+  /* 使用 CSS 变量控制颜色 */
+  color: var(--lrc-text-color);
   font-size: 26px;
   font-weight: 500;
 
@@ -160,8 +189,9 @@ watch(currentLyricIndex, (newIndex) => {
   /* 缩放控制在 1.1 以内，配合 padding 40px 绝不会截断 */
   transform: scale(1.1);
   filter: blur(0);
-  color: #ffffff;
-  text-shadow: 0 0 18px rgba(255, 255, 255, 0.4);
+  /* 使用 CSS 变量控制激活态颜色 */
+  color: var(--lrc-text-active-color);
+  text-shadow: 0 0 18px var(--lrc-text-shadow);
 }
 
 .lyric-text {
@@ -178,6 +208,6 @@ watch(currentLyricIndex, (newIndex) => {
   justify-content: center;
   align-items: center;
   font-size: 18px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--lrc-status-color);
 }
 </style>

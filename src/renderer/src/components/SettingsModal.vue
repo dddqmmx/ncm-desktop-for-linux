@@ -1,14 +1,25 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { computed, ref, type Component } from 'vue'
+import '@renderer/assets/settings.css'
 import SettingsSidebar from './SettingsSidebar.vue'
-import SettingGroup from './SettingGroup.vue'
-import SettingRow from './SettingRow.vue'
-import SegmentedSlider from './SegmentedSlider.vue'
-import { useConfigStore } from '@renderer/stores/configStore'
+import GeneralSettingsTab from './settings/GeneralSettingsTab.vue'
+import AudioSettingsTab from './settings/AudioSettingsTab.vue'
+import AppearanceSettingsTab from './settings/AppearanceSettingsTab.vue'
+import LibrarySettingsTab from './settings/LibrarySettingsTab.vue'
+import ShortcutsSettingsTab from './settings/ShortcutsSettingsTab.vue'
+import AboutSettingsTab from './settings/AboutSettingsTab.vue'
 
-const emit = defineEmits(['close'])
+type SettingsTabId = 'general' | 'audio' | 'appearance' | 'library' | 'shortcuts' | 'about'
 
-const tabs = [
+type SettingsTab = {
+  id: SettingsTabId
+  name: string
+  icon: string
+}
+
+const emit = defineEmits<{ close: [] }>()
+
+const tabs: SettingsTab[] = [
   {
     id: 'general',
     name: '通用',
@@ -41,46 +52,32 @@ const tabs = [
   }
 ]
 
-const activeTab = ref('general')
+const tabComponents: Record<SettingsTabId, Component> = {
+  general: GeneralSettingsTab,
+  audio: AudioSettingsTab,
+  appearance: AppearanceSettingsTab,
+  library: LibrarySettingsTab,
+  shortcuts: ShortcutsSettingsTab,
+  about: AboutSettingsTab
+}
 
-const configStore = useConfigStore()
+const activeTab = ref<SettingsTabId>('general')
 
-const settings = reactive({
-  autoLaunch: true,
-  trayMinimize: true,
-  audioEngine: 'native',
-  device: 'default',
-  quality: 'lossless',
-  exclusiveMode: false,
-  theme: 'adaptive',
-  acrylic: true,
-  accentColor: '#6366f1',
-  libPaths: ['C:/Users/Paul/Music', 'D:/Songs/Lossless'],
+const activeTabTitle = computed(() => {
+  return tabs.find((tab) => tab.id === activeTab.value)?.name ?? ''
 })
 
-const appInfo = {
-  name: 'NCM Desktop For Linux',
-  version: '1.0.0'
-}
-
-const checkingUpdate = ref(false)
-const checkUpdate = (): void => {
-  checkingUpdate.value = true
-  setTimeout(() => {
-    checkingUpdate.value = false
-  }, 2000)
-}
+const activeTabComponent = computed(() => tabComponents[activeTab.value])
 </script>
 
 <template>
   <div class="settings-mask" @click.self="emit('close')">
     <div class="settings-window glass-morphism-heavy">
-
       <SettingsSidebar v-model:active-tab="activeTab" :tabs="tabs" />
 
       <main class="settings-main">
         <header class="main-header">
-          <h2>{{ tabs.find((t) => t.id === activeTab)?.name }}</h2>
+          <h2>{{ activeTabTitle }}</h2>
           <button class="close-btn" @click="emit('close')">
             <svg
               width="20"
@@ -96,127 +93,7 @@ const checkUpdate = (): void => {
         </header>
 
         <div class="content-scroll">
-          <!-- 通用 -->
-          <div v-if="activeTab === 'general'" class="section-fade">
-            <SettingGroup title="启动与运行">
-              <SettingRow title="开机自启动" description="在登录系统时自动启动音乐播放器">
-                <input v-model="settings.autoLaunch" type="checkbox" class="modern-switch">
-              </SettingRow>
-              <SettingRow title="最小化至托盘" description="关闭主窗口时应用将继续在后台运行">
-                <input v-model="settings.trayMinimize" type="checkbox" class="modern-switch">
-              </SettingRow>
-            </SettingGroup>
-          </div>
-
-          <!-- 音频 -->
-          <div v-if="activeTab === 'audio'" class="section-fade">
-            <SettingGroup title="音频质量">
-              <SettingRow title="默认播放音质" description="选择流媒体播放或下载的默认音质级别">
-                <select v-model="configStore.soundQuality" class="modern-select">
-                  <option value="standard">标准 (128kbps)</option>
-                  <option value="exhigh">极高 (320kbps)</option>
-                  <option value="lossless">无损(最高48khz,16bit)</option>
-                  <option value="hires">Hi-Res (最高192khz,24bit)</option>
-                  <option value="jyeffect">高清臻音 (96khz,24bit)</option>
-                  <option value="sky">沉浸环绕声 (最高5.1声道)</option>
-                  <option value="jymaster">超清母带 (192khz,24bit)</option>
-                </select>
-              </SettingRow>
-            </SettingGroup>
-
-            <SettingGroup
-              title="输出架构"
-              tip="Native 提供高性能原生输出；WebAPI 具有更佳的系统兼容性。"
-              no-card
-            >
-              <SegmentedSlider
-                v-model="settings.audioEngine"
-                :options="[
-                  { label: 'Native', value: 'native' },
-                  { label: 'WebAPI', value: 'webapi' },
-                  { label: 'Auto', value: 'auto' }
-                ]"
-              />
-            </SettingGroup>
-
-            <SettingGroup title="设备选择">
-              <SettingRow title="指定输出设备" description="选择音频播放的物理端点">
-                <select v-model="settings.device" class="modern-select">
-                  <option value="default">系统默认输出</option>
-                  <option value="speaker">扬声器 (High Definition Audio)</option>
-                  <option value="earphone">耳机 (USB Audio Device)</option>
-                </select>
-              </SettingRow>
-              <SettingRow title="独占输出模式" description="允许应用接管音频硬件，减少系统混音干扰">
-                <input type="checkbox" v-model="settings.exclusiveMode" class="modern-switch">
-              </SettingRow>
-            </SettingGroup>
-          </div>
-
-          <!-- 外观 -->
-          <div v-if="activeTab === 'appearance'" class="section-fade">
-            <SettingGroup title="色彩模式" no-card>
-              <SegmentedSlider
-                v-model="settings.theme"
-                :options="[
-                  { label: '浅色模式', value: 'light' },
-                  { label: '深色模式', value: 'dark' },
-                  { label: '跟随系统', value: 'adaptive' }
-                ]"
-              />
-            </SettingGroup>
-            <SettingGroup title="视觉效果">
-              <SettingRow title="亚克力 / 云母效果" description="启用窗口半透明磨砂背景">
-                <input v-model="settings.acrylic" type="checkbox" class="modern-switch">
-              </SettingRow>
-              <SettingRow title="强调色">
-                <input v-model="settings.accentColor" type="color" class="color-picker">
-              </SettingRow>
-            </SettingGroup>
-          </div>
-
-          <!-- 曲库 -->
-          <div v-if="activeTab === 'library'" class="section-fade">
-            <SettingGroup title="本地文件夹" no-card>
-              <div class="path-list">
-                <div v-for="path in settings.libPaths" :key="path" class="path-item">
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <path
-                      d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-                    />
-                  </svg>
-                  <span>{{ path }}</span>
-                  <button class="remove-path">移除</button>
-                </div>
-                <button class="add-path-btn">+ 添加文件夹</button>
-              </div>
-            </SettingGroup>
-          </div>
-
-          <!-- 关于 -->
-          <div v-if="activeTab === 'about'" class="section-fade">
-            <div class="about-hero">
-              <div class="app-logo-box">
-                <img class="logo-img" src="@renderer/assets/icon.png" />
-              </div>
-              <h3 class="app-name">{{ appInfo.name }}</h3>
-              <p class="app-version">Version {{ appInfo.version }}</p>
-            </div>
-            <SettingGroup title="">
-              <SettingRow title="检查更新">
-                <button class="action-btn" :disabled="checkingUpdate" @click="checkUpdate">
-                  {{ checkingUpdate ? '检查中...' : '检查更新' }}
-                </button>
-              </SettingRow>
-            </SettingGroup>
-          </div>
+          <component :is="activeTabComponent" />
         </div>
       </main>
     </div>
@@ -224,7 +101,6 @@ const checkUpdate = (): void => {
 </template>
 
 <style scoped>
-/* 保持原有核心样式 */
 .settings-mask {
   position: fixed;
   inset: 0;
@@ -285,122 +161,6 @@ const checkUpdate = (): void => {
   padding: 0 48px 48px;
 }
 
-/* 表单组件样式 */
-.modern-switch {
-  appearance: none;
-  width: 44px;
-  height: 24px;
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 12px;
-  position: relative;
-  cursor: pointer;
-  transition: 0.3s;
-}
-
-.modern-switch:checked {
-  background: #000;
-}
-
-.modern-switch::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 20px;
-  height: 20px;
-  background: white;
-  border-radius: 50%;
-  transition: 0.3s cubic-bezier(0.2, 1, 0.3, 1);
-}
-
-.modern-switch:checked::after {
-  transform: translateX(20px);
-}
-
-.modern-select {
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 600;
-  outline: none;
-  min-width: 180px;
-}
-
-.color-picker {
-  border: none;
-  width: 40px;
-  height: 24px;
-  background: none;
-  cursor: pointer;
-}
-
-/* 业务特定样式 */
-.path-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.path-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.4);
-  border-radius: 12px;
-  font-size: 13px;
-}
-
-.remove-path {
-  margin-left: auto;
-  border: none;
-  background: none;
-  color: #ef4444;
-  cursor: pointer;
-}
-
-.add-path-btn {
-  padding: 12px;
-  border: 2px dashed rgba(0, 0, 0, 0.1);
-  background: none;
-  border-radius: 12px;
-  color: rgba(0, 0, 0, 0.4);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.about-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px 0 40px;
-}
-
-.app-logo-box {
-  width: 80px;
-  height: 80px;
-  margin-bottom: 20px;
-}
-
-.logo-img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.action-btn {
-  background: #111;
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 10px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-/* 动画 */
 @keyframes modalScaleUp {
   from {
     opacity: 0;
@@ -413,23 +173,6 @@ const checkUpdate = (): void => {
   }
 }
 
-.section-fade {
-  animation: fadeIn 0.4s ease-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* 滚动条美化 */
 .content-scroll::-webkit-scrollbar {
   width: 6px;
 }

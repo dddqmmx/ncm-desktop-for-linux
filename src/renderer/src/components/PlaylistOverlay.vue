@@ -1,24 +1,55 @@
 <script setup lang="ts">
 import { usePlayerStore } from '@renderer/stores/playerStore'
-import { ref, nextTick, watch } from 'vue'
+import { ref, nextTick, watch, onBeforeUnmount } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 
 const playerStore = usePlayerStore()
 const listRef = ref<HTMLElement | null>(null)
+let scrollFrame = 0
+let scrollFrameAfterLayout = 0
 
-/**
- * 自动滚动到当前播放项
- * 获取 TransitionGroup 内部的真实 DOM
- */
-watch(() => playerStore.currentSong?.id, () => {
-  nextTick(() => {
-    // 因为 TransitionGroup 设置了 ref，它对应的是 .playlist-content 这个 div
-    const activeItem = listRef.value?.querySelector('.playlist-item.active')
-    if (activeItem) {
-      activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    }
+const scheduleScrollToActive = async (): Promise<void> => {
+  await nextTick()
+  cancelAnimationFrame(scrollFrame)
+  cancelAnimationFrame(scrollFrameAfterLayout)
+  scrollFrame = requestAnimationFrame(() => {
+    scrollFrameAfterLayout = requestAnimationFrame(scrollToActive)
   })
+}
+
+watch(
+  () => [playerStore.currentSong?.id, playerStore.playlist.map((song) => song.id).join(',')],
+  () => {
+    void scheduleScrollToActive()
+  },
+  {
+    immediate: true,
+    flush: 'post'
+  }
+)
+
+onBeforeUnmount(() => {
+  cancelAnimationFrame(scrollFrame)
+  cancelAnimationFrame(scrollFrameAfterLayout)
 })
+
+const getScrollContainer = (): HTMLElement | null => {
+  return listRef.value
+}
+
+const scrollToActive = (): void => {
+  const container = getScrollContainer()
+  if (!container) return
+
+  const active = container.querySelector('.playlist-item.active') as HTMLElement | null
+  if (!active) return
+
+  active.scrollIntoView({
+    behavior: 'smooth',
+    block: 'center',
+    inline: 'nearest'
+  })
+}
 
 /**
  * 移除单曲
@@ -62,43 +93,44 @@ const onDragEnd = (): void => {
       class="draggable-container"
       @end="onDragEnd"
     >
-      <TransitionGroup
-        type="transition"
-        name="list-anim"
-        tag="div"
-        class="playlist-content"
-        ref="listRef"
-      >
-        <div
-          v-for="(song, index) in playerStore.playlist"
-          :key="song.id"
-          class="playlist-item"
-          :class="{ active: playerStore.currentSong?.id === song.id }"
-          @click="playerStore.playMusic(song.id)"
+      <div ref="listRef" class="playlist-scroll">
+        <TransitionGroup
+          type="transition"
+          name="list-anim"
+          tag="div"
+          class="playlist-content"
         >
-          <div class="item-status">
-            <div class="playing-icon" v-if="playerStore.currentSong?.id === song.id">
-              <span class="bar" v-for="i in 3" :key="i"></span>
+          <div
+            v-for="(song, index) in playerStore.playlist"
+            :key="song.id"
+            class="playlist-item"
+            :class="{ active: playerStore.currentSong?.id === song.id }"
+            @click="playerStore.playMusic(song.id)"
+          >
+            <div class="item-status">
+              <div class="playing-icon" v-if="playerStore.currentSong?.id === song.id">
+                <span class="bar" v-for="i in 3" :key="i"></span>
+              </div>
+              <div class="item-index" v-else>{{ index + 1 }}</div>
             </div>
-            <div class="item-index" v-else>{{ index + 1 }}</div>
-          </div>
 
-          <img :src="song.cover" class="item-cover" draggable="false">
+            <img :src="song.cover" class="item-cover" draggable="false">
 
-          <div class="item-info">
-            <div class="item-name">{{ song.name }}</div>
-            <div class="item-artist">{{ song.artist }}</div>
-          </div>
+            <div class="item-info">
+              <div class="item-name">{{ song.name }}</div>
+              <div class="item-artist">{{ song.artist }}</div>
+            </div>
 
-          <div class="item-actions">
-            <button class="action-btn remove" @click.stop="removeSong(song.id)">
-              <svg viewBox="0 0 24 24" width="16" height="16">
-                <path fill="currentColor" d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
-              </svg>
-            </button>
+            <div class="item-actions">
+              <button class="action-btn remove" @click.stop="removeSong(song.id)">
+                <svg viewBox="0 0 24 24" width="16" height="16">
+                  <path fill="currentColor" d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
+                </svg>
+              </button>
+            </div>
           </div>
-        </div>
-      </TransitionGroup>
+        </TransitionGroup>
+      </div>
     </VueDraggable>
 
     <!-- 空状态 -->
@@ -118,6 +150,7 @@ const onDragEnd = (): void => {
   flex-direction: column; /* 纵向排列：Header + Draggable */
   overflow: hidden;
   user-select: none;
+      -webkit-app-region: no-drag;
 }
 
 .draggable-container {
@@ -127,12 +160,16 @@ const onDragEnd = (): void => {
   flex-direction: column;
 }
 
-.playlist-content {
+.playlist-scroll {
   flex: 1;
   overflow-y: auto; /* 必须是 auto 或 scroll */
   padding: 0 12px 20px;
   /* 优化滚动体验 */
   scrollbar-gutter: stable;
+}
+
+.playlist-content {
+  min-height: 100%;
 }
 
 /* --- 样式美化 --- */
@@ -168,14 +205,14 @@ const onDragEnd = (): void => {
 .clear-btn:hover { background: rgba(255, 59, 48, 0.1); color: #ff3b30; }
 
 /* --- 滚动条样式 --- */
-.playlist-content::-webkit-scrollbar {
+.playlist-scroll::-webkit-scrollbar {
   width: 6px;
 }
-.playlist-content::-webkit-scrollbar-thumb {
+.playlist-scroll::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.1);
   border-radius: 10px;
 }
-.playlist-content::-webkit-scrollbar-track {
+.playlist-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 

@@ -178,6 +178,21 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
+  const prepareOutputDeviceForPlayback = async (): Promise<void> => {
+    const configuredDeviceId = configStore.outputDeviceId
+    const appliedDeviceId = await configStore.ensureConfiguredOutputDevice()
+
+    if (
+      configuredDeviceId &&
+      configuredDeviceId !== 'default' &&
+      appliedDeviceId === 'default'
+    ) {
+      console.warn(
+        `[音频设备] 已配置设备 ${configuredDeviceId} 不可用，播放前已自动回退到系统默认输出。`
+      )
+    }
+  }
+
   const startTimer = (): void => {
     if (progressTimer) return
     progressTimer = setInterval(syncProgress, 100)
@@ -275,17 +290,23 @@ export const usePlayerStore = defineStore('player', () => {
       return
     }
 
-    if (!forceRestart && currentSongId.value === song_id && !isPlaying.value && !isHistorySong.value) {
-      await window.api.resume()
-      isPlaying.value = true
-      return
-    }
-
     isSwitching.value = true
     playToken++
     const token = playToken
 
     try {
+      if (
+        !forceRestart &&
+        currentSongId.value === song_id &&
+        !isPlaying.value &&
+        !isHistorySong.value
+      ) {
+        await prepareOutputDeviceForPlayback()
+        await window.api.resume()
+        isPlaying.value = true
+        return
+      }
+
       // 1. 获取完整详情 (含权限)
       const detailData = await getSongDetailData(song_id)
 
@@ -319,6 +340,7 @@ export const usePlayerStore = defineStore('player', () => {
         // ignore
       }
 
+      await prepareOutputDeviceForPlayback()
       await window.api.play_url(url, startTime / 1000)
 
       setPlayerData(song, true)
@@ -398,6 +420,7 @@ export const usePlayerStore = defineStore('player', () => {
       await playMusic(currentSongId.value, currentTime.value)
       return
     }
+    await prepareOutputDeviceForPlayback()
     await window.api.resume()
     isPlaying.value = true
   }

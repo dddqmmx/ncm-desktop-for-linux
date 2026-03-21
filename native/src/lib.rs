@@ -2,13 +2,19 @@ mod audio_player;
 
 use napi::{Error, Result};
 use napi_derive::napi;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio::runtime::Runtime;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::audio_player::AudioPlayer;
+use crate::audio_player::{AudioPlayer, OutputDeviceInfo};
+
+type BackendResult<T> = std::result::Result<T, String>;
+type BackendFuture<'a, T> = Pin<Box<dyn Future<Output = BackendResult<T>> + Send + 'a>>;
+type SignalFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
 // --- 全局静态运行时 ---
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -24,19 +30,408 @@ fn get_runtime() -> &'static Runtime {
     })
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum PlaybackSource {
+    File(String),
+    Url(String),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PlaybackStatus {
+    Stopped,
+    Playing,
+    Paused,
+}
+
+impl PlaybackStatus {
+    fn as_u32(self) -> u32 {
+        match self {
+            Self::Stopped => 0,
+            Self::Playing => 1,
+            Self::Paused => 2,
+        }
+    }
+
+    fn from_u32(value: u32) -> Self {
+        match value {
+            1 => Self::Playing,
+            2 => Self::Paused,
+            _ => Self::Stopped,
+        }
+    }
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AudioDeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+    pub is_current: bool,
+}
+
+impl From<OutputDeviceInfo> for AudioDeviceInfo {
+    fn from(value: OutputDeviceInfo) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            is_default: value.is_default,
+            is_current: value.is_current,
+        }
+    }
+}
+
 enum PlayerCommand {
-    PlayFile(String, Option<u32>),
-    PlayUrl(String, Option<u32>),
+    PlayFile(String, Option<f64>),
+    PlayUrl(String, Option<f64>),
     Pause,
     Resume,
     Stop,
-    Seek(u32),
+    Seek(f64),
+    SwitchOutputDevice(Option<String>, oneshot::Sender<BackendResult<()>>),
+    GetOutputDevices(oneshot::Sender<BackendResult<Vec<AudioDeviceInfo>>>),
     WaitFinished(oneshot::Sender<()>),
 }
 
 struct SharedState {
     progress_ms: AtomicU32,
     is_playing: AtomicU32, // 0: Stopped, 1: Playing, 2: Paused
+}
+
+trait PlayerBackend: Send {
+    fn play_file<'a>(
+        &'a mut self,
+        path: &'a str,
+        start_at: Option<Duration>,
+    ) -> BackendFuture<'a, ()>;
+    fn play_url<'a>(
+        &'a mut self,
+        url: &'a str,
+        start_at: Option<Duration>,
+    ) -> BackendFuture<'a, ()>;
+    fn pause(&self);
+    fn resume(&self);
+    fn stop(&mut self);
+    fn seek(&self, target: Duration);
+    fn progress(&self) -> Duration;
+    fn is_finished(&self) -> bool;
+    fn wait_finished_signal(&self) -> SignalFuture;
+    fn output_devices(&self) -> BackendResult<Vec<OutputDeviceInfo>>;
+}
+
+trait PlayerFactory: Send + Sync + 'static {
+    type Player: PlayerBackend;
+
+    fn create(&self, device_name: Option<&str>) -> BackendResult<Self::Player>;
+}
+
+#[derive(Clone, Copy)]
+struct AudioPlayerFactory;
+
+struct NativePlayer(AudioPlayer);
+
+impl PlayerBackend for NativePlayer {
+    fn play_file<'a>(
+        &'a mut self,
+        path: &'a str,
+        start_at: Option<Duration>,
+    ) -> BackendFuture<'a, ()> {
+        Box::pin(async move {
+            self.0
+                .play_file(path, start_at)
+                .await
+                .map_err(|err| err.to_string())
+        })
+    }
+
+    fn play_url<'a>(
+        &'a mut self,
+        url: &'a str,
+        start_at: Option<Duration>,
+    ) -> BackendFuture<'a, ()> {
+        Box::pin(async move {
+            self.0
+                .play_url(url, start_at)
+                .await
+                .map_err(|err| err.to_string())
+        })
+    }
+
+    fn pause(&self) {
+        self.0.pause();
+    }
+
+    fn resume(&self) {
+        self.0.resume();
+    }
+
+    fn stop(&mut self) {
+        self.0.stop();
+    }
+
+    fn seek(&self, target: Duration) {
+        self.0.seek(target);
+    }
+
+    fn progress(&self) -> Duration {
+        self.0.progress()
+    }
+
+    fn is_finished(&self) -> bool {
+        self.0.is_finished()
+    }
+
+    fn wait_finished_signal(&self) -> SignalFuture {
+        let state = self.0.get_state();
+        Box::pin(async move {
+            if state.is_finished.load(Ordering::Relaxed) {
+                return;
+            }
+            state.finish_notify.notified().await;
+        })
+    }
+
+    fn output_devices(&self) -> BackendResult<Vec<OutputDeviceInfo>> {
+        self.0.output_devices().map_err(|err| err.to_string())
+    }
+}
+
+impl PlayerFactory for AudioPlayerFactory {
+    type Player = NativePlayer;
+
+    fn create(&self, device_name: Option<&str>) -> BackendResult<Self::Player> {
+        AudioPlayer::new(device_name)
+            .map(NativePlayer)
+            .map_err(|err| err.to_string())
+    }
+}
+
+struct WorkerCore<P, F> {
+    player: P,
+    factory: F,
+    shared_state: Arc<SharedState>,
+    current_source: Option<PlaybackSource>,
+}
+
+impl<P, F> WorkerCore<P, F>
+where
+    P: PlayerBackend,
+    F: PlayerFactory<Player = P>,
+{
+    fn new(player: P, factory: F, shared_state: Arc<SharedState>) -> Self {
+        Self {
+            player,
+            factory,
+            shared_state,
+            current_source: None,
+        }
+    }
+
+    async fn run(mut self, mut rx: mpsc::UnboundedReceiver<PlayerCommand>) {
+        let mut ticker = tokio::time::interval(Duration::from_millis(100));
+
+        loop {
+            tokio::select! {
+                cmd_opt = rx.recv() => {
+                    match cmd_opt {
+                        Some(cmd) => self.handle_command(cmd).await,
+                        None => break,
+                    }
+                }
+                _ = ticker.tick() => self.tick(),
+            }
+        }
+    }
+
+    async fn handle_command(&mut self, cmd: PlayerCommand) {
+        match cmd {
+            PlayerCommand::PlayFile(path, start_secs) => {
+                if let Err(err) = self
+                    .play_source(
+                        PlaybackSource::File(path),
+                        start_secs_to_duration(start_secs),
+                    )
+                    .await
+                {
+                    eprintln!("Play file failed: {}", err);
+                }
+            }
+            PlayerCommand::PlayUrl(url, start_secs) => {
+                if let Err(err) = self
+                    .play_source(PlaybackSource::Url(url), start_secs_to_duration(start_secs))
+                    .await
+                {
+                    eprintln!("Play URL failed: {}", err);
+                }
+            }
+            PlayerCommand::Pause => {
+                self.player.pause();
+                self.shared_state
+                    .is_playing
+                    .store(PlaybackStatus::Paused.as_u32(), Ordering::SeqCst);
+            }
+            PlayerCommand::Resume => {
+                self.player.resume();
+                self.shared_state
+                    .is_playing
+                    .store(PlaybackStatus::Playing.as_u32(), Ordering::SeqCst);
+            }
+            PlayerCommand::Stop => {
+                self.player.stop();
+                self.current_source = None;
+                self.shared_state
+                    .is_playing
+                    .store(PlaybackStatus::Stopped.as_u32(), Ordering::SeqCst);
+                self.shared_state.progress_ms.store(0, Ordering::SeqCst);
+            }
+            PlayerCommand::Seek(time_secs) => {
+                self.player.seek(seconds_to_duration(time_secs));
+            }
+            PlayerCommand::SwitchOutputDevice(device_name, reply_tx) => {
+                let result = self
+                    .switch_output_device(normalize_device_name(device_name))
+                    .await;
+                let _ = reply_tx.send(result);
+            }
+            PlayerCommand::GetOutputDevices(reply_tx) => {
+                let result = self
+                    .player
+                    .output_devices()
+                    .map(|devices| devices.into_iter().map(AudioDeviceInfo::from).collect());
+                let _ = reply_tx.send(result);
+            }
+            PlayerCommand::WaitFinished(done_tx) => {
+                let wait_signal = self.player.wait_finished_signal();
+                tokio::spawn(async move {
+                    wait_signal.await;
+                    let _ = done_tx.send(());
+                });
+            }
+        }
+    }
+
+    async fn play_source(
+        &mut self,
+        source: PlaybackSource,
+        start_at: Option<Duration>,
+    ) -> BackendResult<()> {
+        self.shared_state.progress_ms.store(
+            duration_to_millis(start_at.unwrap_or(Duration::ZERO)),
+            Ordering::SeqCst,
+        );
+
+        match Self::play_source_on(&mut self.player, &source, start_at).await {
+            Ok(()) => {
+                self.current_source = Some(source);
+                self.shared_state
+                    .is_playing
+                    .store(PlaybackStatus::Playing.as_u32(), Ordering::SeqCst);
+                Ok(())
+            }
+            Err(err) => {
+                self.player.stop();
+                self.current_source = None;
+                self.shared_state
+                    .is_playing
+                    .store(PlaybackStatus::Stopped.as_u32(), Ordering::SeqCst);
+                self.shared_state.progress_ms.store(0, Ordering::SeqCst);
+                Err(err)
+            }
+        }
+    }
+
+    async fn play_source_on(
+        player: &mut P,
+        source: &PlaybackSource,
+        start_at: Option<Duration>,
+    ) -> BackendResult<()> {
+        match source {
+            PlaybackSource::File(path) => player.play_file(path, start_at).await,
+            PlaybackSource::Url(url) => player.play_url(url, start_at).await,
+        }
+    }
+
+    async fn switch_output_device(&mut self, device_name: Option<String>) -> BackendResult<()> {
+        let playback_status = self.playback_status();
+        let resume_source = self.current_source.clone();
+        let resume_position = match playback_status {
+            PlaybackStatus::Stopped => None,
+            PlaybackStatus::Playing | PlaybackStatus::Paused => Some(self.player.progress()),
+        };
+
+        let mut next_player = self.factory.create(device_name.as_deref())?;
+
+        if let Some(source) = resume_source.as_ref() {
+            Self::play_source_on(&mut next_player, source, resume_position).await?;
+            if playback_status == PlaybackStatus::Paused {
+                next_player.pause();
+            }
+        }
+
+        self.player.stop();
+        self.player = next_player;
+
+        if let Some(position) = resume_position {
+            self.shared_state
+                .progress_ms
+                .store(duration_to_millis(position), Ordering::SeqCst);
+        }
+        self.shared_state
+            .is_playing
+            .store(playback_status.as_u32(), Ordering::SeqCst);
+
+        Ok(())
+    }
+
+    fn tick(&mut self) {
+        let playback_status = self.playback_status();
+        if playback_status == PlaybackStatus::Stopped {
+            return;
+        }
+
+        let progress = self.player.progress();
+        self.shared_state
+            .progress_ms
+            .store(duration_to_millis(progress), Ordering::Relaxed);
+
+        if playback_status == PlaybackStatus::Playing && self.player.is_finished() {
+            self.current_source = None;
+            self.shared_state
+                .is_playing
+                .store(PlaybackStatus::Stopped.as_u32(), Ordering::SeqCst);
+        }
+    }
+
+    fn playback_status(&self) -> PlaybackStatus {
+        PlaybackStatus::from_u32(self.shared_state.is_playing.load(Ordering::Relaxed))
+    }
+}
+
+fn normalize_device_name(device_name: Option<String>) -> Option<String> {
+    device_name.and_then(|name| {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn seconds_to_duration(seconds: f64) -> Duration {
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return Duration::ZERO;
+    }
+
+    Duration::from_secs_f64(seconds)
+}
+
+fn start_secs_to_duration(start_secs: Option<f64>) -> Option<Duration> {
+    start_secs.map(seconds_to_duration)
+}
+
+fn duration_to_millis(duration: Duration) -> u32 {
+    duration.as_millis().min(u32::MAX as u128) as u32
 }
 
 #[napi]
@@ -49,102 +444,17 @@ pub struct PlayerService {
 impl PlayerService {
     #[napi(constructor)]
     pub fn new() -> Result<Self> {
-        let (tx, mut rx) = mpsc::unbounded_channel::<PlayerCommand>();
+        let (tx, rx) = mpsc::unbounded_channel::<PlayerCommand>();
         let shared_state = Arc::new(SharedState {
             progress_ms: AtomicU32::new(0),
-            is_playing: AtomicU32::new(0),
+            is_playing: AtomicU32::new(PlaybackStatus::Stopped.as_u32()),
         });
 
-        let state_clone = Arc::clone(&shared_state);
-        let rt = get_runtime();
+        let factory = AudioPlayerFactory;
+        let player = factory.create(None).map_err(Error::from_reason)?;
+        let worker = WorkerCore::new(player, factory, Arc::clone(&shared_state));
 
-        rt.spawn(async move {
-            let mut player = match AudioPlayer::new(None) {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("AudioPlayer init failed: {}", e);
-                    return;
-                }
-            };
-
-            // 100ms 更新一次进度，UI 会非常丝滑
-            let mut ticker = tokio::time::interval(Duration::from_millis(100));
-
-            loop {
-                tokio::select! {
-                    // 1. 处理控制指令
-                    cmd_opt = rx.recv() => {
-                        match cmd_opt {
-                            Some(cmd) => match cmd {
-                                PlayerCommand::PlayFile(path, _start) => {
-                                    state_clone.progress_ms.store(0, Ordering::SeqCst);
-                                    if player.play_file(&path).await.is_ok() {
-                                        // if let Some(s) = start { player.seek(s); }
-                                        state_clone.is_playing.store(1, Ordering::SeqCst);
-                                    }
-                                }
-                                PlayerCommand::PlayUrl(url, _start) => {
-                                    state_clone.progress_ms.store(0, Ordering::SeqCst);
-                                    match player.play_url(&url).await {
-                                        Ok(_) => {
-                                            // if let Some(s) = start { player.seek(s); }
-                                            state_clone.is_playing.store(1, Ordering::SeqCst);
-                                        }
-                                        Err(e) => {
-                                            eprintln!("Play URL failed: {}", e);
-                                            state_clone.is_playing.store(0, Ordering::SeqCst);
-                                            player.stop();
-                                        }
-                                    }
-                                }
-                                PlayerCommand::Pause => {
-                                    player.pause();
-                                    state_clone.is_playing.store(2, Ordering::SeqCst);
-                                }
-                                PlayerCommand::Resume => {
-                                    player.resume();
-                                    state_clone.is_playing.store(1, Ordering::SeqCst);
-                                }
-                                PlayerCommand::Stop => {
-                                    player.stop();
-                                    state_clone.is_playing.store(0, Ordering::SeqCst);
-                                    state_clone.progress_ms.store(0, Ordering::SeqCst);
-                                }
-                                PlayerCommand::Seek(time) => {
-                                    player.seek(time);
-                                }
-                                PlayerCommand::WaitFinished(done_tx) => {
-                                    // 【核心修复】：不要在当前循环内 await player.wait_finished()
-                                    // 否则会阻塞整个 loop 导致 ticker 无法运行。
-                                    // 既然 wait_finished 本质是等待底层的 Notify，我们单独起一个 task 等待。
-                                    let player_state = player.get_state(); // 获取 AudioPlayer 的 SharedState Arc
-                                    tokio::spawn(async move {
-                                        player_state.finish_notify.notified().await;
-                                        let _ = done_tx.send(());
-                                    });
-                                }
-                            },
-                            None => break,
-                        }
-                    }
-                    // 2. 状态同步：只要 loop 不被指令 await 阻塞，这里会高频运行
-                    _ = ticker.tick() => {
-                        let is_playing_val = state_clone.is_playing.load(Ordering::Relaxed);
-
-                        if is_playing_val != 0 {
-                            // 更新当前进度
-                            let progress = player.progress();
-                            state_clone.progress_ms.store(progress.as_millis() as u32, Ordering::Relaxed);
-
-                            // 检查是否播放自然结束
-                            if is_playing_val == 1 && player.is_finished() {
-                                state_clone.is_playing.store(0, Ordering::SeqCst);
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        get_runtime().spawn(worker.run(rx));
 
         Ok(Self {
             sender: tx,
@@ -153,14 +463,14 @@ impl PlayerService {
     }
 
     #[napi]
-    pub fn play_file(&self, path: String, start_secs: Option<u32>) -> Result<()> {
+    pub fn play_file(&self, path: String, start_secs: Option<f64>) -> Result<()> {
         self.sender
             .send(PlayerCommand::PlayFile(path, start_secs))
             .map_err(|_| Error::from_reason("Background worker died"))
     }
 
     #[napi]
-    pub fn play_url(&self, url: String, start_secs: Option<u32>) -> Result<()> {
+    pub fn play_url(&self, url: String, start_secs: Option<f64>) -> Result<()> {
         self.sender
             .send(PlayerCommand::PlayUrl(url, start_secs))
             .map_err(|_| Error::from_reason("Background worker died"))
@@ -185,9 +495,33 @@ impl PlayerService {
     }
 
     #[napi]
-    pub fn seek(&self, time_secs: u32) -> Result<()> {
+    pub fn seek(&self, time_secs: f64) -> Result<()> {
         let _ = self.sender.send(PlayerCommand::Seek(time_secs));
         Ok(())
+    }
+
+    #[napi]
+    pub async fn switch_output_device(&self, device_id: Option<String>) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(PlayerCommand::SwitchOutputDevice(device_id, tx))
+            .map_err(|_| Error::from_reason("Background worker died"))?;
+
+        rx.await
+            .map_err(|_| Error::from_reason("Device switch interrupted"))?
+            .map_err(Error::from_reason)
+    }
+
+    #[napi]
+    pub async fn get_output_devices(&self) -> Result<Vec<AudioDeviceInfo>> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(PlayerCommand::GetOutputDevices(tx))
+            .map_err(|_| Error::from_reason("Background worker died"))?;
+
+        rx.await
+            .map_err(|_| Error::from_reason("Device query interrupted"))?
+            .map_err(Error::from_reason)
     }
 
     // --- Getter 属性：JS 通过 player.progressMs 访问 ---
@@ -199,12 +533,12 @@ impl PlayerService {
 
     #[napi(getter)]
     pub fn is_playing(&self) -> bool {
-        self.shared_state.is_playing.load(Ordering::Relaxed) == 1
+        self.shared_state.is_playing.load(Ordering::Relaxed) == PlaybackStatus::Playing.as_u32()
     }
 
     #[napi(getter)]
     pub fn is_paused(&self) -> bool {
-        self.shared_state.is_playing.load(Ordering::Relaxed) == 2
+        self.shared_state.is_playing.load(Ordering::Relaxed) == PlaybackStatus::Paused.as_u32()
     }
 
     // --- 异步 API ---
@@ -217,5 +551,443 @@ impl PlayerService {
             .map_err(|_| Error::from_reason("Worker shutdown"))?;
         rx.await
             .map_err(|_| Error::from_reason("Playback task interrupted"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+    use std::sync::atomic::AtomicBool;
+    use tokio::sync::Notify;
+
+    #[derive(Clone)]
+    struct MockFactory {
+        events: Arc<Mutex<Vec<String>>>,
+        fail_device: Option<String>,
+        devices: Vec<OutputDeviceInfo>,
+    }
+
+    impl MockFactory {
+        fn new() -> Self {
+            Self {
+                events: Arc::new(Mutex::new(Vec::new())),
+                fail_device: None,
+                devices: vec![
+                    OutputDeviceInfo {
+                        id: "speaker".to_string(),
+                        name: "Speaker".to_string(),
+                        is_default: true,
+                        is_current: false,
+                    },
+                    OutputDeviceInfo {
+                        id: "headphones".to_string(),
+                        name: "Headphones".to_string(),
+                        is_default: false,
+                        is_current: false,
+                    },
+                ],
+            }
+        }
+
+        fn with_fail_device(device_id: &str) -> Self {
+            let mut factory = Self::new();
+            factory.fail_device = Some(device_id.to_string());
+            factory
+        }
+
+        fn events(&self) -> Vec<String> {
+            self.events.lock().unwrap().clone()
+        }
+    }
+
+    impl PlayerFactory for MockFactory {
+        type Player = MockPlayer;
+
+        fn create(&self, device_name: Option<&str>) -> BackendResult<Self::Player> {
+            let label = device_name.unwrap_or("auto").to_string();
+            self.events.lock().unwrap().push(format!("create:{label}"));
+
+            if self
+                .fail_device
+                .as_deref()
+                .is_some_and(|fail_device| Some(fail_device) == device_name)
+            {
+                return Err(format!("failed to create device: {label}"));
+            }
+
+            Ok(MockPlayer::new(
+                device_name.map(str::to_string),
+                self.devices.clone(),
+                Arc::clone(&self.events),
+            ))
+        }
+    }
+
+    struct MockPlayer {
+        device_name: Option<String>,
+        devices: Vec<OutputDeviceInfo>,
+        events: Arc<Mutex<Vec<String>>>,
+        progress: Arc<Mutex<Duration>>,
+        finished: Arc<AtomicBool>,
+        finish_notify: Arc<Notify>,
+    }
+
+    impl MockPlayer {
+        fn new(
+            device_name: Option<String>,
+            devices: Vec<OutputDeviceInfo>,
+            events: Arc<Mutex<Vec<String>>>,
+        ) -> Self {
+            Self {
+                device_name,
+                devices,
+                events,
+                progress: Arc::new(Mutex::new(Duration::ZERO)),
+                finished: Arc::new(AtomicBool::new(false)),
+                finish_notify: Arc::new(Notify::new()),
+            }
+        }
+
+        fn label(&self) -> &str {
+            self.device_name.as_deref().unwrap_or("auto")
+        }
+
+        fn log(&self, message: String) {
+            self.events.lock().unwrap().push(message);
+        }
+
+        fn set_progress(&self, progress: Duration) {
+            *self.progress.lock().unwrap() = progress;
+        }
+
+        fn set_finished(&self, finished: bool) {
+            self.finished.store(finished, Ordering::SeqCst);
+            if finished {
+                self.finish_notify.notify_waiters();
+            }
+        }
+    }
+
+    impl PlayerBackend for MockPlayer {
+        fn play_file<'a>(
+            &'a mut self,
+            path: &'a str,
+            start_at: Option<Duration>,
+        ) -> BackendFuture<'a, ()> {
+            let label = self.label().to_string();
+            let path = path.to_string();
+            let start_at = start_at.unwrap_or(Duration::ZERO);
+            self.log(format!(
+                "player[{label}] play_file:{path}@{}",
+                duration_to_millis(start_at)
+            ));
+            self.set_progress(start_at);
+            self.set_finished(false);
+
+            Box::pin(async { Ok(()) })
+        }
+
+        fn play_url<'a>(
+            &'a mut self,
+            url: &'a str,
+            start_at: Option<Duration>,
+        ) -> BackendFuture<'a, ()> {
+            let label = self.label().to_string();
+            let url = url.to_string();
+            let start_at = start_at.unwrap_or(Duration::ZERO);
+            self.log(format!(
+                "player[{label}] play_url:{url}@{}",
+                duration_to_millis(start_at)
+            ));
+            self.set_progress(start_at);
+            self.set_finished(false);
+
+            Box::pin(async { Ok(()) })
+        }
+
+        fn pause(&self) {
+            self.log(format!("player[{}] pause", self.label()));
+        }
+
+        fn resume(&self) {
+            self.log(format!("player[{}] resume", self.label()));
+        }
+
+        fn stop(&mut self) {
+            self.log(format!("player[{}] stop", self.label()));
+            self.set_finished(true);
+        }
+
+        fn seek(&self, target: Duration) {
+            self.log(format!(
+                "player[{}] seek:{}",
+                self.label(),
+                duration_to_millis(target)
+            ));
+            self.set_progress(target);
+        }
+
+        fn progress(&self) -> Duration {
+            *self.progress.lock().unwrap()
+        }
+
+        fn is_finished(&self) -> bool {
+            self.finished.load(Ordering::SeqCst)
+        }
+
+        fn wait_finished_signal(&self) -> SignalFuture {
+            let finished = Arc::clone(&self.finished);
+            let notify = Arc::clone(&self.finish_notify);
+            Box::pin(async move {
+                if finished.load(Ordering::SeqCst) {
+                    return;
+                }
+                notify.notified().await;
+            })
+        }
+
+        fn output_devices(&self) -> BackendResult<Vec<OutputDeviceInfo>> {
+            let current_id = self.device_name.as_deref().unwrap_or("speaker");
+            Ok(self
+                .devices
+                .iter()
+                .cloned()
+                .map(|mut device| {
+                    device.is_current = device.id == current_id;
+                    device
+                })
+                .collect())
+        }
+    }
+
+    fn create_shared_state() -> Arc<SharedState> {
+        Arc::new(SharedState {
+            progress_ms: AtomicU32::new(0),
+            is_playing: AtomicU32::new(PlaybackStatus::Stopped.as_u32()),
+        })
+    }
+
+    fn create_worker(
+        factory: MockFactory,
+    ) -> (
+        WorkerCore<MockPlayer, MockFactory>,
+        Arc<SharedState>,
+        MockFactory,
+    ) {
+        let shared_state = create_shared_state();
+        let player = factory.create(None).unwrap();
+        let worker = WorkerCore::new(player, factory.clone(), Arc::clone(&shared_state));
+        (worker, shared_state, factory)
+    }
+
+    #[tokio::test]
+    async fn play_url_uses_requested_start_time() {
+        let factory = MockFactory::new();
+        let (mut worker, shared_state, factory) = create_worker(factory);
+
+        worker
+            .handle_command(PlayerCommand::PlayUrl(
+                "https://example.com/test.mp3".to_string(),
+                Some(12.5),
+            ))
+            .await;
+
+        assert_eq!(shared_state.progress_ms.load(Ordering::SeqCst), 12_500);
+        assert_eq!(
+            shared_state.is_playing.load(Ordering::SeqCst),
+            PlaybackStatus::Playing.as_u32()
+        );
+        assert_eq!(
+            worker.current_source,
+            Some(PlaybackSource::Url(
+                "https://example.com/test.mp3".to_string()
+            ))
+        );
+        assert_eq!(
+            factory.events(),
+            vec![
+                "create:auto".to_string(),
+                "player[auto] play_url:https://example.com/test.mp3@12500".to_string()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn switch_output_device_restarts_active_source_from_current_progress() {
+        let factory = MockFactory::new();
+        let (mut worker, shared_state, factory) = create_worker(factory);
+
+        worker
+            .handle_command(PlayerCommand::PlayFile(
+                "/tmp/test.flac".to_string(),
+                Some(0.0),
+            ))
+            .await;
+        worker.player.set_progress(Duration::from_millis(4_200));
+
+        let (tx, rx) = oneshot::channel();
+        worker
+            .handle_command(PlayerCommand::SwitchOutputDevice(
+                Some("headphones".to_string()),
+                tx,
+            ))
+            .await;
+
+        assert!(rx.await.unwrap().is_ok());
+        assert_eq!(shared_state.progress_ms.load(Ordering::SeqCst), 4_200);
+        assert_eq!(
+            shared_state.is_playing.load(Ordering::SeqCst),
+            PlaybackStatus::Playing.as_u32()
+        );
+        assert_eq!(
+            factory.events(),
+            vec![
+                "create:auto".to_string(),
+                "player[auto] play_file:/tmp/test.flac@0".to_string(),
+                "create:headphones".to_string(),
+                "player[headphones] play_file:/tmp/test.flac@4200".to_string(),
+                "player[auto] stop".to_string()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn switch_output_device_preserves_paused_state() {
+        let factory = MockFactory::new();
+        let (mut worker, shared_state, factory) = create_worker(factory);
+
+        worker
+            .handle_command(PlayerCommand::PlayUrl(
+                "https://example.com/test.mp3".to_string(),
+                Some(1.0),
+            ))
+            .await;
+        worker.player.set_progress(Duration::from_millis(3_000));
+        worker.handle_command(PlayerCommand::Pause).await;
+
+        let (tx, rx) = oneshot::channel();
+        worker
+            .handle_command(PlayerCommand::SwitchOutputDevice(
+                Some("headphones".to_string()),
+                tx,
+            ))
+            .await;
+
+        assert!(rx.await.unwrap().is_ok());
+        assert_eq!(
+            shared_state.is_playing.load(Ordering::SeqCst),
+            PlaybackStatus::Paused.as_u32()
+        );
+        assert_eq!(
+            factory.events(),
+            vec![
+                "create:auto".to_string(),
+                "player[auto] play_url:https://example.com/test.mp3@1000".to_string(),
+                "player[auto] pause".to_string(),
+                "create:headphones".to_string(),
+                "player[headphones] play_url:https://example.com/test.mp3@3000".to_string(),
+                "player[headphones] pause".to_string(),
+                "player[auto] stop".to_string()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn get_output_devices_returns_current_and_default_flags() {
+        let factory = MockFactory::new();
+        let (mut worker, _shared_state, _factory) = create_worker(factory);
+
+        let (tx, rx) = oneshot::channel();
+        worker
+            .handle_command(PlayerCommand::GetOutputDevices(tx))
+            .await;
+
+        let devices = rx.await.unwrap().unwrap();
+        assert_eq!(devices.len(), 2);
+        assert_eq!(
+            devices,
+            vec![
+                AudioDeviceInfo {
+                    id: "speaker".to_string(),
+                    name: "Speaker".to_string(),
+                    is_default: true,
+                    is_current: true,
+                },
+                AudioDeviceInfo {
+                    id: "headphones".to_string(),
+                    name: "Headphones".to_string(),
+                    is_default: false,
+                    is_current: false,
+                }
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn tick_marks_finished_playback_as_stopped() {
+        let factory = MockFactory::new();
+        let (mut worker, shared_state, _factory) = create_worker(factory);
+
+        worker
+            .handle_command(PlayerCommand::PlayFile(
+                "/tmp/test.flac".to_string(),
+                Some(0.0),
+            ))
+            .await;
+        worker.player.set_progress(Duration::from_millis(8_000));
+        worker.player.set_finished(true);
+
+        worker.tick();
+
+        assert_eq!(shared_state.progress_ms.load(Ordering::SeqCst), 8_000);
+        assert_eq!(
+            shared_state.is_playing.load(Ordering::SeqCst),
+            PlaybackStatus::Stopped.as_u32()
+        );
+        assert_eq!(worker.current_source, None);
+    }
+
+    #[tokio::test]
+    async fn failed_device_switch_keeps_existing_playback_state() {
+        let factory = MockFactory::with_fail_device("broken");
+        let (mut worker, shared_state, factory) = create_worker(factory);
+
+        worker
+            .handle_command(PlayerCommand::PlayUrl(
+                "https://example.com/test.mp3".to_string(),
+                Some(2.0),
+            ))
+            .await;
+        worker.player.set_progress(Duration::from_millis(2_500));
+
+        let (tx, rx) = oneshot::channel();
+        worker
+            .handle_command(PlayerCommand::SwitchOutputDevice(
+                Some("broken".to_string()),
+                tx,
+            ))
+            .await;
+
+        let err = rx.await.unwrap().unwrap_err();
+        assert_eq!(err, "failed to create device: broken");
+        assert_eq!(
+            shared_state.is_playing.load(Ordering::SeqCst),
+            PlaybackStatus::Playing.as_u32()
+        );
+        assert_eq!(
+            worker.current_source,
+            Some(PlaybackSource::Url(
+                "https://example.com/test.mp3".to_string()
+            ))
+        );
+        assert_eq!(
+            factory.events(),
+            vec![
+                "create:auto".to_string(),
+                "player[auto] play_url:https://example.com/test.mp3@2000".to_string(),
+                "create:broken".to_string()
+            ]
+        );
     }
 }

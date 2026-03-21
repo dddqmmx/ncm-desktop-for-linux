@@ -26,6 +26,13 @@ export function registerNativeApi(): void {
     void _event
     return NativeService.seek(time)
   })
+  ipcMain.handle('player:switchOutputDevice', (_event, deviceId?: string) => {
+    void _event
+    return NativeService.switchOutputDevice(deviceId)
+  })
+  ipcMain.handle('player:getOutputDevices', () => {
+    return NativeService.getOutputDevices()
+  })
   ipcMain.handle('player:waitFinished', () => {
     return NativeService.waitFinished()
   })

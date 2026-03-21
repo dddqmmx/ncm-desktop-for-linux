@@ -225,7 +225,7 @@ const playerStore = usePlayerStore()
     </div>
   </div>
 </template>
-5
+
 <style scoped>
 /* 核心容器：去除背景色 */
 .main-content-scroll-wrapper {
@@ -249,6 +249,14 @@ const playerStore = usePlayerStore()
   padding: 32px 40px;
   max-width: 1200px;
   margin: 0 auto;
+  -webkit-app-region: drag;
+}
+
+.action-bar,
+.action-bar *,
+.tracks-section,
+.tracks-section * {
+  -webkit-app-region: no-drag;
 }
 
 /* --- Header 部分 --- */

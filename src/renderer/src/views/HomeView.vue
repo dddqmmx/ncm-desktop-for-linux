@@ -109,6 +109,7 @@ const playSong = (song: Song): void => {
   overflow-y: auto;
   height: 100%;
   box-sizing: border-box;
+  -webkit-app-region: drag;
 }
 
 .page-title {
@@ -166,13 +167,8 @@ const playSong = (song: Song): void => {
   overflow-x: auto;
   scroll-behavior: smooth;
   scroll-snap-type: x mandatory;
-  scrollbar-width: none; /* Firefox */
-
-  /*
-     关键修复：
-     1. 通过 padding 撑开容器内部空间，允许子元素向上浮动 12px 而不被截断
-     2. 通过 margin 抵消 padding 占据的外部空间，保持与标题的间距不变
-  */
+  scrollbar-width: none;
+  -webkit-app-region: no-drag;
   margin: -12px -24px;
   padding: 12px 24px;
 }

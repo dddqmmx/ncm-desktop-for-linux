@@ -189,6 +189,7 @@ onMounted(() => {
   z-index: 100;
   pointer-events: none;
   /* 允许点击到底层内容 */
+    -webkit-app-region: drag;
 }
 
 /* 4. 播放列表弹出位置 */
@@ -254,6 +255,7 @@ onMounted(() => {
 .section-right {
   flex: 1;
   min-width: 150px;
+  -webkit-app-region: no-drag;
 }
 
 .section-left {
@@ -305,6 +307,7 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   max-width: 400px;
+  -webkit-app-region: no-drag;
 }
 
 .playback-controls {
@@ -384,6 +387,7 @@ onMounted(() => {
   padding: 8px;
   border-radius: 50%;
   transition: all 0.2s;
+  -webkit-app-region: no-drag;
 }
 
 .icon-btn:hover {
