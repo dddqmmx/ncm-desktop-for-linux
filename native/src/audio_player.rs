@@ -148,6 +148,13 @@ impl AudioPlayer {
         device_id.strip_prefix("alsa:").unwrap_or(device_id)
     }
 
+    #[cfg(target_os = "linux")]
+    fn linux_plughw_locator(device_id: &str) -> Option<String> {
+        Self::linux_device_locator(device_id)
+            .strip_prefix("hw:")
+            .map(|suffix| format!("plughw:{suffix}"))
+    }
+
     fn device_matches_filter(device: &cpal::Device, filter: &str) -> bool {
         let id = Self::device_id(device);
         if id == filter {
@@ -316,30 +323,44 @@ impl AudioPlayer {
             if !Self::is_linux_hw_device(&self.device) {
                 return Ok(false);
             }
+
+            let host = cpal::default_host();
+            let current_id = Self::device_id(&self.device);
+
+            if let Some(plughw_locator) = Self::linux_plughw_locator(&current_id) {
+                if let Some(compat_device) = host.output_devices()?.find(|device| {
+                    Self::linux_device_locator(&Self::device_id(device)) == plughw_locator
+                }) {
+                    println!(
+                        "[audio] fallback to compatibility output device on the same hardware: {}",
+                        Self::device_desc(&compat_device)
+                    );
+                    self.device = compat_device;
+                    return Ok(true);
+                }
+            }
+
+            let default_device = match host.default_output_device() {
+                Some(device) => device,
+                None => return Ok(false),
+            };
+
+            let default_id = Self::device_id(&default_device);
+            if current_id == default_id {
+                return Ok(false);
+            }
+
+            println!(
+                "[audio] fallback to default output device for compatibility: {}",
+                Self::device_desc(&default_device)
+            );
+            self.device = default_device;
+            return Ok(true);
         }
         #[cfg(not(target_os = "linux"))]
         {
-            return Ok(false);
+            Ok(false)
         }
-
-        let host = cpal::default_host();
-        let default_device = match host.default_output_device() {
-            Some(device) => device,
-            None => return Ok(false),
-        };
-
-        let current_id = Self::device_id(&self.device);
-        let default_id = Self::device_id(&default_device);
-        if current_id == default_id {
-            return Ok(false);
-        }
-
-        println!(
-            "[audio] fallback to default output device for compatibility: {}",
-            Self::device_desc(&default_device)
-        );
-        self.device = default_device;
-        Ok(true)
     }
 
     fn select_output_device(
@@ -1284,6 +1305,24 @@ mod tests {
         assert_eq!(*state.seek_request.lock().unwrap(), Some(Duration::ZERO));
         assert_eq!(state.current_frame.load(Ordering::SeqCst), 0);
         assert!(state.has_seek_request.load(Ordering::SeqCst));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_plughw_locator_rewrites_hw_device_ids() {
+        assert_eq!(
+            AudioPlayer::linux_plughw_locator("alsa:hw:CARD=Device,DEV=0").as_deref(),
+            Some("plughw:CARD=Device,DEV=0")
+        );
+        assert_eq!(
+            AudioPlayer::linux_plughw_locator("hw:CARD=Device,DEV=1").as_deref(),
+            Some("plughw:CARD=Device,DEV=1")
+        );
+        assert_eq!(
+            AudioPlayer::linux_plughw_locator("plughw:CARD=Device,DEV=0"),
+            None
+        );
+        assert_eq!(AudioPlayer::linux_plughw_locator("default"), None);
     }
 
     #[cfg(target_os = "linux")]

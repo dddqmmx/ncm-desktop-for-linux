@@ -63,12 +63,12 @@ export const usePlayerStore = defineStore('player', () => {
   // 降级顺序（从高到低）
   const downgradeOrder: SoundQualityType[] = [
     'jymaster', // 超清母带
-    'sky',      // 沉浸声
+    'sky', // 沉浸声
     'jyeffect', // 高清杜比
-    'hires',    // Hi-Res
+    'hires', // Hi-Res
     'lossless', // 无损
-    'exhigh',   // 极高 (320k)
-    'standard'  // 标准 (128k)
+    'exhigh', // 极高 (320k)
+    'standard' // 标准 (128k)
   ]
 
   // --- 私有辅助函数 ---
@@ -77,7 +77,9 @@ export const usePlayerStore = defineStore('player', () => {
    * 获取歌曲详情和权限信息
    * @returns 返回包含 song 和 privilege 的对象，如果失败返回 undefined
    */
-  const getSongDetailData = async (id: number): Promise<{ song: Song; privilege: Privilege } | undefined> => {
+  const getSongDetailData = async (
+    id: number
+  ): Promise<{ song: Song; privilege: Privilege } | undefined> => {
     try {
       const res = (await window.api.song_detail({ ids: [id] })) as {
         body?: ExtendedSongDetailResult
@@ -182,11 +184,7 @@ export const usePlayerStore = defineStore('player', () => {
     const configuredDeviceId = configStore.outputDeviceId
     const appliedDeviceId = await configStore.ensureConfiguredOutputDevice()
 
-    if (
-      configuredDeviceId &&
-      configuredDeviceId !== 'default' &&
-      appliedDeviceId === 'default'
-    ) {
+    if (configuredDeviceId && configuredDeviceId !== 'default' && appliedDeviceId === 'default') {
       console.warn(
         `[音频设备] 已配置设备 ${configuredDeviceId} 不可用，播放前已自动回退到系统默认输出。`
       )
@@ -322,7 +320,9 @@ export const usePlayerStore = defineStore('player', () => {
       const availableQualities = getAvailableQualities(song, privilege)
       const targetLevel = computePlayableLevel(availableQualities, configStore.soundQuality)
 
-      console.log(`[播放信息] ID:${song_id} | 目标音质:${configStore.soundQuality} | 实际请求:${targetLevel}`)
+      console.log(
+        `[播放信息] ID:${song_id} | 目标音质:${configStore.soundQuality} | 实际请求:${targetLevel}`
+      )
 
       // 3. 获取 URL
       const url = await fetchSongUrl(song_id, targetLevel)
@@ -335,7 +335,8 @@ export const usePlayerStore = defineStore('player', () => {
       }
 
       try {
-        await window.api.pause()
+        // 切歌前直接停止旧流，确保设备句柄已释放，再去校准输出设备。
+        await window.api.stop()
       } catch {
         // ignore
       }

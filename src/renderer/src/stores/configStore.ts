@@ -190,17 +190,40 @@ function normalizeOutputDevices(devices: RawAudioDeviceInfo[]): AudioDeviceInfo[
     })
 }
 
-function resolveOutputDeviceId(
-  savedDeviceId: string,
-  devices: AudioDeviceInfo[]
-): string {
-  if (savedDeviceId === DEFAULT_OUTPUT_DEVICE_ID) {
-    return DEFAULT_OUTPUT_DEVICE_ID
+function withConfiguredOutputDevice(
+  devices: AudioDeviceInfo[],
+  configuredDeviceId: string
+): AudioDeviceInfo[] {
+  if (
+    configuredDeviceId === DEFAULT_OUTPUT_DEVICE_ID ||
+    devices.some((device) => device.id === configuredDeviceId)
+  ) {
+    return devices
   }
 
-  return devices.some((device) => device.id === savedDeviceId)
-    ? savedDeviceId
-    : DEFAULT_OUTPUT_DEVICE_ID
+  return [
+    {
+      id: configuredDeviceId,
+      name: `已配置设备（当前不可用） [${configuredDeviceId}]`,
+      isDefault: false,
+      isCurrent: false
+    },
+    ...devices
+  ]
+}
+
+function isOutputDeviceActive(devices: AudioDeviceInfo[], targetDeviceId: string): boolean {
+  const currentDevice = devices.find((device) => device.isCurrent)
+
+  if (!currentDevice) {
+    return false
+  }
+
+  if (targetDeviceId === DEFAULT_OUTPUT_DEVICE_ID) {
+    return currentDevice.isDefault
+  }
+
+  return currentDevice.id === targetDeviceId
 }
 
 export const useConfigStore = defineStore('config', () => {
@@ -262,7 +285,10 @@ export const useConfigStore = defineStore('config', () => {
     outputDeviceError.value = ''
 
     try {
-      const devices = normalizeOutputDevices(await window.api.get_output_devices())
+      const devices = withConfiguredOutputDevice(
+        normalizeOutputDevices(await window.api.get_output_devices()),
+        outputDeviceId.value
+      )
       outputDevices.value = devices
       return devices
     } catch (error) {
@@ -276,7 +302,8 @@ export const useConfigStore = defineStore('config', () => {
 
   const applyOutputDevice = async (
     deviceId = DEFAULT_OUTPUT_DEVICE_ID,
-    refreshAfterSwitch = true
+    refreshAfterSwitch = true,
+    persistSelection = true
   ): Promise<boolean> => {
     isSwitchingOutputDevice.value = true
     outputDeviceError.value = ''
@@ -285,7 +312,10 @@ export const useConfigStore = defineStore('config', () => {
       await window.api.switch_output_device(
         deviceId === DEFAULT_OUTPUT_DEVICE_ID ? undefined : deviceId
       )
-      outputDeviceId.value = deviceId
+
+      if (persistSelection) {
+        outputDeviceId.value = deviceId
+      }
 
       if (refreshAfterSwitch) {
         await refreshOutputDevices()
@@ -329,22 +359,22 @@ export const useConfigStore = defineStore('config', () => {
   }
 
   const ensureConfiguredOutputDevice = async (): Promise<string> => {
-    const devices = await refreshOutputDevices()
-    const targetDeviceId = resolveOutputDeviceId(outputDeviceId.value, devices)
+    const targetDeviceId = outputDeviceId.value || DEFAULT_OUTPUT_DEVICE_ID
 
-    if (targetDeviceId !== outputDeviceId.value) {
-      outputDeviceId.value = targetDeviceId
+    const devices = await refreshOutputDevices()
+
+    if (isOutputDeviceActive(devices, targetDeviceId)) {
+      return targetDeviceId
     }
 
-    const switched = await applyOutputDevice(targetDeviceId, false)
+    const switched = await applyOutputDevice(targetDeviceId, false, false)
     await refreshOutputDevices()
 
     if (switched || targetDeviceId === DEFAULT_OUTPUT_DEVICE_ID) {
       return targetDeviceId
     }
 
-    outputDeviceId.value = DEFAULT_OUTPUT_DEVICE_ID
-    await applyOutputDevice(DEFAULT_OUTPUT_DEVICE_ID, false)
+    await applyOutputDevice(DEFAULT_OUTPUT_DEVICE_ID, false, false)
     await refreshOutputDevices()
     return DEFAULT_OUTPUT_DEVICE_ID
   }
