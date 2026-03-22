@@ -12,6 +12,7 @@ interface PersistedSettings {
   trayMinimize: boolean
   audioEngine: AudioEngineType
   outputDeviceId: string
+  outputDeviceName: string
   exclusiveMode: boolean
   theme: ThemeMode
   acrylic: boolean
@@ -22,6 +23,7 @@ interface PersistedSettings {
 const STORAGE_KEY = 'app_settings'
 const LEGACY_SOUND_QUALITY_KEY = 'sound_quality'
 const DEFAULT_OUTPUT_DEVICE_ID = 'default'
+const DEFAULT_OUTPUT_DEVICE_NAME = '系统默认输出'
 
 const SOUND_QUALITIES: SoundQualityType[] = [
   'standard',
@@ -41,6 +43,7 @@ const DEFAULT_SETTINGS: PersistedSettings = {
   trayMinimize: true,
   audioEngine: 'native',
   outputDeviceId: DEFAULT_OUTPUT_DEVICE_ID,
+  outputDeviceName: DEFAULT_OUTPUT_DEVICE_NAME,
   exclusiveMode: false,
   theme: 'adaptive',
   acrylic: true,
@@ -80,6 +83,23 @@ function normalizeLibraryPaths(paths: unknown): string[] {
   return Array.from(uniquePaths)
 }
 
+function normalizeOutputDeviceId(deviceId: unknown, fallbackDeviceId: string): string {
+  if (typeof deviceId !== 'string') {
+    return fallbackDeviceId
+  }
+
+  const normalizedDeviceId = deviceId.trim()
+  return normalizedDeviceId.length > 0 ? normalizedDeviceId : fallbackDeviceId
+}
+
+function normalizeOutputDeviceName(deviceName: unknown, deviceId: string): string {
+  if (typeof deviceName === 'string' && deviceName.trim().length > 0) {
+    return deviceName.trim()
+  }
+
+  return deviceId === DEFAULT_OUTPUT_DEVICE_ID ? DEFAULT_OUTPUT_DEVICE_NAME : ''
+}
+
 function loadSettings(): PersistedSettings {
   const fallbackSettings: PersistedSettings = {
     ...DEFAULT_SETTINGS,
@@ -93,6 +113,10 @@ function loadSettings(): PersistedSettings {
 
   try {
     const parsed = JSON.parse(rawSettings) as Partial<PersistedSettings>
+    const outputDeviceId = normalizeOutputDeviceId(
+      parsed.outputDeviceId,
+      fallbackSettings.outputDeviceId
+    )
 
     return {
       soundQuality: isSoundQuality(parsed.soundQuality)
@@ -107,10 +131,8 @@ function loadSettings(): PersistedSettings {
       audioEngine: isAudioEngine(parsed.audioEngine)
         ? parsed.audioEngine
         : fallbackSettings.audioEngine,
-      outputDeviceId:
-        typeof parsed.outputDeviceId === 'string' && parsed.outputDeviceId.trim().length > 0
-          ? parsed.outputDeviceId
-          : fallbackSettings.outputDeviceId,
+      outputDeviceId,
+      outputDeviceName: normalizeOutputDeviceName(parsed.outputDeviceName, outputDeviceId),
       exclusiveMode:
         typeof parsed.exclusiveMode === 'boolean'
           ? parsed.exclusiveMode
@@ -190,9 +212,17 @@ function normalizeOutputDevices(devices: RawAudioDeviceInfo[]): AudioDeviceInfo[
     })
 }
 
+function buildUnavailableOutputDeviceName(deviceId: string, deviceName = ''): string {
+  const normalizedDeviceName = deviceName.trim()
+  return normalizedDeviceName
+    ? `${normalizedDeviceName} (当前不可用)`
+    : `[${deviceId}] 当前不可用`
+}
+
 function withConfiguredOutputDevice(
   devices: AudioDeviceInfo[],
-  configuredDeviceId: string
+  configuredDeviceId: string,
+  configuredDeviceName: string
 ): AudioDeviceInfo[] {
   if (
     configuredDeviceId === DEFAULT_OUTPUT_DEVICE_ID ||
@@ -204,12 +234,45 @@ function withConfiguredOutputDevice(
   return [
     {
       id: configuredDeviceId,
-      name: `已配置设备（当前不可用） [${configuredDeviceId}]`,
+      name: buildUnavailableOutputDeviceName(configuredDeviceId, configuredDeviceName),
       isDefault: false,
       isCurrent: false
     },
     ...devices
   ]
+}
+
+function findConfiguredOutputDevice(
+  devices: AudioDeviceInfo[],
+  configuredDeviceId: string
+): AudioDeviceInfo | null {
+  if (configuredDeviceId === DEFAULT_OUTPUT_DEVICE_ID) {
+    return (
+      devices.find((device) => device.id === DEFAULT_OUTPUT_DEVICE_ID) ??
+      devices.find((device) => device.isDefault) ??
+      null
+    )
+  }
+
+  return devices.find((device) => device.id === configuredDeviceId) ?? null
+}
+
+function resolveConfiguredOutputDeviceName(
+  devices: AudioDeviceInfo[],
+  configuredDeviceId: string,
+  configuredDeviceName: string
+): string {
+  const configuredDevice = findConfiguredOutputDevice(devices, configuredDeviceId)
+
+  if (configuredDevice) {
+    return configuredDevice.name
+  }
+
+  if (configuredDeviceId === DEFAULT_OUTPUT_DEVICE_ID) {
+    return DEFAULT_OUTPUT_DEVICE_NAME
+  }
+
+  return configuredDeviceName.trim()
 }
 
 function isOutputDeviceActive(devices: AudioDeviceInfo[], targetDeviceId: string): boolean {
@@ -234,6 +297,7 @@ export const useConfigStore = defineStore('config', () => {
   const trayMinimize = ref(initialSettings.trayMinimize)
   const audioEngine = ref<AudioEngineType>(initialSettings.audioEngine)
   const outputDeviceId = ref(initialSettings.outputDeviceId)
+  const outputDeviceName = ref(initialSettings.outputDeviceName)
   const exclusiveMode = ref(initialSettings.exclusiveMode)
   const theme = ref<ThemeMode>(initialSettings.theme)
   const acrylic = ref(initialSettings.acrylic)
@@ -254,6 +318,7 @@ export const useConfigStore = defineStore('config', () => {
     trayMinimize: trayMinimize.value,
     audioEngine: audioEngine.value,
     outputDeviceId: outputDeviceId.value,
+    outputDeviceName: outputDeviceName.value,
     exclusiveMode: exclusiveMode.value,
     theme: theme.value,
     acrylic: acrylic.value,
@@ -268,6 +333,7 @@ export const useConfigStore = defineStore('config', () => {
       trayMinimize,
       audioEngine,
       outputDeviceId,
+      outputDeviceName,
       exclusiveMode,
       theme,
       acrylic,
@@ -280,16 +346,27 @@ export const useConfigStore = defineStore('config', () => {
     { deep: true }
   )
 
+  const syncConfiguredOutputDeviceName = (devices: AudioDeviceInfo[]): void => {
+    outputDeviceName.value = resolveConfiguredOutputDeviceName(
+      devices,
+      outputDeviceId.value,
+      outputDeviceName.value
+    )
+  }
+
   const refreshOutputDevices = async (): Promise<AudioDeviceInfo[]> => {
     isLoadingOutputDevices.value = true
     outputDeviceError.value = ''
 
     try {
+      const normalizedDevices = normalizeOutputDevices(await window.api.get_output_devices())
       const devices = withConfiguredOutputDevice(
-        normalizeOutputDevices(await window.api.get_output_devices()),
-        outputDeviceId.value
+        normalizedDevices,
+        outputDeviceId.value,
+        outputDeviceName.value
       )
       outputDevices.value = devices
+      syncConfiguredOutputDeviceName(normalizedDevices)
       return devices
     } catch (error) {
       outputDeviceError.value = '读取音频设备失败，请稍后重试。'
@@ -314,7 +391,13 @@ export const useConfigStore = defineStore('config', () => {
       )
 
       if (persistSelection) {
+        const nextOutputDeviceName = resolveConfiguredOutputDeviceName(
+          outputDevices.value,
+          deviceId,
+          deviceId === outputDeviceId.value ? outputDeviceName.value : ''
+        )
         outputDeviceId.value = deviceId
+        outputDeviceName.value = nextOutputDeviceName
       }
 
       if (refreshAfterSwitch) {
@@ -405,6 +488,7 @@ export const useConfigStore = defineStore('config', () => {
     trayMinimize,
     audioEngine,
     outputDeviceId,
+    outputDeviceName,
     exclusiveMode,
     theme,
     acrylic,

@@ -8,12 +8,131 @@ import { useConfigStore } from './configStore'
 // 播放模式定义
 export type PlayMode = 'loop' | 'random' | 'single'
 
+export interface CurrentSongArtist {
+  id: number
+  name: string
+}
+
 export interface CurrentSong {
   id: number
   name: string
-  artist: string
+  artists: CurrentSongArtist[]
   cover: string
   duration: number
+}
+
+interface PersistedCurrentSong {
+  id?: number
+  name?: string
+  artist?: CurrentSongArtist[] | CurrentSongArtist | string | null
+  artists?: CurrentSongArtist[] | CurrentSongArtist | string | null
+  cover?: string
+  duration?: number
+}
+
+const UNKNOWN_ARTIST_NAME = '未知艺术家'
+
+const normalizeSingleCurrentSongArtist = (
+  artist: { id?: number | null; name?: string | null } | string | null | undefined
+): CurrentSongArtist | null => {
+  if (typeof artist === 'string') {
+    const name = artist.trim()
+    return name
+      ? {
+          id: 0,
+          name
+        }
+      : null
+  }
+
+  if (!artist || typeof artist !== 'object') return null
+
+  const name = artist.name?.trim()
+  if (!name) return null
+
+  return {
+    id: typeof artist.id === 'number' ? artist.id : 0,
+    name
+  }
+}
+
+export const createCurrentSongArtists = (
+  artists: Array<{ id?: number | null; name?: string | null }> | null | undefined
+): CurrentSongArtist[] => {
+  const normalizedArtists = (Array.isArray(artists) ? artists : [])
+    .map((artist) => normalizeSingleCurrentSongArtist(artist))
+    .filter((artist): artist is CurrentSongArtist => artist !== null)
+
+  return normalizedArtists.length > 0
+    ? normalizedArtists
+    : [
+        {
+          id: 0,
+          name: UNKNOWN_ARTIST_NAME
+        }
+      ]
+}
+
+export const formatCurrentSongArtists = (
+  artists: CurrentSongArtist[] | null | undefined
+): string => {
+  const names = (artists ?? []).map((artist) => artist.name).filter(Boolean)
+  return names.length > 0 ? names.join(', ') : UNKNOWN_ARTIST_NAME
+}
+
+const normalizeCurrentSongArtists = (
+  artists: PersistedCurrentSong['artists'] | PersistedCurrentSong['artist']
+): CurrentSongArtist[] => {
+  if (Array.isArray(artists)) {
+    const normalizedArtists = artists
+      .map((artist) => normalizeSingleCurrentSongArtist(artist))
+      .filter((artist): artist is CurrentSongArtist => artist !== null)
+
+    return normalizedArtists.length > 0
+      ? normalizedArtists
+      : [
+          {
+            id: 0,
+            name: UNKNOWN_ARTIST_NAME
+          }
+        ]
+  }
+
+  const normalizedArtist = normalizeSingleCurrentSongArtist(artists)
+  return normalizedArtist
+    ? [normalizedArtist]
+    : [
+        {
+          id: 0,
+          name: UNKNOWN_ARTIST_NAME
+        }
+      ]
+}
+
+const normalizeCurrentSong = (song: PersistedCurrentSong): CurrentSong | null => {
+  if (typeof song.id !== 'number' || !Number.isFinite(song.id)) return null
+
+  return {
+    id: song.id,
+    name: typeof song.name === 'string' ? song.name : '未知歌曲',
+    artists: normalizeCurrentSongArtists(song.artists ?? song.artist),
+    cover: typeof song.cover === 'string' ? song.cover : '',
+    duration: typeof song.duration === 'number' && Number.isFinite(song.duration) ? song.duration : 0
+  }
+}
+
+const loadPersistedPlaylist = (): CurrentSong[] => {
+  try {
+    const raw = JSON.parse(localStorage.getItem('playlist') || '[]') as unknown
+    if (!Array.isArray(raw)) return []
+
+    return raw
+      .map((song) => normalizeCurrentSong(song as PersistedCurrentSong))
+      .filter((song): song is CurrentSong => song !== null)
+  } catch (error) {
+    console.error('读取播放列表失败', error)
+    return []
+  }
 }
 
 // 新增：权限对象定义（用于判断新音质）
@@ -40,7 +159,7 @@ export const usePlayerStore = defineStore('player', () => {
   const isSeeking = ref(false)
 
   // --- 播放列表相关状态 ---
-  const playlist = ref<CurrentSong[]>(JSON.parse(localStorage.getItem('playlist') || '[]'))
+  const playlist = ref<CurrentSong[]>(loadPersistedPlaylist())
   const playMode = ref<PlayMode>((localStorage.getItem('playMode') as PlayMode) || 'loop')
 
   const userStore = useUserStore()
@@ -353,7 +472,7 @@ export const usePlayerStore = defineStore('player', () => {
         playlist.value.splice(currentIndex.value + 1, 0, {
           id: song.id,
           name: song.name,
-          artist: song.ar.map((artist) => artist.name).join(', '),
+          artists: createCurrentSongArtists(song.ar),
           cover: song.al.picUrl,
           duration: song.dt
         })
@@ -369,6 +488,8 @@ export const usePlayerStore = defineStore('player', () => {
 
   const setPlaylist = (list: CurrentSong[]): void => {
     playlist.value = list
+      .map((song) => normalizeCurrentSong(song))
+      .filter((song): song is CurrentSong => song !== null)
   }
 
   const clearPlaylist = (): void => {
@@ -376,8 +497,11 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   const addToPlaylist = (song: CurrentSong): void => {
-    if (!playlist.value.some((s) => s.id === song.id)) {
-      playlist.value.push(song)
+    const normalizedSong = normalizeCurrentSong(song)
+    if (!normalizedSong) return
+
+    if (!playlist.value.some((s) => s.id === normalizedSong.id)) {
+      playlist.value.push(normalizedSong)
     }
   }
 
@@ -403,7 +527,7 @@ export const usePlayerStore = defineStore('player', () => {
     currentSong.value = {
       id: song.id,
       name: song.name,
-      artist: song.ar.map((artist) => artist.name).join(', '),
+      artists: createCurrentSongArtists(song.ar),
       cover: song.al.picUrl,
       duration: song.dt
     }

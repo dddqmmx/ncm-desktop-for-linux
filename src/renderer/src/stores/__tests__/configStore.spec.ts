@@ -90,7 +90,11 @@ describe('configStore output device handling', () => {
 
   it('preserves the configured device in storage when runtime playback falls back to default', async () => {
     const preferredDeviceId = 'pulse'
-    writePersistedSettings(storage, { outputDeviceId: preferredDeviceId })
+    const preferredDeviceName = 'USB DAC'
+    writePersistedSettings(storage, {
+      outputDeviceId: preferredDeviceId,
+      outputDeviceName: preferredDeviceName
+    })
 
     api.get_output_devices.mockResolvedValue([
       createDevice('default', {
@@ -111,8 +115,13 @@ describe('configStore output device handling', () => {
 
     expect(appliedDeviceId).toBe('default')
     expect(store.outputDeviceId).toBe(preferredDeviceId)
+    expect(store.outputDeviceName).toBe(preferredDeviceName)
     expect(readPersistedSettings(storage).outputDeviceId).toBe(preferredDeviceId)
+    expect(readPersistedSettings(storage).outputDeviceName).toBe(preferredDeviceName)
     expect(store.outputDevices.map((device) => device.id)).toContain(preferredDeviceId)
+    expect(store.outputDevices.find((device) => device.id === preferredDeviceId)?.name).toContain(
+      preferredDeviceName
+    )
     expect(store.outputDevices.find((device) => device.id === preferredDeviceId)?.name).toContain(
       '当前不可用'
     )
@@ -121,7 +130,10 @@ describe('configStore output device handling', () => {
 
   it('does not recreate the device when the configured device is already current', async () => {
     const preferredDeviceId = 'pulse'
-    writePersistedSettings(storage, { outputDeviceId: preferredDeviceId })
+    writePersistedSettings(storage, {
+      outputDeviceId: preferredDeviceId,
+      outputDeviceName: 'USB DAC'
+    })
 
     api.get_output_devices.mockResolvedValue([
       createDevice(preferredDeviceId, {
@@ -140,11 +152,16 @@ describe('configStore output device handling', () => {
     expect(await store.ensureConfiguredOutputDevice()).toBe(preferredDeviceId)
     expect(api.switch_output_device).not.toHaveBeenCalled()
     expect(store.currentOutputDevice?.id).toBe(preferredDeviceId)
+    expect(store.outputDeviceName).toBe('USB DAC')
   })
 
   it('keeps the configured device selectable even when the refreshed device list omits it', async () => {
     const preferredDeviceId = 'plughw:CARD=Device,DEV=0'
-    writePersistedSettings(storage, { outputDeviceId: preferredDeviceId })
+    const preferredDeviceName = 'External DAC'
+    writePersistedSettings(storage, {
+      outputDeviceId: preferredDeviceId,
+      outputDeviceName: preferredDeviceName
+    })
 
     api.get_output_devices.mockResolvedValue([
       createDevice('default', {
@@ -163,7 +180,33 @@ describe('configStore output device handling', () => {
       isDefault: false,
       isCurrent: false
     })
+    expect(store.outputDeviceName).toBe(preferredDeviceName)
+    expect(devices[0]?.name).toContain(preferredDeviceName)
     expect(devices[0]?.name).toContain('当前不可用')
+  })
+
+  it('backfills the stored device name after refreshing a legacy config that only saved the id', async () => {
+    const preferredDeviceId = 'pulse'
+    writePersistedSettings(storage, { outputDeviceId: preferredDeviceId })
+
+    api.get_output_devices.mockResolvedValue([
+      createDevice(preferredDeviceId, {
+        name: 'USB DAC',
+        isCurrent: true
+      }),
+      createDevice('default', {
+        name: 'System Default',
+        isDefault: true,
+        isCurrent: false
+      })
+    ])
+
+    const store = useConfigStore()
+    await store.refreshOutputDevices()
+    await nextTick()
+
+    expect(store.outputDeviceName).toBe('USB DAC')
+    expect(readPersistedSettings(storage).outputDeviceName).toBe('USB DAC')
   })
 
   it('restores the configured device on the next successful ensure after a transient fallback', async () => {
@@ -171,7 +214,10 @@ describe('configStore output device handling', () => {
     let currentDeviceId = 'default'
     let allowPreferredDevice = false
 
-    writePersistedSettings(storage, { outputDeviceId: preferredDeviceId })
+    writePersistedSettings(storage, {
+      outputDeviceId: preferredDeviceId,
+      outputDeviceName: 'USB DAC'
+    })
 
     api.get_output_devices.mockImplementation(async () => {
       const devices = [
@@ -213,7 +259,9 @@ describe('configStore output device handling', () => {
     await nextTick()
 
     expect(store.outputDeviceId).toBe(preferredDeviceId)
+    expect(store.outputDeviceName).toBe('USB DAC')
     expect(readPersistedSettings(storage).outputDeviceId).toBe(preferredDeviceId)
+    expect(readPersistedSettings(storage).outputDeviceName).toBe('USB DAC')
     expect(store.currentOutputDevice?.id).toBe(preferredDeviceId)
     expect(api.switch_output_device.mock.calls).toEqual([
       [preferredDeviceId],
@@ -246,12 +294,16 @@ describe('configStore output device handling', () => {
     expect(await store.setOutputDevice(preferredDeviceId)).toBe(true)
     await nextTick()
     expect(store.outputDeviceId).toBe(preferredDeviceId)
+    expect(store.outputDeviceName).toBe('USB DAC')
     expect(readPersistedSettings(storage).outputDeviceId).toBe(preferredDeviceId)
+    expect(readPersistedSettings(storage).outputDeviceName).toBe('USB DAC')
 
     expect(await store.setOutputDevice('default')).toBe(true)
     await nextTick()
     expect(store.outputDeviceId).toBe('default')
+    expect(store.outputDeviceName).toBe('System Default')
     expect(readPersistedSettings(storage).outputDeviceId).toBe('default')
+    expect(readPersistedSettings(storage).outputDeviceName).toBe('System Default')
     expect(store.currentOutputDevice?.id).toBe('default')
   })
 })

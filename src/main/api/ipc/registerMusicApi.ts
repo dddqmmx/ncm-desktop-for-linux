@@ -21,7 +21,11 @@ export function registerMusicApi(): void {
     'music:lyric': MusicService.lyric,
     'music:recommendResource': MusicService.recommend_resource,
     'music:recommendSongs': MusicService.recommend_songs,
-    'music:songUrl': MusicService.song_url, // 如果参数结构一致，也可以放这里
+    'music:songUrl': MusicService.song_url,
+     'music:artistDetail': MusicService.artist_detail,
+    'music:artistTopSong': MusicService.artist_top_song,
+    'music:artistAlbum': MusicService.artist_album,
+    'music:artistMv': MusicService.artist_mv,
   } as Record<string, MusicApiHandler>
 
   // 批量注册

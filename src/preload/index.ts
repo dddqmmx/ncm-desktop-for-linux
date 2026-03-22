@@ -33,6 +33,10 @@ const api = {
   recommend_resource: invoke('music:recommendResource'),
   recommend_songs: invoke('music:recommendSongs'),
   song_url: invoke('music:songUrl'),
+  artist_detail: invoke('music:artistDetail'),
+  artist_top_song: invoke('music:artistTopSong'),
+  artist_album: invoke('music:artistAlbum'),
+  artist_mv: invoke('music:artistMv'),
 
   // --- Rust 播放器操作 (多参数或特定逻辑) ---
   play_url: invokeArgs('player:playUrl'),

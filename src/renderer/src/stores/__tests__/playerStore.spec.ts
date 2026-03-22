@@ -141,7 +141,7 @@ describe('playerStore device switch sequencing', () => {
     playerStore.currentSong = {
       id: 1,
       name: 'Current Song',
-      artist: 'Artist',
+      artists: [{ id: 1, name: 'Artist' }],
       cover: 'cover',
       duration: 180000
     }

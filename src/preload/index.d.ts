@@ -18,6 +18,10 @@ interface CustomApi {
   lyric: (p: unknown) => Promise<unknown>
   recommend_resource: (p: unknown) => Promise<unknown>
   recommend_songs: (p: unknown) => Promise<unknown>
+  artist_detail: (p: unknown) => Promise<unknown>
+  artist_top_song: (p: unknown) => Promise<unknown>
+  artist_album: (p: unknown) => Promise<unknown>
+  artist_mv: (p: unknown) => Promise<unknown>
   // rust后端播放器操作
   play_url: (url: string, startSecs?: number) => Promise<unknown>
   play_file: (filePath: string, startSecs?: number) => Promise<unknown>

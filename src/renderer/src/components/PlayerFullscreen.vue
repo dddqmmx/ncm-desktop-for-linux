@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { usePlayerStore } from '@renderer/stores/playerStore'
+import { formatCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import LyricPanel from './LyricPanel.vue'
 import { colord } from 'colord'
 import { extractColors } from 'extract-colors'
 
 const playerStore = usePlayerStore()
+const router = useRouter()
 const isDragging = ref(false)
 const imgRef = ref<HTMLImageElement | null>(null)
 
@@ -27,6 +29,7 @@ const formatTime = (ms: number): string => {
 }
 
 const progressPercent = computed(() => playerStore.progressPercent)
+const currentArtists = computed(() => playerStore.currentSong?.artists ?? [])
 
 const beginSeek = (): void => {
   if (!isDragging.value) isDragging.value = true
@@ -56,6 +59,16 @@ const handleInput = (e: Event): void => {
   beginSeek()
   const val = Number((e.target as HTMLInputElement).value)
   playerStore.currentTime = (val / 100) * (playerStore.currentSong?.duration ?? 0)
+}
+
+const goToArtist = async (artistId: number): Promise<void> => {
+  if (!artistId) return
+
+  playerStore.isFullScreen = false
+  await router.push({
+    name: 'artist',
+    params: { id: artistId }
+  })
 }
 
 
@@ -153,7 +166,27 @@ const onImageLoad = (): void => {
           </div>
           <div class="track-meta">
             <h1 class="track-title">{{ playerStore.currentSong?.name || '未知歌曲' }}</h1>
-            <p class="track-artist">{{ playerStore.currentSong?.artist || '未知艺术家' }}</p>
+            <div class="track-artists">
+              <template v-for="(artist, index) in currentArtists" :key="`${artist.id}-${artist.name}-${index}`">
+                <button
+                  type="button"
+                  class="track-artist"
+                  :class="{ 'track-artist-link': artist.id > 0 }"
+                  @click.stop="goToArtist(artist.id)"
+                >
+                  {{ artist.name }}
+                </button>
+                <span
+                  v-if="index < currentArtists.length - 1"
+                  class="track-artist-separator"
+                >
+                  /
+                </span>
+              </template>
+              <span v-if="currentArtists.length === 0" class="track-artist">
+                {{ formatCurrentSongArtists(currentArtists) }}
+              </span>
+            </div>
           </div>
 
           <div class="playback-controls">
@@ -341,12 +374,41 @@ const onImageLoad = (): void => {
   display: block;
 }
 
+.track-artists {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .track-artist {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  font-family: inherit;
   font-size: 18px;
   opacity: 0.7;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0;
+  -webkit-app-region: no-drag;
+}
+
+.track-artist-separator {
+  opacity: 0.5;
+}
+
+.track-artist-link {
+  cursor: pointer;
+}
+
+.track-artist-link:hover {
+  opacity: 1;
+  text-decoration: underline;
 }
 
 /* 进度条与控制 */

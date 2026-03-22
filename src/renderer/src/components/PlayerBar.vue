@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { usePlayerStore } from '@renderer/stores/playerStore'
+import { formatCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
 import { ref, computed, onMounted } from 'vue'
 // 1. 必须导入新设计的播放列表组件
 import PlaylistOverlay from './PlaylistOverlay.vue'
@@ -9,7 +9,7 @@ const playerStore = usePlayerStore()
 // --- UI 显示绑定 ---
 const displayTrack = computed(() => ({
   title: playerStore.currentSong?.name || '未在播放',
-  artist: playerStore.currentSong?.artist || '无',
+  artist: formatCurrentSongArtists(playerStore.currentSong?.artists),
   cover: playerStore.currentSong?.cover || 'https://placehold.co/100x100/444444/fff?text=None'
 }))
 
@@ -255,7 +255,6 @@ onMounted(() => {
 .section-right {
   flex: 1;
   min-width: 150px;
-  -webkit-app-region: no-drag;
 }
 
 .section-left {
@@ -272,6 +271,7 @@ onMounted(() => {
   flex-shrink: 0;
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  -webkit-app-region: no-drag;
 }
 
 .track-cover {
@@ -284,6 +284,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  -webkit-app-region:  no-drag;
 }
 
 .track-title {
@@ -307,7 +308,6 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   max-width: 400px;
-  -webkit-app-region: no-drag;
 }
 
 .playback-controls {

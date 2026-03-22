@@ -16,7 +16,11 @@ import {
   playlist_detail,
   lyric_new,
   recommend_resource,
-  recommend_songs
+  recommend_songs,
+  artist_detail,
+  artist_top_song,
+  artist_album,
+  artist_mv
 } from 'NeteaseCloudMusicApi'
 
 type ServiceResult<T = APIBaseResponse> = {
@@ -68,7 +72,10 @@ export const MusicService = {
   lyric: createMethod(lyric_new),
   recommend_resource: createMethod(recommend_resource),
   recommend_songs: createMethod(recommend_songs),
-
+  artist_detail: createMethod(artist_detail),
+  artist_top_song: createMethod(artist_top_song),
+  artist_album: createMethod(artist_album),
+  artist_mv: createMethod(artist_mv),
   song_detail(params: { ids: number[] | string; [key: string]: unknown }) {
     const ids = Array.isArray(params.ids) ? params.ids.join(',') : params.ids;
     return responseHandler(song_detail({ ...params, ids }));

@@ -2,7 +2,7 @@
 import { useRoute } from 'vue-router'
 import { ref, computed, watch } from 'vue'
 import { PlaylistDetail, Track } from '@renderer/types/playlistDetail'
-import { CurrentSong, usePlayerStore } from '@renderer/stores/playerStore'
+import { CurrentSong, createCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
 
 const route = useRoute()
 
@@ -50,7 +50,7 @@ const fetchPlaylistDetail = async (playlistId: string | string[]): Promise<void>
 const mapTrackToCurrentSong = (track: Track): CurrentSong => ({
   id: track.id,
   name: track.name,
-  artist: track.ar.map((artist) => artist.name).join(', '),
+  artists: createCurrentSongArtists(track.ar),
   cover: track.al.picUrl,
   duration: track.dt
 })

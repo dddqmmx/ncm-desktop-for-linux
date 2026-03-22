@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { usePlayerStore } from '@renderer/stores/playerStore'
+import { formatCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
 import { ref, nextTick, watch, onBeforeUnmount } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 
@@ -118,7 +118,7 @@ const onDragEnd = (): void => {
 
             <div class="item-info">
               <div class="item-name">{{ song.name }}</div>
-              <div class="item-artist">{{ song.artist }}</div>
+              <div class="item-artist">{{ formatCurrentSongArtists(song.artists) }}</div>
             </div>
 
             <div class="item-actions">
