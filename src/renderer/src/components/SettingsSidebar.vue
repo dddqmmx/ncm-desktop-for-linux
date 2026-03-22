@@ -48,6 +48,7 @@ const indicatorStyle = computed((): { transform: string } => {
   display: flex;
   flex-direction: column;
   padding: 32px 16px;
+  -webkit-app-region: no-drag;
 }
 .app-brand {
   padding: 0 16px 32px;
@@ -60,7 +61,11 @@ const indicatorStyle = computed((): { transform: string } => {
   color: rgba(0, 0, 0, 0.4);
 }
 .brand-dot { width: 8px; height: 8px; background: #111; border-radius: 2px; }
-.sidebar-nav { position: relative; flex: 1; }
+.sidebar-nav {
+  position: relative;
+  flex: 1;
+  -webkit-app-region: no-drag;
+}
 .nav-indicator {
   position: absolute;
   left: 0;
@@ -87,6 +92,7 @@ const indicatorStyle = computed((): { transform: string } => {
   color: rgba(0, 0, 0, 0.5);
   cursor: pointer;
   z-index: 1;
+  -webkit-app-region: no-drag;
 }
 .nav-item.active { color: #111; }
 .nav-icon { width: 18px; height: 18px; }

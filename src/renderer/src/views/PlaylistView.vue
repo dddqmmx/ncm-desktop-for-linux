@@ -249,7 +249,7 @@ const playerStore = usePlayerStore()
   padding: 32px 40px;
   max-width: 1200px;
   margin: 0 auto;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
 }
 
 .action-bar,

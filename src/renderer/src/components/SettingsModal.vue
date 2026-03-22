@@ -101,6 +101,7 @@ const activeTabComponent = computed(() => tabComponents[activeTab.value])
 </template>
 
 <style scoped>
+
 .settings-mask {
   position: fixed;
   inset: 0;
@@ -109,6 +110,7 @@ const activeTabComponent = computed(() => tabComponents[activeTab.value])
   display: flex;
   align-items: center;
   justify-content: center;
+  -webkit-app-region: no-drag;
 }
 
 .settings-window {
@@ -118,6 +120,7 @@ const activeTabComponent = computed(() => tabComponents[activeTab.value])
   display: flex;
   overflow: hidden;
   animation: modalScaleUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  -webkit-app-region: no-drag;
 }
 
 .glass-morphism-heavy {

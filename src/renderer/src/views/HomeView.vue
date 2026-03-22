@@ -109,7 +109,7 @@ const playSong = (song: Song): void => {
   overflow-y: auto;
   height: 100%;
   box-sizing: border-box;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
 }
 
 .page-title {
