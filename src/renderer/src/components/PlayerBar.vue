@@ -331,6 +331,7 @@ onMounted(() => {
   cursor: pointer;
   position: relative;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  -webkit-app-region: no-drag;
 }
 
 .inner-glow {

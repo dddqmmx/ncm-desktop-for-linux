@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed, ref, type Component } from 'vue'
 import '@renderer/assets/settings.css'
+import GeneralSettingsTab from './GeneralSettingsTab.vue'
+import AudioSettingsTab from './AudioSettingsTab.vue'
+import AppearanceSettingsTab from './AppearanceSettingsTab.vue'
+import LibrarySettingsTab from './LibrarySettingsTab.vue'
+import ShortcutsSettingsTab from './ShortcutsSettingsTab.vue'
+import AboutSettingsTab from './AboutSettingsTab.vue'
 import SettingsSidebar from './SettingsSidebar.vue'
-import GeneralSettingsTab from './settings/GeneralSettingsTab.vue'
-import AudioSettingsTab from './settings/AudioSettingsTab.vue'
-import AppearanceSettingsTab from './settings/AppearanceSettingsTab.vue'
-import LibrarySettingsTab from './settings/LibrarySettingsTab.vue'
-import ShortcutsSettingsTab from './settings/ShortcutsSettingsTab.vue'
-import AboutSettingsTab from './settings/AboutSettingsTab.vue'
+import CacheSettingsTab from './CacheSettingsTab.vue'
 
-type SettingsTabId = 'general' | 'audio' | 'appearance' | 'library' | 'shortcuts' | 'about'
+type SettingsTabId = 'general' | 'audio' | 'appearance' | 'library' | 'shortcuts' | 'about' | 'cache'
 
 type SettingsTab = {
   id: SettingsTabId
@@ -41,6 +42,11 @@ const tabs: SettingsTab[] = [
     icon: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z'
   },
   {
+    id: 'cache',
+    name: '缓存',
+    icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4'
+  },
+  {
     id: 'shortcuts',
     name: '快捷键',
     icon: 'M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25'
@@ -58,7 +64,8 @@ const tabComponents: Record<SettingsTabId, Component> = {
   appearance: AppearanceSettingsTab,
   library: LibrarySettingsTab,
   shortcuts: ShortcutsSettingsTab,
-  about: AboutSettingsTab
+  about: AboutSettingsTab,
+  cache: CacheSettingsTab
 }
 
 const activeTab = ref<SettingsTabId>('general')

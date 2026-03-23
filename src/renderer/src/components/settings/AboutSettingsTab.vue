@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import appIcon from '@renderer/assets/icon.png'
-import SettingGroup from '@renderer/components/SettingGroup.vue'
-import SettingRow from '@renderer/components/SettingRow.vue'
+import SettingGroup from '@renderer/components/settings/SettingGroup.vue'
+import SettingRow from '@renderer/components/settings/SettingRow.vue'
 
 const appInfo = {
   name: 'NCM Desktop For Linux',

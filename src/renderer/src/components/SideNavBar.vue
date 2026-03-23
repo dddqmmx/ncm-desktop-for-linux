@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import LoginModal from './LoginModal.vue';
 import { useUserStore } from '@renderer/stores/userStore';
 import { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist';
-import SettingsModal from './SettingsModal.vue';
+import SettingsModal from './settings/SettingsModal.vue';
 import { resolveCachedMediaUrl } from '@renderer/utils/cache';
 
 const userStore = useUserStore()

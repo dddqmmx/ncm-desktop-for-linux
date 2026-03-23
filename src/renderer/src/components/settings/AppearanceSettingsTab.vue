@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
-import SettingGroup from '@renderer/components/SettingGroup.vue'
-import SettingRow from '@renderer/components/SettingRow.vue'
+import SettingGroup from '@renderer/components/settings/SettingGroup.vue'
+import SettingRow from '@renderer/components/settings/SettingRow.vue'
 import SegmentedSlider from '@renderer/components/SegmentedSlider.vue'
 import { useConfigStore } from '@renderer/stores/configStore'
 

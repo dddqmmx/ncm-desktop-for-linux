@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import SettingGroup from '@renderer/components/SettingGroup.vue'
+import SettingGroup from '@renderer/components/settings/SettingGroup.vue'
 </script>
 
 <template>
