@@ -3,14 +3,17 @@ import { formatCurrentSongArtists, usePlayerStore } from '@renderer/stores/playe
 import { ref, computed, onMounted } from 'vue'
 // 1. 必须导入新设计的播放列表组件
 import PlaylistOverlay from './PlaylistOverlay.vue'
+import { useResolvedMediaUrl } from '@renderer/composables/useResolvedMediaUrl'
 
 const playerStore = usePlayerStore()
+const fallbackCover = 'https://placehold.co/100x100/444444/fff?text=None'
+const resolvedCover = useResolvedMediaUrl(() => playerStore.currentSong?.cover || fallbackCover, fallbackCover)
 
 // --- UI 显示绑定 ---
 const displayTrack = computed(() => ({
   title: playerStore.currentSong?.name || '未在播放',
   artist: formatCurrentSongArtists(playerStore.currentSong?.artists),
-  cover: playerStore.currentSong?.cover || 'https://placehold.co/100x100/444444/fff?text=None'
+  cover: resolvedCover.value
 }))
 
 // --- 进度条逻辑 ---

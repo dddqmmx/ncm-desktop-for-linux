@@ -1,4 +1,5 @@
 import { UserAccount } from '@renderer/types/userAccount'
+import { resolveCachedMediaUrl } from '@renderer/utils/cache'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
@@ -22,7 +23,19 @@ export const useUserStore = defineStore('user', () => {
       const res = (await window.api.user_account({ cookie: cookie.value })) as {
         body?: UserAccount
       }
-      userInfo.value = res.body
+      if (!res.body) {
+        userInfo.value = undefined
+        return
+      }
+
+      userInfo.value = {
+        ...res.body,
+        profile: {
+          ...res.body.profile,
+          avatarUrl: await resolveCachedMediaUrl(res.body.profile.avatarUrl),
+          backgroundUrl: await resolveCachedMediaUrl(res.body.profile.backgroundUrl)
+        }
+      }
     }
   }
 

@@ -1,16 +1,15 @@
 <script setup lang="ts">
 import SideNavBar from '../components/SideNavBar.vue'
 import MusicPlayer from '../components/PlayerBar.vue'
-import { onMounted } from 'vue';
-import { useUserStore } from '@renderer/stores/userStore';
-import PlayerFullscreen from '@renderer/components/PlayerFullscreen.vue';
-import { usePlayerStore } from '@renderer/stores/playerStore';
+import { onMounted } from 'vue'
+import { useUserStore } from '@renderer/stores/userStore'
+import PlayerFullscreen from '@renderer/components/PlayerFullscreen.vue'
+import { usePlayerStore } from '@renderer/stores/playerStore'
 const userStore = useUserStore()
 const playerStore = usePlayerStore()
 
-onMounted(async ()=>{
-  await userStore.getUserAccount();
-  console.log(await window.api.recommend_resource({cookie: userStore.cookie}))
+onMounted(async () => {
+  await userStore.getUserAccount()
 })
 
 </script>
@@ -39,8 +38,6 @@ onMounted(async ()=>{
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
 /* === 布局与背景 === */
 .app-background {
   width: 100vw;
@@ -48,7 +45,13 @@ onMounted(async ()=>{
   background-color: #eff1f5;
   position: relative;
   overflow: hidden;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'SF Pro Text',
+    'SF Pro Display',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   color: #1a1a1a;
 }
 

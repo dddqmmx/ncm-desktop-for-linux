@@ -4,6 +4,7 @@ import { SongDetailResult } from '@renderer/types/songDetail'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { PlaylistCatlist, PlaylistCategory } from '@renderer/types/playlistCatlist'
 import type { SearchResult, Song as SearchSong } from '@renderer/types/search'
+import { resolveCachedMediaUrl } from '@renderer/utils/cache'
 
 const searchQuery = ref('')
 const searchResults = ref<SearchResult | null>(null)
@@ -74,7 +75,7 @@ const loadCover = async (id: number): Promise<void> => {
   if (coverMap.value[id]) return
   const res = await window.api.song_detail({ ids: [id] }) as { body?: SongDetailResult }
   const url = res.body?.songs?.[0]?.al?.picUrl
-  if (url) coverMap.value[id] = url
+  if (url) coverMap.value[id] = await resolveCachedMediaUrl(`${url}?param=80y80`)
 }
 
 const showResults = computed(() => hasSearched.value)

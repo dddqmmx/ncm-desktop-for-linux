@@ -1,8 +1,10 @@
 mod audio_player;
+mod cache;
 
 use napi::{Error, Result};
 use napi_derive::napi;
 use std::future::Future;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -11,6 +13,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::audio_player::{AudioPlayer, OutputDeviceInfo};
+use crate::cache::{CacheBucket, CacheStats, CachedSongSource, NativeCacheService};
 
 type BackendResult<T> = std::result::Result<T, String>;
 type BackendFuture<'a, T> = Pin<Box<dyn Future<Output = BackendResult<T>> + Send + 'a>>;
@@ -34,6 +37,16 @@ fn get_runtime() -> &'static Runtime {
 enum PlaybackSource {
     File(String),
     Url(String),
+    CachedUrl(CachedUrlPlaybackRequest),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CachedUrlPlaybackRequest {
+    url: String,
+    cache_path: String,
+    metadata_path: String,
+    duration_ms: Option<u64>,
+    cache_ahead_secs: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,6 +97,7 @@ impl From<OutputDeviceInfo> for AudioDeviceInfo {
 enum PlayerCommand {
     PlayFile(String, Option<f64>),
     PlayUrl(String, Option<f64>),
+    PlayUrlCached(CachedUrlPlaybackRequest, Option<f64>),
     Pause,
     Resume,
     Stop,
@@ -107,6 +121,11 @@ trait PlayerBackend: Send {
     fn play_url<'a>(
         &'a mut self,
         url: &'a str,
+        start_at: Option<Duration>,
+    ) -> BackendFuture<'a, ()>;
+    fn play_url_cached<'a>(
+        &'a mut self,
+        request: &'a CachedUrlPlaybackRequest,
         start_at: Option<Duration>,
     ) -> BackendFuture<'a, ()>;
     fn pause(&self);
@@ -152,6 +171,26 @@ impl PlayerBackend for NativePlayer {
         Box::pin(async move {
             self.0
                 .play_url(url, start_at)
+                .await
+                .map_err(|err| err.to_string())
+        })
+    }
+
+    fn play_url_cached<'a>(
+        &'a mut self,
+        request: &'a CachedUrlPlaybackRequest,
+        start_at: Option<Duration>,
+    ) -> BackendFuture<'a, ()> {
+        Box::pin(async move {
+            self.0
+                .play_url_cached(
+                    &request.url,
+                    &request.cache_path,
+                    &request.metadata_path,
+                    request.duration_ms,
+                    request.cache_ahead_secs,
+                    start_at,
+                )
                 .await
                 .map_err(|err| err.to_string())
         })
@@ -264,6 +303,17 @@ where
                     eprintln!("Play URL failed: {}", err);
                 }
             }
+            PlayerCommand::PlayUrlCached(request, start_secs) => {
+                if let Err(err) = self
+                    .play_source(
+                        PlaybackSource::CachedUrl(request),
+                        start_secs_to_duration(start_secs),
+                    )
+                    .await
+                {
+                    eprintln!("Play cached URL failed: {}", err);
+                }
+            }
             PlayerCommand::Pause => {
                 self.player.pause();
                 self.shared_state
@@ -348,6 +398,7 @@ where
         match source {
             PlaybackSource::File(path) => player.play_file(path, start_at).await,
             PlaybackSource::Url(url) => player.play_url(url, start_at).await,
+            PlaybackSource::CachedUrl(request) => player.play_url_cached(request, start_at).await,
         }
     }
 
@@ -497,6 +548,30 @@ impl PlayerService {
     }
 
     #[napi]
+    pub fn play_url_cached(
+        &self,
+        url: String,
+        cache_path: String,
+        metadata_path: String,
+        duration_ms: Option<i64>,
+        cache_ahead_secs: Option<u32>,
+        start_secs: Option<f64>,
+    ) -> Result<()> {
+        self.sender
+            .send(PlayerCommand::PlayUrlCached(
+                CachedUrlPlaybackRequest {
+                    url,
+                    cache_path,
+                    metadata_path,
+                    duration_ms: duration_ms.map(|value| value.max(0) as u64),
+                    cache_ahead_secs,
+                },
+                start_secs,
+            ))
+            .map_err(|_| Error::from_reason("Background worker died"))
+    }
+
+    #[napi]
     pub fn pause(&self) -> Result<()> {
         let _ = self.sender.send(PlayerCommand::Pause);
         Ok(())
@@ -571,6 +646,111 @@ impl PlayerService {
             .map_err(|_| Error::from_reason("Worker shutdown"))?;
         rx.await
             .map_err(|_| Error::from_reason("Playback task interrupted"))
+    }
+}
+
+#[napi]
+pub struct CacheService {
+    service: Arc<NativeCacheService>,
+}
+
+#[napi]
+impl CacheService {
+    #[napi(constructor)]
+    pub fn new(root_dir: String, max_size_bytes: Option<i64>) -> Result<Self> {
+        let root_dir = PathBuf::from(root_dir);
+        let fallback_max_size_bytes =
+            max_size_bytes.unwrap_or((512 * 1024 * 1024) as i64).max(0) as u64;
+        let service = NativeCacheService::new(root_dir, fallback_max_size_bytes)
+            .map_err(|err| Error::from_reason(err.to_string()))?;
+
+        Ok(Self {
+            service: Arc::new(service),
+        })
+    }
+
+    #[napi]
+    pub fn get_stats(&self) -> Result<CacheStats> {
+        self.service
+            .get_stats()
+            .map_err(|err| Error::from_reason(err.to_string()))
+    }
+
+    #[napi]
+    pub fn get_json(&self, bucket: String, key: String) -> Result<Option<String>> {
+        let bucket = CacheBucket::try_from(bucket.as_str())
+            .map_err(|err| Error::from_reason(err.to_string()))?;
+
+        self.service
+            .get_json(bucket, &key)
+            .map_err(|err| Error::from_reason(err.to_string()))
+    }
+
+    #[napi]
+    pub fn put_json(&self, bucket: String, key: String, value: String) -> Result<CacheStats> {
+        let bucket = CacheBucket::try_from(bucket.as_str())
+            .map_err(|err| Error::from_reason(err.to_string()))?;
+
+        self.service
+            .put_json(bucket, &key, &value)
+            .map_err(|err| Error::from_reason(err.to_string()))
+    }
+
+    #[napi]
+    pub fn set_max_size_bytes(&self, max_size_bytes: i64) -> Result<CacheStats> {
+        self.service
+            .set_max_size_bytes(max_size_bytes.max(0) as u64)
+            .map_err(|err| Error::from_reason(err.to_string()))
+    }
+
+    #[napi]
+    pub fn get_song_cache_ahead_secs(&self) -> Result<u32> {
+        self.service
+            .get_song_cache_ahead_secs()
+            .map_err(|err| Error::from_reason(err.to_string()))
+    }
+
+    #[napi]
+    pub fn set_song_cache_ahead_secs(&self, song_cache_ahead_secs: u32) -> Result<u32> {
+        self.service
+            .set_song_cache_ahead_secs(song_cache_ahead_secs)
+            .map_err(|err| Error::from_reason(err.to_string()))
+    }
+
+    #[napi]
+    pub fn clear(&self) -> Result<CacheStats> {
+        self.service
+            .clear()
+            .map_err(|err| Error::from_reason(err.to_string()))
+    }
+
+    #[napi]
+    pub async fn cache_remote_file(
+        &self,
+        bucket: String,
+        key: String,
+        url: String,
+    ) -> Result<Option<String>> {
+        let bucket = CacheBucket::try_from(bucket.as_str())
+            .map_err(|err| Error::from_reason(err.to_string()))?;
+
+        self.service
+            .cache_remote_file(bucket, &key, &url)
+            .await
+            .map(|path| path.map(|path| path.to_string_lossy().into_owned()))
+            .map_err(|err| Error::from_reason(err.to_string()))
+    }
+
+    #[napi]
+    pub fn prepare_song_source(
+        &self,
+        song_id: i64,
+        quality: String,
+        url: String,
+    ) -> Result<CachedSongSource> {
+        self.service
+            .prepare_song_source(song_id, &quality, &url)
+            .map_err(|err| Error::from_reason(err.to_string()))
     }
 }
 
@@ -719,6 +899,25 @@ mod tests {
             let start_at = start_at.unwrap_or(Duration::ZERO);
             self.log(format!(
                 "player[{label}] play_url:{url}@{}",
+                duration_to_millis(start_at)
+            ));
+            self.set_progress(start_at);
+            self.set_finished(false);
+
+            Box::pin(async { Ok(()) })
+        }
+
+        fn play_url_cached<'a>(
+            &'a mut self,
+            request: &'a CachedUrlPlaybackRequest,
+            start_at: Option<Duration>,
+        ) -> BackendFuture<'a, ()> {
+            let label = self.label().to_string();
+            let url = request.url.clone();
+            let cache_path = request.cache_path.clone();
+            let start_at = start_at.unwrap_or(Duration::ZERO);
+            self.log(format!(
+                "player[{label}] play_url_cached:{url}->{cache_path}@{}",
                 duration_to_millis(start_at)
             ));
             self.set_progress(start_at);
@@ -928,6 +1127,25 @@ mod tests {
             let start_at = start_at.unwrap_or(Duration::ZERO);
             self.log(format!(
                 "player[{device_id}] play_url:{url}@{}",
+                duration_to_millis(start_at)
+            ));
+            *self.progress.lock().unwrap() = start_at;
+            self.finished.store(false, Ordering::SeqCst);
+
+            Box::pin(async { Ok(()) })
+        }
+
+        fn play_url_cached<'a>(
+            &'a mut self,
+            request: &'a CachedUrlPlaybackRequest,
+            start_at: Option<Duration>,
+        ) -> BackendFuture<'a, ()> {
+            let device_id = self.device_id.clone();
+            let url = request.url.clone();
+            let cache_path = request.cache_path.clone();
+            let start_at = start_at.unwrap_or(Duration::ZERO);
+            self.log(format!(
+                "player[{device_id}] play_url_cached:{url}->{cache_path}@{}",
                 duration_to_millis(start_at)
             ));
             *self.progress.lock().unwrap() = start_at;

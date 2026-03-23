@@ -17,6 +17,10 @@ ringbuf = "0.4.8"
 stream-download = {version ="0.24.0",  features = ["reqwest-rustls"]}
 reqwest = { version = "0.13.1", features = ["stream", "native-tls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hex = "0.4"
 
 [build-dependencies]
 napi-build = "2.3.1"

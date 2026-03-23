@@ -3,6 +3,7 @@ import { useRoute } from 'vue-router'
 import { ref, computed, watch } from 'vue'
 import { PlaylistDetail, Track } from '@renderer/types/playlistDetail'
 import { CurrentSong, createCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
+import { resolveCachedMediaUrl } from '@renderer/utils/cache'
 
 const route = useRoute()
 
@@ -37,7 +38,26 @@ const fetchPlaylistDetail = async (playlistId: string | string[]): Promise<void>
     loading.value = true
     const res = await window.api.playlist_detail({ id: playlistId }) as { body?: PlaylistDetail }
     if (res.body) {
-      detail.value = res.body
+      detail.value = {
+        ...res.body,
+        playlist: {
+          ...res.body.playlist,
+          coverImgUrl: await resolveCachedMediaUrl(`${res.body.playlist.coverImgUrl}?param=400y400`),
+          creator: {
+            ...res.body.playlist.creator,
+            avatarUrl: await resolveCachedMediaUrl(`${res.body.playlist.creator.avatarUrl}?param=50y50`)
+          },
+          tracks: await Promise.all(
+            res.body.playlist.tracks.map(async (track) => ({
+              ...track,
+              al: {
+                ...track.al,
+                picUrl: await resolveCachedMediaUrl(`${track.al.picUrl}?param=80y80`)
+              }
+            }))
+          )
+        }
+      }
     }
   } catch (error) {
     console.error('Failed to fetch playlist detail:', error)
@@ -115,14 +135,14 @@ const playerStore = usePlayerStore()
       <!-- 歌单头部 -->
       <header class="playlist-header">
         <div class="cover-wrapper">
-          <img :src="playlist.coverImgUrl + '?param=400y400'" :alt="playlist.name" class="playlist-cover">
+          <img :src="playlist.coverImgUrl" :alt="playlist.name" class="playlist-cover">
         </div>
         <div class="playlist-details">
           <div class="playlist-type-tag">PLAYLIST</div>
           <h1 class="playlist-title">{{ playlist.name }}</h1>
 
           <div class="creator-info">
-            <img :src="playlist.creator.avatarUrl + '?param=50y50'" class="creator-avatar">
+            <img :src="playlist.creator.avatarUrl" class="creator-avatar">
             <span class="creator-name">{{ playlist.creator.nickname }}</span>
             <span class="create-time">{{ formatDate(playlist.createTime) }} 创建</span>
           </div>
@@ -194,7 +214,7 @@ const playerStore = usePlayerStore()
             </div>
 
             <div class="col-title">
-              <img :src="track.al.picUrl + '?param=80y80'" class="mini-cover" loading="lazy">
+              <img :src="track.al.picUrl" class="mini-cover" loading="lazy">
               <div class="song-info">
                 <span class="song-name">{{ track.name }}</span>
                 <span class="song-artist">

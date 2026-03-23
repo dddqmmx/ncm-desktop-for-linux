@@ -1,4 +1,5 @@
 import { Song } from '@renderer/types/songDetail'
+import { prepareCachedSongSource } from '@renderer/utils/cache'
 import { defineStore } from 'pinia'
 import { ref, watch, computed } from 'vue'
 import { useUserStore } from './userStore'
@@ -461,7 +462,22 @@ export const usePlayerStore = defineStore('player', () => {
       }
 
       await prepareOutputDeviceForPlayback()
-      await window.api.play_url(url, startTime / 1000)
+
+      const playbackSource = await prepareCachedSongSource(song_id, targetLevel, url)
+      if (playbackSource.type === 'file') {
+        await window.api.play_file(playbackSource.value, startTime / 1000)
+      } else if (playbackSource.cachePath && playbackSource.metadataPath) {
+        await window.api.play_url_cached(
+          playbackSource.value,
+          playbackSource.cachePath,
+          playbackSource.metadataPath,
+          song.dt,
+          playbackSource.cacheAheadSecs ?? configStore.songCacheAheadSecs,
+          startTime / 1000
+        )
+      } else {
+        await window.api.play_url(playbackSource.value, startTime / 1000)
+      }
 
       setPlayerData(song, true)
       isHistorySong.value = false

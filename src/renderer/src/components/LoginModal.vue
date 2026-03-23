@@ -279,8 +279,6 @@ const handleLogin = (): void => {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-
 * { box-sizing: border-box; }
 
 /* 基础变量 - 纯黑白极简 */
@@ -298,7 +296,13 @@ const handleLogin = (): void => {
   display: flex; align-items: center; justify-content: center;
   background-color: var(--bg-overlay);
   backdrop-filter: blur(12px);
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-family:
+    'SF Pro Text',
+    'SF Pro Display',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   color: var(--text-main);
 }
 

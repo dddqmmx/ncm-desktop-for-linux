@@ -24,6 +24,14 @@ interface CustomApi {
   artist_mv: (p: unknown) => Promise<unknown>
   // rust后端播放器操作
   play_url: (url: string, startSecs?: number) => Promise<unknown>
+  play_url_cached: (
+    url: string,
+    cachePath: string,
+    metadataPath: string,
+    durationMs?: number,
+    cacheAheadSecs?: number,
+    startSecs?: number
+  ) => Promise<unknown>
   play_file: (filePath: string, startSecs?: number) => Promise<unknown>
   pause: () => Promise<unknown>
   resume: () => Promise<unknown>
@@ -34,6 +42,17 @@ interface CustomApi {
   get_output_devices: () => Promise<AudioDeviceInfo[]>
   wait_finished: () => Promise<unknown>
   song_url_and_wait: (url: string, startSecs?: number) => Promise<unknown>
+  cache_get_stats: () => Promise<CacheStats>
+  cache_set_max_size: (maxSizeBytes: number) => Promise<CacheStats>
+  cache_get_song_cache_ahead_secs: () => Promise<number>
+  cache_set_song_cache_ahead_secs: (songCacheAheadSecs: number) => Promise<number>
+  cache_clear: () => Promise<CacheStats>
+  resolve_cached_media_url: (url: string) => Promise<string>
+  prepare_cached_song_source: (payload: {
+    songId: number
+    quality: string
+    url: string
+  }) => Promise<CachedSongSource>
 }
 
 interface AudioDeviceInfo {
@@ -41,6 +60,27 @@ interface AudioDeviceInfo {
   name: string
   isDefault: boolean
   isCurrent: boolean
+}
+
+interface CacheStats {
+  totalBytes: number
+  maxSizeBytes: number
+  songBytes: number
+  songEntries: number
+  entityBytes: number
+  entityEntries: number
+  coverBytes: number
+  coverEntries: number
+  lyricBytes: number
+  lyricEntries: number
+}
+
+interface CachedSongSource {
+  type: 'file' | 'url'
+  value: string
+  cachePath?: string
+  metadataPath?: string
+  cacheAheadSecs?: number
 }
 
 declare global {

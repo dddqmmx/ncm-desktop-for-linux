@@ -3,6 +3,8 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerMusicApi } from './api/ipc/registerMusicApi'
 import { registerNativeApi } from './api/ipc/registerNativeApi'
+import { registerCacheApi } from './api/ipc/registerCacheApi'
+import { registerCacheProtocol } from './api/protocol/registerCacheProtocol'
 
 const iconPath = join(__dirname, '../../resources/icon.png')
 
@@ -45,8 +47,10 @@ function createWindow(): void {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
+  registerCacheProtocol(join(app.getPath('userData'), 'cache'))
   registerMusicApi()
   registerNativeApi()
+  registerCacheApi()
 
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')

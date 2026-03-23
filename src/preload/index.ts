@@ -40,6 +40,7 @@ const api = {
 
   // --- Rust 播放器操作 (多参数或特定逻辑) ---
   play_url: invokeArgs('player:playUrl'),
+  play_url_cached: invokeArgs('player:playUrlCached'),
   play_file: invokeArgs('player:playFile'),
   pause: invoke('player:pause'),
   resume: invoke('player:resume'),
@@ -49,7 +50,16 @@ const api = {
   switch_output_device: invokeArgs('player:switchOutputDevice'),
   get_output_devices: invoke('player:getOutputDevices'),
   wait_finished: invoke('player:waitFinished'),
-  song_url_and_wait: invokeArgs('music:playUrlAndWait')
+  song_url_and_wait: invokeArgs('music:playUrlAndWait'),
+
+  // --- Native Cache API ---
+  cache_get_stats: invoke('cache:getStats'),
+  cache_set_max_size: invoke('cache:setMaxSizeBytes'),
+  cache_get_song_cache_ahead_secs: invoke('cache:getSongCacheAheadSecs'),
+  cache_set_song_cache_ahead_secs: invoke('cache:setSongCacheAheadSecs'),
+  cache_clear: invoke('cache:clear'),
+  resolve_cached_media_url: invoke('cache:resolveCachedMediaUrl'),
+  prepare_cached_song_source: invoke('cache:prepareSongSource')
 }
 
 // 保持不变

@@ -3,17 +3,20 @@ use ringbuf::HeapRb;
 use ringbuf::traits::{Consumer, Observer, Producer, Split};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
-use std::io::{Read, Seek, SeekFrom};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::num::NonZeroUsize;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use stream_download::http::HttpStream;
 use stream_download::http::reqwest::Client;
 use stream_download::source::SourceStream;
+use stream_download::storage::StorageProvider;
 use stream_download::storage::adaptive::AdaptiveStorageProvider;
 use stream_download::storage::temp::TempStorageProvider;
-use stream_download::{Settings, StreamDownload};
+use stream_download::{Settings, StreamDownload, StreamPhase, StreamState};
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{CODEC_TYPE_NULL, Decoder, DecoderOptions};
 use symphonia::core::conv::ConvertibleSample;
@@ -23,6 +26,8 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::sample::{Sample, SampleFormat as SymphoniaSampleFormat};
 use tokio::sync::Notify;
+
+use crate::cache::song::SongStreamCacheMeta;
 
 // --- 类型定义与辅助结构 ---
 
@@ -55,6 +60,131 @@ impl<R: Read + Seek + Send + Sync> MediaSource for SeekableSource<R> {
     }
     fn byte_len(&self) -> Option<u64> {
         self.len // 返回实际长度
+    }
+}
+
+#[derive(Clone, Debug)]
+struct PersistentFileStorageProvider {
+    path: PathBuf,
+}
+
+impl PersistentFileStorageProvider {
+    fn new(path: impl Into<PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+}
+
+impl StorageProvider for PersistentFileStorageProvider {
+    type Reader = BufReader<File>;
+    type Writer = File;
+
+    fn into_reader_writer(
+        self,
+        _content_length: Option<u64>,
+    ) -> io::Result<(Self::Reader, Self::Writer)> {
+        if let Some(parent) = self.path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let writer = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .read(true)
+            .write(true)
+            .open(&self.path)?;
+        let reader = BufReader::new(OpenOptions::new().read(true).open(&self.path)?);
+        Ok((reader, writer))
+    }
+}
+
+#[derive(Clone)]
+struct SongCacheTracker {
+    metadata_path: Arc<PathBuf>,
+    inner: Arc<Mutex<SongCacheTrackerState>>,
+}
+
+struct SongCacheTrackerState {
+    meta: SongStreamCacheMeta,
+    last_persisted_bytes: u64,
+}
+
+impl SongCacheTracker {
+    const PERSIST_STEP_BYTES: u64 = 128 * 1024;
+
+    fn new(metadata_path: impl Into<PathBuf>) -> io::Result<Self> {
+        let metadata_path = metadata_path.into();
+        let raw = fs::read_to_string(&metadata_path)?;
+        let meta = serde_json::from_str::<SongStreamCacheMeta>(&raw)
+            .map_err(|err| io::Error::other(err.to_string()))?;
+        let last_persisted_bytes = meta.downloaded_bytes();
+
+        Ok(Self {
+            metadata_path: Arc::new(metadata_path),
+            inner: Arc::new(Mutex::new(SongCacheTrackerState {
+                meta,
+                last_persisted_bytes,
+            })),
+        })
+    }
+
+    fn set_content_length(&self, content_length: Option<u64>) -> io::Result<()> {
+        let mut state = self.inner.lock().unwrap();
+        if state.meta.content_length == content_length {
+            return Ok(());
+        }
+
+        state.meta.set_content_length(content_length);
+        self.persist_locked(&mut state)
+    }
+
+    fn record_progress(&self, progress: StreamState, content_length: Option<u64>) {
+        if let Err(err) = self.try_record_progress(progress, content_length) {
+            eprintln!("[cache] failed to persist song stream metadata: {err}");
+        }
+    }
+
+    fn try_record_progress(
+        &self,
+        progress: StreamState,
+        content_length: Option<u64>,
+    ) -> io::Result<()> {
+        let mut state = self.inner.lock().unwrap();
+        let previous_bytes = state.meta.downloaded_bytes();
+
+        if state.meta.content_length != content_length {
+            state.meta.set_content_length(content_length);
+        }
+
+        state.meta.add_range(progress.current_chunk.clone());
+        if matches!(progress.phase, StreamPhase::Complete) {
+            state.meta.mark_complete();
+        }
+
+        let downloaded_bytes = state.meta.downloaded_bytes();
+        if matches!(progress.phase, StreamPhase::Complete)
+            || downloaded_bytes.saturating_sub(state.last_persisted_bytes)
+                >= Self::PERSIST_STEP_BYTES
+            || downloaded_bytes < previous_bytes
+        {
+            self.persist_locked(&mut state)?;
+        }
+
+        Ok(())
+    }
+
+    fn persist_locked(&self, state: &mut SongCacheTrackerState) -> io::Result<()> {
+        let path = self.metadata_path.as_ref();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let serialized = serde_json::to_vec_pretty(&state.meta)
+            .map_err(|err| io::Error::other(err.to_string()))?;
+        let tmp_path = path.with_extension("json.tmp");
+        fs::write(&tmp_path, serialized)?;
+        fs::rename(&tmp_path, path)?;
+        state.last_persisted_bytes = state.meta.downloaded_bytes();
+        Ok(())
     }
 }
 
@@ -327,17 +457,17 @@ impl AudioPlayer {
             let host = cpal::default_host();
             let current_id = Self::device_id(&self.device);
 
-            if let Some(plughw_locator) = Self::linux_plughw_locator(&current_id) {
-                if let Some(compat_device) = host.output_devices()?.find(|device| {
+            if let Some(plughw_locator) = Self::linux_plughw_locator(&current_id)
+                && let Some(compat_device) = host.output_devices()?.find(|device| {
                     Self::linux_device_locator(&Self::device_id(device)) == plughw_locator
-                }) {
-                    println!(
-                        "[audio] fallback to compatibility output device on the same hardware: {}",
-                        Self::device_desc(&compat_device)
-                    );
-                    self.device = compat_device;
-                    return Ok(true);
-                }
+                })
+            {
+                println!(
+                    "[audio] fallback to compatibility output device on the same hardware: {}",
+                    Self::device_desc(&compat_device)
+                );
+                self.device = compat_device;
+                return Ok(true);
             }
 
             let default_device = match host.default_output_device() {
@@ -355,7 +485,7 @@ impl AudioPlayer {
                 Self::device_desc(&default_device)
             );
             self.device = default_device;
-            return Ok(true);
+            Ok(true)
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -483,6 +613,42 @@ impl AudioPlayer {
         let content_len = reader.content_length();
 
         // 传入长度
+        let source = Box::new(SeekableSource::new(reader, content_len));
+        let meta = self.spawn_probe_task(source, extension).await?;
+        self.setup_and_play(meta, start_at)
+    }
+
+    pub async fn play_url_cached(
+        &mut self,
+        url: &str,
+        cache_path: &str,
+        metadata_path: &str,
+        duration_ms: Option<u64>,
+        cache_ahead_secs: Option<u32>,
+        start_at: Option<Duration>,
+    ) -> Result<(), Box<dyn Error>> {
+        let extension = Path::new(url)
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_string());
+        let stream = HttpStream::<Client>::create(url.parse()?).await?;
+        let content_len = stream.content_length();
+        let tracker = SongCacheTracker::new(metadata_path)?;
+        tracker.set_content_length(content_len)?;
+
+        let prefetch_bytes =
+            estimate_prefetch_bytes(content_len, duration_ms, cache_ahead_secs.unwrap_or(30));
+        let reader = StreamDownload::from_stream(
+            stream,
+            PersistentFileStorageProvider::new(cache_path),
+            Settings::default()
+                .prefetch_bytes(prefetch_bytes)
+                .on_progress(move |stream: &HttpStream<Client>, state, _| {
+                    tracker.record_progress(state, stream.content_length());
+                }),
+        )
+        .await?;
+
         let source = Box::new(SeekableSource::new(reader, content_len));
         let meta = self.spawn_probe_task(source, extension).await?;
         self.setup_and_play(meta, start_at)
@@ -826,7 +992,7 @@ impl AudioPlayer {
             state.waiting_for_seek.store(true, Ordering::SeqCst);
             state.has_seek_request.store(false, Ordering::SeqCst); // 重置标记
 
-            let _ = decoder.reset();
+            decoder.reset();
 
             // 检查点 2: 耗时最长的底层 Seek
             println!("[Seek-Check] 正在执行底层的 format.seek (网络 IO 可能在此阻塞)...");
@@ -1105,10 +1271,8 @@ impl AudioPlayer {
                     state
                         .current_frame
                         .fetch_add((samples_read / channels) as u64, Ordering::Relaxed);
-                } else if decoder_done {
-                    if !state.is_finished.swap(true, Ordering::SeqCst) {
-                        state.finish_notify.notify_waiters();
-                    }
+                } else if decoder_done && !state.is_finished.swap(true, Ordering::SeqCst) {
+                    state.finish_notify.notify_waiters();
                 }
             },
             |_err| {},
@@ -1235,9 +1399,31 @@ impl Drop for AudioPlayer {
     }
 }
 
+fn estimate_prefetch_bytes(
+    content_length: Option<u64>,
+    duration_ms: Option<u64>,
+    cache_ahead_secs: u32,
+) -> u64 {
+    let ahead_secs = u64::from(cache_ahead_secs.clamp(5, 300));
+    let min_prefetch = 256 * 1024;
+    let max_prefetch = 32 * 1024 * 1024;
+
+    let estimated = match (content_length, duration_ms.filter(|duration| *duration > 0)) {
+        (Some(content_length), Some(duration_ms)) => {
+            let bytes_per_second =
+                ((content_length as u128) * 1000 / u128::from(duration_ms)).max(1) as u64;
+            bytes_per_second.saturating_mul(ahead_secs)
+        }
+        _ => ahead_secs.saturating_mul(256 * 1024),
+    };
+
+    estimated.clamp(min_prefetch, max_prefetch)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Seek, SeekFrom, Write};
 
     fn create_state(sample_rate: u32) -> SharedState {
         SharedState {
@@ -1378,5 +1564,27 @@ mod tests {
         assert_eq!(devices[0].name, "USB DAC [hw:CARD=0,DEV=0]");
         assert_eq!(devices[1].name, "USB DAC [hw:CARD=1,DEV=0]");
         assert_eq!(devices[2].name, "System Default");
+    }
+
+    #[test]
+    fn persistent_file_storage_provider_keeps_reader_and_writer_offsets_independent() {
+        let path = std::env::temp_dir().join(format!(
+            "stream-cache-{}-{}.bin",
+            std::process::id(),
+            crate::cache::types::now_unix_secs()
+        ));
+        let (mut reader, mut writer) = PersistentFileStorageProvider::new(&path)
+            .into_reader_writer(None)
+            .unwrap();
+
+        writer.write_all(b"ID3abcdef").unwrap();
+        writer.flush().unwrap();
+        writer.seek(SeekFrom::End(0)).unwrap();
+
+        let mut header = [0u8; 3];
+        reader.read_exact(&mut header).unwrap();
+
+        assert_eq!(&header, b"ID3");
+        let _ = std::fs::remove_file(path);
     }
 }

@@ -1,36 +1,6 @@
-import path from 'path'
-import fs from 'fs' // 需要引入 fs 模块来做路径探测
-import { app } from 'electron'
+import { getNativeModule } from '../native/loadNativeModule'
 
-function resolveNative(): string {
-  // 1. dev（electron-vite dev）
-  if (!app.isPackaged) {
-    return path.join(__dirname, '..', '..', 'native', 'index.node')
-  }
-
-  const appPath = app.getAppPath()
-
-  // 2. system electron / AUR（无 asar）
-  // appPath 形如：/usr/lib/xxx/out 或 /home/.../out
-  if (!appPath.endsWith('.asar')) {
-    return path.join(appPath, 'native', 'index.node')
-  }
-
-  // 3. asar 安装（AppImage / deb）
-  const asarDir = path.dirname(appPath)
-  const asarNative = path.join(asarDir, 'native', 'index.node')
-  if (fs.existsSync(asarNative)) {
-    return asarNative
-  }
-
-  // 4. 最后兜底（AppImage）
-  return path.join(process.resourcesPath, 'native', 'index.node')
-}
-
-// eslint-disable-next-line @typescript-eslint/no-require-imports -- native .node must be loaded via require
-const native = require(resolveNative())
-
-const { PlayerService } = native
+const { PlayerService } = getNativeModule()
 
 const player = new PlayerService()
 
@@ -42,6 +12,29 @@ export const NativeService = {
       return player.playUrl(url, startSecs)
     } catch (e) {
       console.error('Native playUrl Error:', e)
+      throw e
+    }
+  },
+
+  playUrlCached(
+    url: string,
+    cachePath: string,
+    metadataPath: string,
+    durationMs?: number,
+    cacheAheadSecs?: number,
+    startSecs?: number
+  ) {
+    try {
+      return player.playUrlCached(
+        url,
+        cachePath,
+        metadataPath,
+        durationMs,
+        cacheAheadSecs,
+        startSecs
+      )
+    } catch (e) {
+      console.error('Native playUrlCached Error:', e)
       throw e
     }
   },

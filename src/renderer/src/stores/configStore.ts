@@ -1,5 +1,7 @@
 import { type SoundQualityType } from '@renderer/types/song'
 import { type AudioDeviceInfo } from '@renderer/types/audio'
+import { type CacheStats } from '@renderer/types/cache'
+import { clearResolvedMediaUrlCache } from '@renderer/utils/cache'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
@@ -18,12 +20,20 @@ interface PersistedSettings {
   acrylic: boolean
   accentColor: string
   libPaths: string[]
+  cacheLimitMb: number
+  songCacheAheadSecs: number
 }
 
 const STORAGE_KEY = 'app_settings'
 const LEGACY_SOUND_QUALITY_KEY = 'sound_quality'
 const DEFAULT_OUTPUT_DEVICE_ID = 'default'
 const DEFAULT_OUTPUT_DEVICE_NAME = '系统默认输出'
+const DEFAULT_CACHE_LIMIT_MB = 512
+const MIN_CACHE_LIMIT_MB = 128
+const MAX_CACHE_LIMIT_MB = 8192
+const DEFAULT_SONG_CACHE_AHEAD_SECS = 30
+const MIN_SONG_CACHE_AHEAD_SECS = 10
+const MAX_SONG_CACHE_AHEAD_SECS = 300
 
 const SOUND_QUALITIES: SoundQualityType[] = [
   'standard',
@@ -48,7 +58,9 @@ const DEFAULT_SETTINGS: PersistedSettings = {
   theme: 'adaptive',
   acrylic: true,
   accentColor: '#6366f1',
-  libPaths: []
+  libPaths: [],
+  cacheLimitMb: DEFAULT_CACHE_LIMIT_MB,
+  songCacheAheadSecs: DEFAULT_SONG_CACHE_AHEAD_SECS
 }
 
 function isSoundQuality(value: unknown): value is SoundQualityType {
@@ -100,6 +112,25 @@ function normalizeOutputDeviceName(deviceName: unknown, deviceId: string): strin
   return deviceId === DEFAULT_OUTPUT_DEVICE_ID ? DEFAULT_OUTPUT_DEVICE_NAME : ''
 }
 
+function normalizeCacheLimitMb(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_SETTINGS.cacheLimitMb
+  }
+
+  return Math.min(MAX_CACHE_LIMIT_MB, Math.max(MIN_CACHE_LIMIT_MB, Math.round(value)))
+}
+
+function normalizeSongCacheAheadSecs(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_SETTINGS.songCacheAheadSecs
+  }
+
+  return Math.min(
+    MAX_SONG_CACHE_AHEAD_SECS,
+    Math.max(MIN_SONG_CACHE_AHEAD_SECS, Math.round(value))
+  )
+}
+
 function loadSettings(): PersistedSettings {
   const fallbackSettings: PersistedSettings = {
     ...DEFAULT_SETTINGS,
@@ -143,7 +174,9 @@ function loadSettings(): PersistedSettings {
         typeof parsed.accentColor === 'string' && parsed.accentColor.trim().length > 0
           ? parsed.accentColor
           : fallbackSettings.accentColor,
-      libPaths: normalizeLibraryPaths(parsed.libPaths)
+      libPaths: normalizeLibraryPaths(parsed.libPaths),
+      cacheLimitMb: normalizeCacheLimitMb(parsed.cacheLimitMb),
+      songCacheAheadSecs: normalizeSongCacheAheadSecs(parsed.songCacheAheadSecs)
     }
   } catch (error) {
     console.warn('读取设置失败，使用默认配置。', error)
@@ -275,6 +308,94 @@ function resolveConfiguredOutputDeviceName(
   return configuredDeviceName.trim()
 }
 
+function createEmptyCacheStats(maxSizeBytes = DEFAULT_CACHE_LIMIT_MB * 1024 * 1024): CacheStats {
+  return {
+    totalBytes: 0,
+    maxSizeBytes,
+    songBytes: 0,
+    songEntries: 0,
+    entityBytes: 0,
+    entityEntries: 0,
+    coverBytes: 0,
+    coverEntries: 0,
+    lyricBytes: 0,
+    lyricEntries: 0
+  }
+}
+
+type RawCacheStats = Partial<
+  Record<
+    | 'totalBytes'
+    | 'total_bytes'
+    | 'maxSizeBytes'
+    | 'max_size_bytes'
+    | 'songBytes'
+    | 'song_bytes'
+    | 'songEntries'
+    | 'song_entries'
+    | 'entityBytes'
+    | 'entity_bytes'
+    | 'entityEntries'
+    | 'entity_entries'
+    | 'coverBytes'
+    | 'cover_bytes'
+    | 'coverEntries'
+    | 'cover_entries'
+    | 'lyricBytes'
+    | 'lyric_bytes'
+    | 'lyricEntries'
+    | 'lyric_entries',
+    unknown
+  >
+>
+
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function normalizeCacheStats(
+  stats: RawCacheStats | null | undefined,
+  fallbackMaxBytes = DEFAULT_CACHE_LIMIT_MB * 1024 * 1024
+): CacheStats {
+  return {
+    totalBytes: toFiniteNumber(stats?.totalBytes ?? stats?.total_bytes),
+    maxSizeBytes: toFiniteNumber(stats?.maxSizeBytes ?? stats?.max_size_bytes, fallbackMaxBytes),
+    songBytes: toFiniteNumber(stats?.songBytes ?? stats?.song_bytes),
+    songEntries: toFiniteNumber(stats?.songEntries ?? stats?.song_entries),
+    entityBytes: toFiniteNumber(stats?.entityBytes ?? stats?.entity_bytes),
+    entityEntries: toFiniteNumber(stats?.entityEntries ?? stats?.entity_entries),
+    coverBytes: toFiniteNumber(stats?.coverBytes ?? stats?.cover_bytes),
+    coverEntries: toFiniteNumber(stats?.coverEntries ?? stats?.cover_entries),
+    lyricBytes: toFiniteNumber(stats?.lyricBytes ?? stats?.lyric_bytes),
+    lyricEntries: toFiniteNumber(stats?.lyricEntries ?? stats?.lyric_entries)
+  }
+}
+
+function bytesToMegabytes(value: number): number {
+  return Math.max(MIN_CACHE_LIMIT_MB, Math.round(value / (1024 * 1024)))
+}
+
+function megabytesToBytes(value: number): number {
+  return normalizeCacheLimitMb(value) * 1024 * 1024
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  if (typeof error === 'string') {
+    return error
+  }
+
+  return ''
+}
+
+function isMissingOutputDeviceError(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase()
+  return message.includes('device not found') || message.includes('temporarily unavailable')
+}
+
 function isOutputDeviceActive(devices: AudioDeviceInfo[], targetDeviceId: string): boolean {
   const currentDevice = devices.find((device) => device.isCurrent)
 
@@ -303,6 +424,8 @@ export const useConfigStore = defineStore('config', () => {
   const acrylic = ref(initialSettings.acrylic)
   const accentColor = ref(initialSettings.accentColor)
   const libPaths = ref<string[]>(initialSettings.libPaths)
+  const cacheLimitMb = ref(initialSettings.cacheLimitMb)
+  const songCacheAheadSecs = ref(initialSettings.songCacheAheadSecs)
 
   const outputDevices = ref<AudioDeviceInfo[]>([])
   const currentOutputDevice = computed(() => {
@@ -311,6 +434,12 @@ export const useConfigStore = defineStore('config', () => {
   const isLoadingOutputDevices = ref(false)
   const isSwitchingOutputDevice = ref(false)
   const outputDeviceError = ref('')
+  const cacheStats = ref<CacheStats>(createEmptyCacheStats(megabytesToBytes(cacheLimitMb.value)))
+  const isLoadingCacheStats = ref(false)
+  const isUpdatingCacheLimit = ref(false)
+  const isUpdatingSongCacheAheadSecs = ref(false)
+  const isClearingCache = ref(false)
+  const cacheError = ref('')
 
   const snapshotSettings = (): PersistedSettings => ({
     soundQuality: soundQuality.value,
@@ -323,7 +452,9 @@ export const useConfigStore = defineStore('config', () => {
     theme: theme.value,
     acrylic: acrylic.value,
     accentColor: accentColor.value,
-    libPaths: [...libPaths.value]
+    libPaths: [...libPaths.value],
+    cacheLimitMb: cacheLimitMb.value,
+    songCacheAheadSecs: songCacheAheadSecs.value
   })
 
   watch(
@@ -338,7 +469,9 @@ export const useConfigStore = defineStore('config', () => {
       theme,
       acrylic,
       accentColor,
-      libPaths
+      libPaths,
+      cacheLimitMb,
+      songCacheAheadSecs
     ],
     () => {
       persistSettings(snapshotSettings())
@@ -377,6 +510,97 @@ export const useConfigStore = defineStore('config', () => {
     }
   }
 
+  const refreshCacheStats = async (): Promise<CacheStats> => {
+    isLoadingCacheStats.value = true
+    cacheError.value = ''
+
+    try {
+      const [rawStats, rawSongCacheAheadSecs] = await Promise.all([
+        window.api.cache_get_stats(),
+        window.api.cache_get_song_cache_ahead_secs()
+      ])
+      const stats = normalizeCacheStats(rawStats as RawCacheStats, megabytesToBytes(cacheLimitMb.value))
+      cacheStats.value = stats
+      cacheLimitMb.value = normalizeCacheLimitMb(bytesToMegabytes(stats.maxSizeBytes))
+      songCacheAheadSecs.value = normalizeSongCacheAheadSecs(rawSongCacheAheadSecs)
+      return stats
+    } catch (error) {
+      cacheError.value = '读取缓存状态失败，请稍后重试。'
+      console.error('读取缓存状态失败', error)
+      return cacheStats.value
+    } finally {
+      isLoadingCacheStats.value = false
+    }
+  }
+
+  const setCacheLimit = async (nextLimitMb: number): Promise<boolean> => {
+    isUpdatingCacheLimit.value = true
+    cacheError.value = ''
+
+    const normalizedLimitMb = normalizeCacheLimitMb(nextLimitMb)
+
+    try {
+      const stats = normalizeCacheStats(
+        (await window.api.cache_set_max_size(megabytesToBytes(normalizedLimitMb))) as RawCacheStats,
+        megabytesToBytes(normalizedLimitMb)
+      )
+
+      cacheStats.value = stats
+      cacheLimitMb.value = normalizeCacheLimitMb(bytesToMegabytes(stats.maxSizeBytes))
+      return true
+    } catch (error) {
+      cacheError.value = '更新缓存上限失败，请重试。'
+      console.error('更新缓存上限失败', error)
+      await refreshCacheStats()
+      return false
+    } finally {
+      isUpdatingCacheLimit.value = false
+    }
+  }
+
+  const clearCache = async (): Promise<boolean> => {
+    isClearingCache.value = true
+    cacheError.value = ''
+
+    try {
+      const stats = normalizeCacheStats(
+        (await window.api.cache_clear()) as RawCacheStats,
+        megabytesToBytes(cacheLimitMb.value)
+      )
+      clearResolvedMediaUrlCache()
+      cacheStats.value = stats
+      cacheLimitMb.value = normalizeCacheLimitMb(bytesToMegabytes(stats.maxSizeBytes))
+      return true
+    } catch (error) {
+      cacheError.value = '清理缓存失败，请稍后再试。'
+      console.error('清理缓存失败', error)
+      return false
+    } finally {
+      isClearingCache.value = false
+    }
+  }
+
+  const setSongCacheAheadTime = async (nextSecs: number): Promise<boolean> => {
+    isUpdatingSongCacheAheadSecs.value = true
+    cacheError.value = ''
+
+    const normalizedSecs = normalizeSongCacheAheadSecs(nextSecs)
+
+    try {
+      songCacheAheadSecs.value = normalizeSongCacheAheadSecs(
+        await window.api.cache_set_song_cache_ahead_secs(normalizedSecs)
+      )
+      return true
+    } catch (error) {
+      cacheError.value = '更新歌曲预缓存时长失败，请重试。'
+      console.error('更新歌曲预缓存时长失败', error)
+      await refreshCacheStats()
+      return false
+    } finally {
+      isUpdatingSongCacheAheadSecs.value = false
+    }
+  }
+
   const applyOutputDevice = async (
     deviceId = DEFAULT_OUTPUT_DEVICE_ID,
     refreshAfterSwitch = true,
@@ -406,8 +630,15 @@ export const useConfigStore = defineStore('config', () => {
 
       return true
     } catch (error) {
-      outputDeviceError.value = '切换音频输出设备失败，请重试。'
-      console.error('切换音频设备失败', error)
+      outputDeviceError.value = isMissingOutputDeviceError(error)
+        ? '已配置的音频设备当前不可用，当前播放会话将回退到系统默认输出。'
+        : '切换音频输出设备失败，请重试。'
+
+      if (isMissingOutputDeviceError(error)) {
+        console.warn('配置的音频设备当前不可用', error)
+      } else {
+        console.error('切换音频设备失败', error)
+      }
 
       if (refreshAfterSwitch) {
         await refreshOutputDevices()
@@ -427,7 +658,7 @@ export const useConfigStore = defineStore('config', () => {
     }
 
     initializePromise = (async () => {
-      await ensureConfiguredOutputDevice()
+      await Promise.all([ensureConfiguredOutputDevice(), refreshCacheStats()])
     })().catch((error) => {
       initializePromise = null
       console.error('初始化设置失败', error)
@@ -494,16 +725,28 @@ export const useConfigStore = defineStore('config', () => {
     acrylic,
     accentColor,
     libPaths,
+    cacheLimitMb,
+    songCacheAheadSecs,
+    cacheStats,
     outputDevices,
     currentOutputDevice,
     isLoadingOutputDevices,
     isSwitchingOutputDevice,
     outputDeviceError,
+    isLoadingCacheStats,
+    isUpdatingCacheLimit,
+    isUpdatingSongCacheAheadSecs,
+    isClearingCache,
+    cacheError,
     initialize,
     refreshOutputDevices,
+    refreshCacheStats,
     ensureConfiguredOutputDevice,
     setSoundQuality,
     setOutputDevice,
+    setCacheLimit,
+    setSongCacheAheadTime,
+    clearCache,
     addLibraryPath,
     removeLibraryPath
   }

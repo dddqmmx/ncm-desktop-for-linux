@@ -22,6 +22,7 @@ import {
   artist_album,
   artist_mv
 } from 'NeteaseCloudMusicApi'
+import { CacheService } from './cacheService'
 
 type ServiceResult<T = APIBaseResponse> = {
   status: number
@@ -29,6 +30,8 @@ type ServiceResult<T = APIBaseResponse> = {
   cookie?: string[]
   error?: string
 }
+
+type CacheBucket = 'song' | 'entity' | 'lyric'
 
 /**
  * 优化后的响应处理器
@@ -56,6 +59,34 @@ const createMethod = <P, T>(fn: (params: P) => Promise<Response<T>>) => {
   return (params: P) => responseHandler(fn(params));
 };
 
+function isCacheableSuccess<T>(result: ServiceResult<T>): result is ServiceResult<T> & { body: T } {
+  return result.status >= 200 && result.status < 300 && result.body !== null
+}
+
+const createCachedMethod = <P, T>(
+  bucket: CacheBucket,
+  keyBuilder: (params: P) => string,
+  fn: (params: P) => Promise<ServiceResult<T>>
+) => {
+  return async (params: P): Promise<ServiceResult<T>> => {
+    const cacheKey = keyBuilder(params)
+    const cachedBody = await CacheService.getJson<T>(bucket, cacheKey)
+    if (cachedBody !== null) {
+      return {
+        status: 200,
+        body: cachedBody
+      }
+    }
+
+    const result = await fn(params)
+    if (isCacheableSuccess(result)) {
+      await CacheService.setJson(bucket, cacheKey, result.body)
+    }
+
+    return result
+  }
+}
+
 export const MusicService = {
   login: createMethod(login_cellphone),
   getBanner: createMethod(banner),
@@ -64,20 +95,88 @@ export const MusicService = {
   login_qr_key: createMethod(login_qr_key),
   login_qr_create: createMethod(login_qr_create),
   login_qr_check: createMethod(login_qr_check),
-  user_account: createMethod(user_account),
+  user_account: createCachedMethod(
+    'entity',
+    (params: { cookie?: string }) =>
+      CacheService.buildKey({
+        scope: 'user_account',
+        cookie: params.cookie ?? ''
+      }),
+    createMethod(user_account)
+  ),
   song_url: createMethod(song_url_v1),
   playlist_catlist: createMethod(playlist_catlist),
-  user_playlist: createMethod(user_playlist),
+  user_playlist: createCachedMethod(
+    'entity',
+    (params: { uid: number }) =>
+      CacheService.buildKey({
+        scope: 'user_playlist',
+        uid: params.uid
+      }),
+    createMethod(user_playlist)
+  ),
   playlist_detail: createMethod(playlist_detail),
-  lyric: createMethod(lyric_new),
+  lyric: createCachedMethod(
+    'lyric',
+    (params: { id: number | string }) =>
+      CacheService.buildKey({
+        scope: 'lyric',
+        id: params.id
+      }),
+    createMethod(lyric_new)
+  ),
   recommend_resource: createMethod(recommend_resource),
   recommend_songs: createMethod(recommend_songs),
-  artist_detail: createMethod(artist_detail),
-  artist_top_song: createMethod(artist_top_song),
-  artist_album: createMethod(artist_album),
-  artist_mv: createMethod(artist_mv),
+  artist_detail: createCachedMethod(
+    'entity',
+    (params: { id: number | string }) =>
+      CacheService.buildKey({
+        scope: 'artist_detail',
+        id: params.id
+      }),
+    createMethod(artist_detail)
+  ),
+  artist_top_song: createCachedMethod(
+    'entity',
+    (params: { id: number | string }) =>
+      CacheService.buildKey({
+        scope: 'artist_top_song',
+        id: params.id
+      }),
+    createMethod(artist_top_song)
+  ),
+  artist_album: createCachedMethod(
+    'entity',
+    (params: { id: number | string; limit?: number; offset?: number }) =>
+      CacheService.buildKey({
+        scope: 'artist_album',
+        id: params.id,
+        limit: params.limit ?? 0,
+        offset: params.offset ?? 0
+      }),
+    createMethod(artist_album)
+  ),
+  artist_mv: createCachedMethod(
+    'entity',
+    (params: { id: number | string; limit?: number; offset?: number }) =>
+      CacheService.buildKey({
+        scope: 'artist_mv',
+        id: params.id,
+        limit: params.limit ?? 0,
+        offset: params.offset ?? 0
+      }),
+    createMethod(artist_mv)
+  ),
   song_detail(params: { ids: number[] | string; [key: string]: unknown }) {
-    const ids = Array.isArray(params.ids) ? params.ids.join(',') : params.ids;
-    return responseHandler(song_detail({ ...params, ids }));
+    const ids = Array.isArray(params.ids) ? params.ids.join(',') : params.ids
+    return createCachedMethod(
+      'song',
+      (normalizedParams: typeof params) =>
+        CacheService.buildKey({
+          scope: 'song_detail',
+          ids: Array.isArray(normalizedParams.ids) ? normalizedParams.ids.join(',') : normalizedParams.ids
+        }),
+      (normalizedParams: typeof params) => responseHandler(song_detail({ ...normalizedParams, ids }))
+    )({ ...params, ids })
   },
-};
+}

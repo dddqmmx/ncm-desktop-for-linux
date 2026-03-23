@@ -7,6 +7,7 @@ import { RecommendResource, RecommendItem } from '@renderer/types/recommendResou
 import router from '@renderer/router'
 import { RecommendSongs, Song } from '@renderer/types/recommendSongs'
 import { usePlayerStore } from '@renderer/stores/playerStore'
+import { resolveCachedMediaUrl } from '@renderer/utils/cache'
 
 const userStore = useUserStore()
 const playerStore = usePlayerStore()
@@ -19,14 +20,31 @@ onMounted(async (): Promise<void> => {
       cookie: userStore.cookie
     })) as { body?: RecommendResource }
     if (recommendResource.body?.recommend) {
-      recommendPlaylists.value = recommendResource.body.recommend
+      recommendPlaylists.value = await Promise.all(
+        recommendResource.body.recommend.map(async (item): Promise<RecommendItem> => ({
+          ...item,
+          picUrl: await resolveCachedMediaUrl(item.picUrl),
+          creator: {
+            ...item.creator,
+            avatarUrl: await resolveCachedMediaUrl(item.creator.avatarUrl)
+          }
+        }))
+      )
     }
 
     const recommendSongsRes = (await window.api.recommend_songs({
       cookie: userStore.cookie
     })) as { body?: RecommendSongs }
     if (recommendSongsRes.body?.data?.dailySongs) {
-      dailySongs.value = recommendSongsRes.body.data.dailySongs
+      dailySongs.value = await Promise.all(
+        recommendSongsRes.body.data.dailySongs.map(async (song): Promise<Song> => ({
+          ...song,
+          al: {
+            ...song.al,
+            picUrl: await resolveCachedMediaUrl(song.al.picUrl + '?param=200y200')
+          }
+        }))
+      )
     }
   } catch (error) {
     console.error('获取推荐内容失败:', error)
@@ -91,7 +109,7 @@ const playSong = (song: Song): void => {
             :key="song.id"
             :title="song.name"
             :artist="formatArtists(song.ar)"
-            :cover="song.al.picUrl + '?param=200y200'"
+            :cover="song.al.picUrl"
             @click="playSong(song)"
           />
         </div>

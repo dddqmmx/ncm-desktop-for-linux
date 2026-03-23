@@ -2,11 +2,14 @@
 import { formatCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
 import { ref, nextTick, watch, onBeforeUnmount } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
+import { resolveCachedMediaUrl } from '@renderer/utils/cache'
 
 const playerStore = usePlayerStore()
 const listRef = ref<HTMLElement | null>(null)
+const resolvedCoverMap = ref<Record<number, string>>({})
 let scrollFrame = 0
 let scrollFrameAfterLayout = 0
+let resolveToken = 0
 
 const scheduleScrollToActive = async (): Promise<void> => {
   await nextTick()
@@ -32,6 +35,30 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(scrollFrame)
   cancelAnimationFrame(scrollFrameAfterLayout)
 })
+
+const refreshResolvedCovers = async (): Promise<void> => {
+  const currentToken = ++resolveToken
+  const entries = await Promise.all(
+    playerStore.playlist.map(async (song) => [
+      song.id,
+      await resolveCachedMediaUrl(song.cover)
+    ] as const)
+  )
+
+  if (currentToken !== resolveToken) {
+    return
+  }
+
+  resolvedCoverMap.value = Object.fromEntries(entries)
+}
+
+watch(
+  () => playerStore.playlist.map((song) => `${song.id}:${song.cover}`).join(','),
+  () => {
+    void refreshResolvedCovers()
+  },
+  { immediate: true }
+)
 
 const getScrollContainer = (): HTMLElement | null => {
   return listRef.value
@@ -114,7 +141,7 @@ const onDragEnd = (): void => {
               <div class="item-index" v-else>{{ index + 1 }}</div>
             </div>
 
-            <img :src="song.cover" class="item-cover" draggable="false">
+            <img :src="resolvedCoverMap[song.id] || song.cover" class="item-cover" draggable="false">
 
             <div class="item-info">
               <div class="item-name">{{ song.name }}</div>

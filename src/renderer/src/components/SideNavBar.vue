@@ -4,6 +4,7 @@ import LoginModal from './LoginModal.vue';
 import { useUserStore } from '@renderer/stores/userStore';
 import { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist';
 import SettingsModal from './SettingsModal.vue';
+import { resolveCachedMediaUrl } from '@renderer/utils/cache';
 
 const userStore = useUserStore()
 const showLoginModal = ref(false)
@@ -42,7 +43,12 @@ const fetchPlaylists = async (): Promise<void> => {
     }) as { body?: PlaylistResponse }
 
     if (res.body && res.body.playlist) {
-      createdPlaylists.value = res.body.playlist
+      createdPlaylists.value = await Promise.all(
+        res.body.playlist.map(async (playlist) => ({
+          ...playlist,
+          coverImgUrl: await resolveCachedMediaUrl(playlist.coverImgUrl)
+        }))
+      )
     }
   } catch (error) {
     console.error('获取歌单失败:', error)

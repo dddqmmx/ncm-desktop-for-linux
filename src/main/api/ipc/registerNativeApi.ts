@@ -6,6 +6,28 @@ export function registerNativeApi(): void {
     void _event
     return NativeService.playUrl(url, startSecs)
   })
+  ipcMain.handle(
+    'player:playUrlCached',
+    (
+      _event,
+      url: string,
+      cachePath: string,
+      metadataPath: string,
+      durationMs?: number,
+      cacheAheadSecs?: number,
+      startSecs?: number
+    ) => {
+      void _event
+      return NativeService.playUrlCached(
+        url,
+        cachePath,
+        metadataPath,
+        durationMs,
+        cacheAheadSecs,
+        startSecs
+      )
+    }
+  )
   ipcMain.handle('player:playFile', (_event, filePath: string, startSecs?: number) => {
     void _event
     return NativeService.playFile(filePath, startSecs)

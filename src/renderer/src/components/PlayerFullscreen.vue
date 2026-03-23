@@ -5,11 +5,13 @@ import { useRouter } from 'vue-router'
 import LyricPanel from './LyricPanel.vue'
 import { colord } from 'colord'
 import { extractColors } from 'extract-colors'
+import { useResolvedMediaUrl } from '@renderer/composables/useResolvedMediaUrl'
 
 const playerStore = usePlayerStore()
 const router = useRouter()
 const isDragging = ref(false)
 const imgRef = ref<HTMLImageElement | null>(null)
+const resolvedCover = useResolvedMediaUrl(() => playerStore.currentSong?.cover)
 
 // 响应式主题变量
 const theme = ref({
@@ -77,7 +79,7 @@ const goToArtist = async (artistId: number): Promise<void> => {
  */
 const updateTheme = async (): Promise<void> => {
   // 必须确保图片已加载且有地址
-  if (!imgRef.value || !playerStore.currentSong?.cover) return
+  if (!imgRef.value || !resolvedCover.value) return
 
   try {
     // extractColors 支持传入图片 URL
@@ -157,7 +159,7 @@ const onImageLoad = (): void => {
           <div class="cover-wrapper">
             <img
               ref="imgRef"
-              :src="playerStore.currentSong?.cover"
+              :src="resolvedCover"
               class="main-cover"
               :class="{ 'playing': playerStore.isPlaying }"
               crossorigin="anonymous"

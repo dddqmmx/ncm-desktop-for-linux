@@ -204,6 +204,7 @@ import type {
   ArtistSong,
   ArtistTopSongResponse
 } from '@renderer/types/artist'
+import { resolveCachedMediaUrl } from '@renderer/utils/cache'
 
 interface ServiceResponse<T> {
   body?: T | null
@@ -270,6 +271,14 @@ const formatYear = (value?: number | string): string => {
 
 const withImageParam = (url: string | undefined, size: string): string => {
   if (!url) return FALLBACK_COVER
+  if (
+    url.startsWith('ncm-cache:') ||
+    url.startsWith('file:') ||
+    url.startsWith('data:') ||
+    url.startsWith('blob:')
+  ) {
+    return url
+  }
   const separator = url.includes('?') ? '&' : '?'
   return `${url}${separator}param=${size}`
 }
@@ -405,10 +414,60 @@ const fetchArtistData = async (artistIdParam: string | string[] | undefined): Pr
 
     if (currentRequest !== requestSerial) return
 
-    artistProfile.value = detailRes.body?.data?.artist ?? null
-    topSongData.value = topSongRes.body?.songs ?? []
-    albumData.value = albumRes.body?.hotAlbums ?? []
-    mvData.value = mvRes.body?.mvs ?? []
+    const nextArtistProfile = detailRes.body?.data?.artist ?? null
+    const nextTopSongs = topSongRes.body?.songs ?? []
+    const nextAlbums = albumRes.body?.hotAlbums ?? []
+    const nextMvs = mvRes.body?.mvs ?? []
+
+    const resolvedArtistProfile = nextArtistProfile
+      ? {
+          ...nextArtistProfile,
+          avatar: await resolveCachedMediaUrl(
+            withImageParam(nextArtistProfile.avatar || nextArtistProfile.cover, '400y400')
+          ),
+          cover: await resolveCachedMediaUrl(
+            withImageParam(nextArtistProfile.cover || nextArtistProfile.avatar, '400y400')
+          )
+        }
+      : null
+
+    const resolvedTopSongs = await Promise.all(
+      nextTopSongs.map(async (song) => ({
+        ...song,
+        al: {
+          ...song.al,
+          picUrl: await resolveCachedMediaUrl(withImageParam(song.al.picUrl, '200y200'))
+        }
+      }))
+    )
+
+    const resolvedAlbums = await Promise.all(
+      nextAlbums.map(async (album) => ({
+        ...album,
+        picUrl: await resolveCachedMediaUrl(withImageParam(album.picUrl, '400y400'))
+      }))
+    )
+
+    const resolvedMvs = await Promise.all(
+      nextMvs.map(async (mv) => {
+        const resolvedCover = await resolveCachedMediaUrl(
+          withImageParam(mv.imgurl16v9 || mv.imgurl, '540y304')
+        )
+
+        return {
+          ...mv,
+          imgurl16v9: resolvedCover,
+          imgurl: resolvedCover
+        }
+      })
+    )
+
+    if (currentRequest !== requestSerial) return
+
+    artistProfile.value = resolvedArtistProfile
+    topSongData.value = resolvedTopSongs
+    albumData.value = resolvedAlbums
+    mvData.value = resolvedMvs
 
     if (!artistProfile.value) {
       errorMessage.value = '未获取到歌手详情'
