@@ -110,7 +110,7 @@ const clearCache = async (): Promise<void> => {
 <template>
    <SettingGroup
       title="本地缓存"
-      tip="native 缓存会维护歌曲、歌手/用户信息、封面和歌词；歌曲音频改为边播边缓存，并在超限时自动回收冷数据。"
+      tip="native 缓存会维护歌曲、歌手/用户信息、封面和歌词并在超限时自动回收冷数据。"
       no-card
     >
       <div class="cache-card">
@@ -367,11 +367,13 @@ const clearCache = async (): Promise<void> => {
 .cache-breakdown-item strong {
   font-size: 16px;
   color: #111;
+  display: block;
 }
 
 .cache-breakdown-item span {
   font-size: 12px;
   color: rgba(0, 0, 0, 0.5);
+    display: block;
 }
 
 .cache-breakdown-label {
