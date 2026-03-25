@@ -62,7 +62,8 @@ const api = {
   prepare_cached_song_source: invoke('cache:prepareSongSource'),
 
   //ui相关工具方法
-  open_settings_window: invoke('ui:openSettingsWindow')
+  open_settings_window: invoke('ui:openSettingsWindow'),
+  close_settings_window: invoke('ui:closeSettingsWindow')
 }
 
 // 保持不变

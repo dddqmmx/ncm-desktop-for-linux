@@ -2,9 +2,16 @@ import { BrowserWindow } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 
+let settingsWindow: BrowserWindow | null = null
+
 export const UiService = {
   openSettingsWindow() {
-    const settingsWindow = new BrowserWindow({
+    if (settingsWindow) {
+      settingsWindow.focus()
+      return
+    }
+
+    settingsWindow = new BrowserWindow({
       width: 950,
       height: 800,
       minWidth: 950,
@@ -20,8 +27,12 @@ export const UiService = {
       }
     })
 
+    settingsWindow.on('closed', () => {
+      settingsWindow = null
+    })
+
     settingsWindow.on('ready-to-show', () => {
-      settingsWindow.show()
+      settingsWindow!.show()
     })
 
     if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -29,5 +40,9 @@ export const UiService = {
     } else {
       settingsWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/settings' })
     }
+  },
+
+  closeSettingsWindow() {
+    settingsWindow?.close()
   }
 }

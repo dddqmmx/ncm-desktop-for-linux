@@ -5,4 +5,7 @@ export function registerUiApi(): void {
   ipcMain.handle('ui:openSettingsWindow', () => {
     UiService.openSettingsWindow()
   })
+  ipcMain.handle('ui:closeSettingsWindow', () => {
+    UiService.closeSettingsWindow()
+  })
 }

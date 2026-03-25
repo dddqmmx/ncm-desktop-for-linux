@@ -18,8 +18,6 @@ type SettingsTab = {
   icon: string
 }
 
-const emit = defineEmits<{ close: [] }>()
-
 const tabs: SettingsTab[] = [
   { id: 'general', name: '通用', icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4' },
   { id: 'audio', name: '音频输出', icon: 'M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z' },
@@ -47,6 +45,10 @@ const activeTabTitle = computed(() => {
 })
 
 const activeTabComponent = computed(() => tabComponents[activeTab.value])
+
+const closeSettingsWindow = ():void =>{
+  window.api.close_settings_window()
+}
 </script>
 
 <template>
@@ -57,7 +59,7 @@ const activeTabComponent = computed(() => tabComponents[activeTab.value])
       <main class="settings-main">
         <header class="main-header">
           <h2>{{ activeTabTitle }}</h2>
-          <button class="close-btn" @click="emit('close')" aria-label="关闭设置">
+          <button class="close-btn" @click="closeSettingsWindow" aria-label="关闭设置">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>

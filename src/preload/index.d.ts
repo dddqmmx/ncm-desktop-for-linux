@@ -55,6 +55,7 @@ interface CustomApi {
   }) => Promise<CachedSongSource>
   //ui相关工具方法
   open_settings_window: () => Promise<unknown>
+  close_settings_window: () => Promise<unknown>
 }
 
 interface AudioDeviceInfo {
