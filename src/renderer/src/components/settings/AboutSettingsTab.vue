@@ -5,14 +5,14 @@ import SettingGroup from '@renderer/components/settings/SettingGroup.vue'
 import SettingRow from '@renderer/components/settings/SettingRow.vue'
 import { AppInfo } from '@renderer/types/uiService';
 
-let appInfo: AppInfo = {
+const appInfo = ref<AppInfo>({
   name: '',
   version: ''
-}
+})
 
 const getAppInfo = async (): Promise<void> => {
-  appInfo = await window.api.get_app_info()
-  console.log(appInfo)
+  appInfo.value = await window.api.get_app_info()
+  console.log(appInfo.value)
 }
 
 onMounted(async (): Promise<void> => {
