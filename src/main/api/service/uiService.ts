@@ -12,9 +12,9 @@ export const UiService = {
     }
 
     settingsWindow = new BrowserWindow({
-      width: 950,
+      width: 1000,
       height: 800,
-      minWidth: 950,
+      minWidth: 1000,
       minHeight: 800,
       opacity: 0,
       transparent: true,
