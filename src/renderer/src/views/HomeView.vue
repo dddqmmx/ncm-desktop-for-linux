@@ -81,16 +81,9 @@ const playSong = (song: Song): void => {
 
       <div ref="playlistRow" class="horizontal-scroll-container" @wheel="handleWheel">
         <div class="cards-grid media-card">
-          <MediaCard
-            v-for="(item, index) in recommendPlaylists"
-            :key="item.id"
-            :title="item.name"
-            :desc="item.copywriter || item.creator.nickname"
-            :image="item.picUrl"
-            :is-first="index === 0"
-            type="playlist"
-            @click="router.push('/playlist/' + item.id)"
-          />
+          <MediaCard v-for="(item, index) in recommendPlaylists" :key="item.id" :title="item.name"
+            :desc="item.copywriter || item.creator.nickname" :image="item.picUrl" :is-first="index === 0"
+            type="playlist" @click="router.push('/playlist/' + item.id)" />
         </div>
       </div>
     </section>
@@ -104,14 +97,8 @@ const playSong = (song: Song): void => {
       <div ref="songsRow" class="horizontal-scroll-container" @wheel="handleWheel">
         <div v-if="dailySongs.length === 0" class="loading-text">加载中...</div>
         <div class="albums-row">
-          <AlbumItem
-            v-for="song in dailySongs"
-            :key="song.id"
-            :title="song.name"
-            :artist="formatArtists(song.ar)"
-            :cover="song.al.picUrl"
-            @click="playSong(song)"
-          />
+          <AlbumItem v-for="song in dailySongs" :key="song.id" :title="song.name" :artist="formatArtists(song.ar)"
+            :cover="song.al.picUrl" @click="playSong(song)" />
         </div>
       </div>
     </section>
@@ -192,7 +179,8 @@ const playSong = (song: Song): void => {
 }
 
 .horizontal-scroll-container::-webkit-scrollbar {
-  display: none; /* Chrome/Safari */
+  display: none;
+  /* Chrome/Safari */
 }
 
 /* 内部内容布局 */
@@ -205,8 +193,8 @@ const playSong = (song: Song): void => {
 }
 
 /* 保持原有宽度逻辑不变 */
-.cards-grid > *,
-.albums-row > * {
+.cards-grid>*,
+.albums-row>* {
   flex: 0 0 auto;
   scroll-snap-align: start;
   width: 180px;
@@ -215,7 +203,8 @@ const playSong = (song: Song): void => {
 .media-card {
   width: 200px;
   height: 260px;
-  flex-shrink: 0; /* 横向滚动必加 */
+  flex-shrink: 0;
+  /* 横向滚动必加 */
 }
 
 /* 针对 MediaCard 的特殊宽度处理 */

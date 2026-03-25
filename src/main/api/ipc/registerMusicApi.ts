@@ -3,7 +3,6 @@ import { MusicService } from '../service/musicService'
 
 type MusicApiHandler = (params: unknown) => Promise<unknown>
 
-
 export function registerMusicApi(): void {
   // 基础的一对一映射
   const simpleMappings = {
@@ -22,7 +21,7 @@ export function registerMusicApi(): void {
     'music:recommendResource': MusicService.recommend_resource,
     'music:recommendSongs': MusicService.recommend_songs,
     'music:songUrl': MusicService.song_url,
-     'music:artistDetail': MusicService.artist_detail,
+    'music:artistDetail': MusicService.artist_detail,
     'music:artistTopSong': MusicService.artist_top_song,
     'music:artistAlbum': MusicService.artist_album,
     'music:artistMv': MusicService.artist_mv,

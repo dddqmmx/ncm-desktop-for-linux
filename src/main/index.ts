@@ -9,8 +9,12 @@ import { registerCacheProtocol } from './api/protocol/registerCacheProtocol'
 
 const iconPath = join(__dirname, '../../resources/icon.png')
 
-function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+let mainWindow: BrowserWindow | null = null
+
+// 将函数改为返回 BrowserWindow 实例
+function createWindow(): BrowserWindow {
+  // 使用局部变量 win 进行配置，完美解决 TS 在回调函数中的 null 警告
+  const win = new BrowserWindow({
     width: 1435,
     height: 1000,
     minWidth: 1340,
@@ -25,11 +29,11 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+  win.on('ready-to-show', () => {
+    win.show()
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
@@ -37,10 +41,12 @@ function createWindow(): void {
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  return win
 }
 
 // This method will be called when Electron has finished
@@ -51,7 +57,11 @@ app.whenReady().then(() => {
   registerMusicApi()
   registerNativeApi()
   registerCacheApi()
-  registerUiApi()
+
+  // 必须先创建窗口并赋值，再注册需要依赖窗口的 API
+  mainWindow = createWindow()
+  registerUiApi(mainWindow)
+
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 
@@ -65,12 +75,14 @@ app.whenReady().then(() => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
 
-  createWindow()
-
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) {
+      mainWindow = createWindow()
+      // 注意：如果在 MacOS 下窗口被关闭后重新创建，如果你之前的 registerUiApi 绑定的是旧窗口实例，
+      // 可能需要在这里重新调用 registerUiApi(mainWindow) 来绑定新窗口。
+    }
   })
 })
 

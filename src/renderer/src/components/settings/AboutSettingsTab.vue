@@ -1,13 +1,23 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import appIcon from '@renderer/assets/icon.png'
 import SettingGroup from '@renderer/components/settings/SettingGroup.vue'
 import SettingRow from '@renderer/components/settings/SettingRow.vue'
+import { AppInfo } from '@renderer/types/uiService';
 
-const appInfo = {
-  name: 'NCM Desktop For Linux',
-  version: '1.0.0'
+let appInfo: AppInfo = {
+  name: '',
+  version: ''
 }
+
+const getAppInfo = async (): Promise<void> => {
+  appInfo = await window.api.get_app_info()
+  console.log(appInfo)
+}
+
+onMounted(async (): Promise<void> => {
+  getAppInfo()
+})
 
 const checkingUpdate = ref(false)
 

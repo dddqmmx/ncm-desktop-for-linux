@@ -1,11 +1,11 @@
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 
 let settingsWindow: BrowserWindow | null = null
 
 export const UiService = {
-  openSettingsWindow() {
+  openSettingsWindow(mainWindow:BrowserWindow) {
     if (settingsWindow) {
       settingsWindow.focus()
       return
@@ -21,6 +21,7 @@ export const UiService = {
       show: false,
       frame: false,
       autoHideMenuBar: true,
+      parent: mainWindow,
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         sandbox: false
@@ -44,5 +45,12 @@ export const UiService = {
 
   closeSettingsWindow() {
     settingsWindow?.close()
+  },
+
+  getAppInfo() {
+    return {
+      name: app.getName(),
+      version: app.getVersion()
+    }
   }
 }

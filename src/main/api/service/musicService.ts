@@ -39,9 +39,9 @@ type CacheBucket = 'song' | 'entity' | 'lyric'
  * 2. 移除冗余的 await
  */
 const responseHandler = <T = APIBaseResponse>(
-  apiCall: Promise<Response<T>>,
+  apiCall: () => Promise<Response<T>>,
 ): Promise<ServiceResult<T>> => {
-  return apiCall
+  return retry(apiCall, 5)
     .then((res) => ({
       status: res.status,
       body: res.body,
@@ -51,13 +51,26 @@ const responseHandler = <T = APIBaseResponse>(
       status: 500,
       body: null,
       error: e.message,
-    }));
-};
+    }))
+}
 
+const retry = <T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> => {
+  let attempt = 0
+
+  const run = (): Promise<T> => {
+    return fn().catch((err) => {
+      if (attempt >= maxRetries) throw err
+      attempt++
+      return run()
+    })
+  }
+
+  return run()
+}
 
 const createMethod = <P, T>(fn: (params: P) => Promise<Response<T>>) => {
-  return (params: P) => responseHandler(fn(params));
-};
+  return (params: P) => responseHandler(() => fn(params))
+}
 
 function isCacheableSuccess<T>(result: ServiceResult<T>): result is ServiceResult<T> & { body: T } {
   return result.status >= 200 && result.status < 300 && result.body !== null
@@ -176,7 +189,8 @@ export const MusicService = {
           scope: 'song_detail',
           ids: Array.isArray(normalizedParams.ids) ? normalizedParams.ids.join(',') : normalizedParams.ids
         }),
-      (normalizedParams: typeof params) => responseHandler(song_detail({ ...normalizedParams, ids }))
+      (normalizedParams: typeof params) =>
+        responseHandler(() => song_detail({ ...normalizedParams, ids }))
     )({ ...params, ids })
   },
 }

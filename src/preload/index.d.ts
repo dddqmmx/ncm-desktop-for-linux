@@ -56,6 +56,12 @@ interface CustomApi {
   //ui相关工具方法
   open_settings_window: () => Promise<unknown>
   close_settings_window: () => Promise<unknown>
+  get_app_info: () => Promise<AppInfo>
+}
+
+interface AppInfo {
+  name: string
+  version: string
 }
 
 interface AudioDeviceInfo {
