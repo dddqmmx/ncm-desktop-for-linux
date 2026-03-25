@@ -4,19 +4,19 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerMusicApi } from './api/ipc/registerMusicApi'
 import { registerNativeApi } from './api/ipc/registerNativeApi'
 import { registerCacheApi } from './api/ipc/registerCacheApi'
+import { registerUiApi } from './api/ipc/registerUiApi'
 import { registerCacheProtocol } from './api/protocol/registerCacheProtocol'
 
 const iconPath = join(__dirname, '../../resources/icon.png')
 
 function createWindow(): void {
-  // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 1435,
     height: 1000,
     minWidth: 1340,
     minHeight: 960,
     show: false,
-    frame: false, // 关键：隐藏系统标题栏
+    frame: false,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon: iconPath } : {}),
     webPreferences: {
@@ -51,7 +51,7 @@ app.whenReady().then(() => {
   registerMusicApi()
   registerNativeApi()
   registerCacheApi()
-
+  registerUiApi()
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 

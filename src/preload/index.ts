@@ -59,7 +59,10 @@ const api = {
   cache_set_song_cache_ahead_secs: invoke('cache:setSongCacheAheadSecs'),
   cache_clear: invoke('cache:clear'),
   resolve_cached_media_url: invoke('cache:resolveCachedMediaUrl'),
-  prepare_cached_song_source: invoke('cache:prepareSongSource')
+  prepare_cached_song_source: invoke('cache:prepareSongSource'),
+
+  //ui相关工具方法
+  open_settings_window: invoke('ui:openSettingsWindow')
 }
 
 // 保持不变

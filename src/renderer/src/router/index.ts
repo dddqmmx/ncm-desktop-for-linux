@@ -4,6 +4,7 @@ import HomeView from '@renderer/views/HomeView.vue'
 import SearchView from '@renderer/views/SearchView.vue'
 import PlaylistView from '@renderer/views/PlaylistView.vue'
 import ArtistView from '@renderer/views/ArtistView.vue'
+import SettingsModal from '@renderer/components/settings/SettingsModal.vue'
 
 const router = createRouter({
   history: createWebHashHistory(import.meta.env.BASE_URL),
@@ -48,6 +49,12 @@ const router = createRouter({
           props: true
         }
       ]
+    },
+    {
+      path: '/settings',
+      name: 'settings',
+      component: SettingsModal,
+      props: true
     }
   ]
 })

@@ -108,7 +108,8 @@ const clearCache = async (): Promise<void> => {
 </script>
 
 <template>
-   <SettingGroup
+  <div>
+    <SettingGroup
       title="本地缓存"
       tip="native 缓存会维护歌曲、歌手/用户信息、封面和歌词并在超限时自动回收冷数据。"
       no-card
@@ -229,6 +230,7 @@ const clearCache = async (): Promise<void> => {
     <p v-if="message" class="settings-status" :class="messageType">
       {{ message }}
     </p>
+  </div>
   </template>
 
 <style scoped>

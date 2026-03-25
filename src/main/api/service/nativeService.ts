@@ -5,10 +5,8 @@ const { PlayerService } = getNativeModule()
 const player = new PlayerService()
 
 export const NativeService = {
-  // 发送指令，立刻返回
   playUrl(url: string, startSecs?: number) {
     try {
-      // 这里的 player.playUrl 是 Rust NAPI 导出的同步方法（只发消息）
       return player.playUrl(url, startSecs)
     } catch (e) {
       console.error('Native playUrl Error:', e)

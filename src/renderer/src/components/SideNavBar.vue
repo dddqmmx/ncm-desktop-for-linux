@@ -3,12 +3,10 @@ import { computed, ref, watch } from 'vue';
 import LoginModal from './LoginModal.vue';
 import { useUserStore } from '@renderer/stores/userStore';
 import { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist';
-import SettingsModal from './settings/SettingsModal.vue';
 import { resolveCachedMediaUrl } from '@renderer/utils/cache';
 
 const userStore = useUserStore()
 const showLoginModal = ref(false)
-const showSettingsModal = ref(false)
 const createdPlaylists = ref<Playlist[]>([])
 
 const toggleLoginModal = (): void => {
@@ -73,6 +71,10 @@ const navItems = [
   // { id: 'test',   name: '测试界面', icon: 'test', path: '/artist/10000' },
 ]
 
+const openSettingsWindow =  () :void  => {
+   window.api.open_settings_window()
+}
+
 
 </script>
 
@@ -82,13 +84,6 @@ const navItems = [
       v-if="showLoginModal"
       @close="showLoginModal = false"
       @login-success="handleLoginSuccess"/>
-  </Transition>
-
-  <Transition name="modal-fade">
-    <SettingsModal
-      v-if="showSettingsModal"
-      @close="showSettingsModal = false"
-    />
   </Transition>
 
   <aside class="sidebar-floating glass-panel">
@@ -135,7 +130,7 @@ const navItems = [
         <!-- 悬浮出现的菜单 (仅登录后) -->
         <div v-if="userStore.userInfo" class="bubble-menu">
           <div class="menu-item">修改个人信息</div>
-          <div class="menu-item" @click.stop="showSettingsModal = true">设置</div>
+          <div class="menu-item" @click.stop="openSettingsWindow">设置</div>
           <div class="menu-item logout" @click.stop="handleLogout">退出登录</div>
         </div>
 

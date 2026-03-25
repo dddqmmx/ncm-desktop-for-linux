@@ -53,6 +53,8 @@ interface CustomApi {
     quality: string
     url: string
   }) => Promise<CachedSongSource>
+  //ui相关工具方法
+  open_settings_window: () => Promise<unknown>
 }
 
 interface AudioDeviceInfo {
