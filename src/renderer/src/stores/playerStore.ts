@@ -14,8 +14,14 @@ export const usePlayerStore = defineStore('player', () => {
 
   return {
     // Playback State
-    currentSong: computed(() => playbackStore.currentSong),
-    currentSongId: computed(() => playbackStore.currentSongId),
+    currentSong: computed({
+      get: () => playbackStore.currentSong,
+      set: (val) => (playbackStore.currentSong = val)
+    }),
+    currentSongId: computed({
+      get: () => playbackStore.currentSongId,
+      set: (val) => (playbackStore.currentSongId = val)
+    }),
     currentTime: computed({
       get: () => playbackStore.currentTime,
       set: (val) => (playbackStore.currentTime = val)
