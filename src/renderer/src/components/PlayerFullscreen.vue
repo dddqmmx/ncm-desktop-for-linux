@@ -73,7 +73,6 @@ const goToArtist = async (artistId: number): Promise<void> => {
   })
 }
 
-
 /**
  * 核心逻辑：提取颜色并计算对比度
  */
@@ -86,7 +85,7 @@ const updateTheme = async (): Promise<void> => {
     // 它会自动处理 Canvas 绘制和像素提取
     const colors = await extractColors(imgRef.value.src, {
       crossOrigin: 'anonymous',
-      pixels: 30000, // 采样像素，越高越准但越慢，30000是平衡点
+      pixels: 30000 // 采样像素，越高越准但越慢，30000是平衡点
     })
 
     if (!colors || colors.length === 0) return
@@ -107,7 +106,7 @@ const updateTheme = async (): Promise<void> => {
       isDark: isDark
     }
   } catch (err) {
-    console.error("提取颜色失败", err)
+    console.error('提取颜色失败', err)
     // 失败时回退到默认主题
     theme.value = {
       primary: '#4a3f81',
@@ -122,7 +121,6 @@ const updateTheme = async (): Promise<void> => {
 const onImageLoad = (): void => {
   void updateTheme()
 }
-
 </script>
 
 <template>
@@ -145,11 +143,17 @@ const onImageLoad = (): void => {
       <!-- 顶部栏 -->
       <header class="top-bar">
         <button class="back-btn" @click="playerStore.toggleFullScreen">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M6 9l6 6 6-6"/>
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+          >
+            <path d="M6 9l6 6 6-6" />
           </svg>
         </button>
-        <div class="playing-status">Now Playing</div>
         <div class="empty-space"></div>
       </header>
 
@@ -161,15 +165,18 @@ const onImageLoad = (): void => {
               ref="imgRef"
               :src="resolvedCover"
               class="main-cover"
-              :class="{ 'playing': playerStore.isPlaying }"
+              :class="{ playing: playerStore.isPlaying }"
               crossorigin="anonymous"
               @load="onImageLoad"
-            >
+            />
           </div>
           <div class="track-meta">
             <h1 class="track-title">{{ playerStore.currentSong?.name || '未知歌曲' }}</h1>
             <div class="track-artists">
-              <template v-for="(artist, index) in currentArtists" :key="`${artist.id}-${artist.name}-${index}`">
+              <template
+                v-for="(artist, index) in currentArtists"
+                :key="`${artist.id}-${artist.name}-${index}`"
+              >
                 <button
                   type="button"
                   class="track-artist"
@@ -178,10 +185,7 @@ const onImageLoad = (): void => {
                 >
                   {{ artist.name }}
                 </button>
-                <span
-                  v-if="index < currentArtists.length - 1"
-                  class="track-artist-separator"
-                >
+                <span v-if="index < currentArtists.length - 1" class="track-artist-separator">
                   /
                 </span>
               </template>
@@ -205,7 +209,7 @@ const onImageLoad = (): void => {
                   @input="handleInput"
                   @change="handleSeek"
                 />
-                <div class="progress-bar-fill" :style="{ width: progressPercent + '%' }"/>
+                <div class="progress-bar-fill" :style="{ width: progressPercent + '%' }" />
               </div>
               <span class="time-text">{{ formatTime(playerStore.duration) }}</span>
             </div>
@@ -213,12 +217,20 @@ const onImageLoad = (): void => {
             <!-- 控制按钮 -->
             <div class="btns-row">
               <button class="icon-btn secondary" @click="playerStore.playPrev()">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+                </svg>
               </button>
 
               <button class="play-main-btn" @click="playerStore.togglePlay">
-                <svg v-if="playerStore.isPlaying" width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                <svg
+                  v-if="playerStore.isPlaying"
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
                 </svg>
                 <svg v-else width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M8 5v14l11-7z" />
@@ -226,7 +238,9 @@ const onImageLoad = (): void => {
               </button>
 
               <button class="icon-btn secondary" @click="playerStore.playNext()">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+                </svg>
               </button>
             </div>
           </div>
@@ -244,12 +258,14 @@ const onImageLoad = (): void => {
 </template>
 
 <style scoped>
-
 .player-fullscreen {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  font-family: 'Inter', -apple-system, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    sans-serif;
   color: var(--text-color);
   transition: color 0.8s ease;
   -webkit-app-region: drag;
@@ -266,7 +282,7 @@ const onImageLoad = (): void => {
 .vignette {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 30% 50%, transparent 0%, rgba(0,0,0,0.2) 100%);
+  background: radial-gradient(circle at 30% 50%, transparent 0%, rgba(0, 0, 0, 0.2) 100%);
   z-index: -1;
 }
 
@@ -301,15 +317,6 @@ const onImageLoad = (): void => {
   transition: all 0.3s;
   -webkit-app-region: no-drag;
 }
-
-.playing-status {
-  font-weight: 600;
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  opacity: 0.8;
-}
-
 /* 主布局 */
 .main-layout {
   flex: 1;
@@ -350,11 +357,13 @@ const onImageLoad = (): void => {
   height: 100%;
   object-fit: cover;
   border-radius: 24px;
-  box-shadow: 0 30px 60px rgba(0,0,0,0.3);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.3);
   transition: transform 0.8s cubic-bezier(0.2, 0, 0.2, 1);
 }
 
-.main-cover.playing { transform: scale(1.02); }
+.main-cover.playing {
+  transform: scale(1.02);
+}
 
 .track-meta {
   margin-top: 40px;
@@ -414,16 +423,28 @@ const onImageLoad = (): void => {
 }
 
 /* 进度条与控制 */
-.playback-controls { width: 100%; max-width: 450px; }
+.playback-controls {
+  width: 100%;
+  max-width: 450px;
+}
 
-.progress-container { display: flex; align-items: center; gap: 15px; margin-bottom: 30px; }
-.time-text { font-size: 12px; font-weight: 600; opacity: 0.6; min-width: 45px; }
+.progress-container {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 30px;
+}
+.time-text {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.6;
+  min-width: 45px;
+}
 
 .progress-container,
 .progress-input {
   -webkit-app-region: no-drag;
 }
-
 
 .progress-bar-bg {
   position: relative;
@@ -450,7 +471,12 @@ const onImageLoad = (): void => {
   box-shadow: 0 0 10px var(--contrast-color);
 }
 
-.btns-row { display: flex; align-items: center; justify-content: center; gap: 40px; }
+.btns-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+}
 .btns-row button {
   -webkit-app-region: no-drag;
 }
@@ -466,24 +492,49 @@ const onImageLoad = (): void => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.2s, background 0.5s;
+  transition:
+    transform 0.2s,
+    background 0.5s;
 }
-.play-main-btn:hover { transform: scale(1.1); }
+.play-main-btn:hover {
+  transform: scale(1.1);
+}
 
-.icon-btn { background: none; border: none; color: var(--text-color); opacity: 0.8; cursor: pointer; }
-.icon-btn:hover { opacity: 1; }
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(--text-color);
+  opacity: 0.8;
+  cursor: pointer;
+}
+.icon-btn:hover {
+  opacity: 1;
+}
 
 /* 响应式 */
 @media (max-width: 1100px) {
-  .main-layout { gap: 30px; }
-  .player-content { padding: 30px; }
+  .main-layout {
+    gap: 30px;
+  }
+  .player-content {
+    padding: 30px;
+  }
 }
 
 @media (max-width: 1000px) {
-  .main-layout { grid-template-columns: 1fr; gap: 40px; }
-  .player-content { padding: 20px; }
-  .visual-panel { order: 1; }
-  .track-title { font-size: 28px; }
+  .main-layout {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .player-content {
+    padding: 20px;
+  }
+  .visual-panel {
+    order: 1;
+  }
+  .track-title {
+    font-size: 28px;
+  }
 }
 
 @media (max-width: 900px) {
@@ -491,6 +542,8 @@ const onImageLoad = (): void => {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr 1fr;
   }
-  .track-title { font-size: 28px; }
+  .track-title {
+    font-size: 28px;
+  }
 }
 </style>

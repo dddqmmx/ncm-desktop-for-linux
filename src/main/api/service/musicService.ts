@@ -20,7 +20,8 @@ import {
   artist_detail,
   artist_top_song,
   artist_album,
-  artist_mv
+  artist_mv,
+  album
 } from 'NeteaseCloudMusicApi'
 import { CacheService } from './cacheService'
 
@@ -39,18 +40,18 @@ type CacheBucket = 'song' | 'entity' | 'lyric'
  * 2. 移除冗余的 await
  */
 const responseHandler = <T = APIBaseResponse>(
-  apiCall: () => Promise<Response<T>>,
+  apiCall: () => Promise<Response<T>>
 ): Promise<ServiceResult<T>> => {
   return retry(apiCall, 5)
     .then((res) => ({
       status: res.status,
       body: res.body,
-      cookie: res.cookie,
+      cookie: res.cookie
     }))
     .catch((e: Error) => ({
       status: 500,
       body: null,
-      error: e.message,
+      error: e.message
     }))
 }
 
@@ -180,6 +181,15 @@ export const MusicService = {
       }),
     createMethod(artist_mv)
   ),
+  album: createCachedMethod(
+    'entity',
+    (params: { id: number | string }) =>
+      CacheService.buildKey({
+        scope: 'album',
+        id: params.id
+      }),
+    createMethod(album)
+  ),
   song_detail(params: { ids: number[] | string; [key: string]: unknown }) {
     const ids = Array.isArray(params.ids) ? params.ids.join(',') : params.ids
     return createCachedMethod(
@@ -187,10 +197,12 @@ export const MusicService = {
       (normalizedParams: typeof params) =>
         CacheService.buildKey({
           scope: 'song_detail',
-          ids: Array.isArray(normalizedParams.ids) ? normalizedParams.ids.join(',') : normalizedParams.ids
+          ids: Array.isArray(normalizedParams.ids)
+            ? normalizedParams.ids.join(',')
+            : normalizedParams.ids
         }),
       (normalizedParams: typeof params) =>
         responseHandler(() => song_detail({ ...normalizedParams, ids }))
     )({ ...params, ids })
-  },
+  }
 }

@@ -11,7 +11,6 @@ const playerStore = usePlayerStore()
 onMounted(async () => {
   await userStore.getUserAccount()
 })
-
 </script>
 
 <template>
@@ -28,11 +27,9 @@ onMounted(async () => {
         <MusicPlayer />
 
         <Transition name="player-fade">
-          <PlayerFullscreen v-if="playerStore.isFullScreen"/>
+          <PlayerFullscreen v-if="playerStore.isFullScreen" />
         </Transition>
-
       </div>
-
     </div>
   </div>
 </template>
@@ -80,14 +77,22 @@ onMounted(async () => {
 }
 
 /* 滚动条美化 */
-.scrollable-content::-webkit-scrollbar { width: 8px; }
-.scrollable-content::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 4px; }
-.scrollable-content::-webkit-scrollbar-track { background: transparent; }
-
+.scrollable-content::-webkit-scrollbar {
+  width: 8px;
+}
+.scrollable-content::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+.scrollable-content::-webkit-scrollbar-track {
+  background: transparent;
+}
 
 .player-fade-enter-active,
 .player-fade-leave-active {
-  transition: opacity 0.35s ease, transform 0.35s ease;
+  transition:
+    opacity 0.35s ease,
+    transform 0.35s ease;
 }
 
 .player-fade-enter-from,
@@ -95,6 +100,4 @@ onMounted(async () => {
   opacity: 0;
   transform: translateY(20px);
 }
-
-
 </style>

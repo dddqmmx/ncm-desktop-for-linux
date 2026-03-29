@@ -7,7 +7,10 @@ import { useResolvedMediaUrl } from '@renderer/composables/useResolvedMediaUrl'
 
 const playerStore = usePlayerStore()
 const fallbackCover = 'https://placehold.co/100x100/444444/fff?text=None'
-const resolvedCover = useResolvedMediaUrl(() => playerStore.currentSong?.cover || fallbackCover, fallbackCover)
+const resolvedCover = useResolvedMediaUrl(
+  () => playerStore.currentSong?.cover || fallbackCover,
+  fallbackCover
+)
 
 // --- UI 显示绑定 ---
 const displayTrack = computed(() => ({
@@ -72,7 +75,7 @@ onMounted(() => {
         <!-- 1. 左侧：歌曲信息 -->
         <div class="section-left" @click="playerStore.toggleFullScreen">
           <div class="cover-wrapper">
-            <img :src="displayTrack.cover" class="track-cover">
+            <img :src="displayTrack.cover" class="track-cover" />
           </div>
           <div class="track-metadata">
             <div class="track-title">{{ displayTrack.title }}</div>
@@ -84,10 +87,19 @@ onMounted(() => {
         <div class="section-center">
           <div class="playback-controls">
             <button class="icon-btn sm shuffle">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <path
-                  d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+                  d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"
+                />
               </svg>
             </button>
 
@@ -112,17 +124,24 @@ onMounted(() => {
             </button>
 
             <button class="icon-btn sm loop" @click="playerStore.togglePlayMode()">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                stroke-linecap="round" stroke-linejoin="round">
-
-                <g class="icon-loop" v-if="playerStore.playMode == 'loop'">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <g v-if="playerStore.playMode == 'loop'" class="icon-loop">
                   <path d="M17 2l4 4-4 4" />
                   <path d="M3 11V9a4 4 0 0 1 4-4h14" />
                   <path d="M7 22l-4-4 4-4" />
                   <path d="M21 13v2a4 4 0 0 1-4 4H3" />
                 </g>
 
-                <g class="icon-random" v-if="playerStore.playMode == 'random'">
+                <g v-if="playerStore.playMode == 'random'" class="icon-random">
                   <path d="M16 3h5v5" />
                   <path d="M4 20L21 3" />
                   <path d="M21 16v5h-5" />
@@ -130,14 +149,13 @@ onMounted(() => {
                   <path d="M4 4l5 5" />
                 </g>
 
-                <g class="icon-single" v-if="playerStore.playMode == 'single'">
+                <g v-if="playerStore.playMode == 'single'" class="icon-single">
                   <path d="M17 2l4 4-4 4" />
                   <path d="M3 11V9a4 4 0 0 1 4-4h14" />
                   <path d="M7 22l-4-4 4-4" />
                   <path d="M21 13v2a4 4 0 0 1-4 4H3" />
                   <path d="M11 10h1v4" stroke-width="2" />
                 </g>
-
               </svg>
             </button>
           </div>
@@ -145,17 +163,36 @@ onMounted(() => {
           <div class="progress-area">
             <div class="progress-track">
               <div class="progress-bar" :style="{ width: playerStore.progressPercent + '%' }"></div>
-              <input type="range" min="0" max="100" step="0.1" :value="playerStore.progressPercent" @input="handleInput"
-                @change="handleSeek" class="hidden-range">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="0.1"
+                :value="playerStore.progressPercent"
+                class="hidden-range"
+                @input="handleInput"
+                @change="handleSeek"
+              />
             </div>
           </div>
         </div>
 
         <!-- 3. 右侧：功能按钮 -->
         <div class="section-right">
-          <button class="icon-btn list-btn" :class="{ active: isPlaylistVisible }" @click="togglePlaylist">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-              stroke-linecap="round">
+          <button
+            class="icon-btn list-btn"
+            :class="{ active: isPlaylistVisible }"
+            @click="togglePlaylist"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+            >
               <line x1="8" y1="6" x2="21" y2="6" />
               <line x1="8" y1="12" x2="21" y2="12" />
               <line x1="8" y1="18" x2="21" y2="18" />
@@ -192,7 +229,7 @@ onMounted(() => {
   z-index: 100;
   pointer-events: none;
   /* 允许点击到底层内容 */
-    -webkit-app-region: drag;
+  -webkit-app-region: drag;
 }
 
 /* 4. 播放列表弹出位置 */
@@ -287,7 +324,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  -webkit-app-region:  no-drag;
+  -webkit-app-region: no-drag;
 }
 
 .track-title {
@@ -409,7 +446,6 @@ onMounted(() => {
 }
 
 @media (max-width: 650px) {
-
   .section-left,
   .section-right {
     min-width: auto;

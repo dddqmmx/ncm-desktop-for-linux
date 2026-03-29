@@ -22,6 +22,7 @@ interface CustomApi {
   artist_top_song: (p: unknown) => Promise<unknown>
   artist_album: (p: unknown) => Promise<unknown>
   artist_mv: (p: unknown) => Promise<unknown>
+  album: (p: unknown) => Promise<unknown>
   // rust后端播放器操作
   play_url: (url: string, startSecs?: number) => Promise<unknown>
   play_url_cached: (

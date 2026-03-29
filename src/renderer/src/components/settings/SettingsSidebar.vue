@@ -15,7 +15,13 @@
         :class="{ active: activeTab === tab.id }"
         @click="$emit('update:activeTab', tab.id)"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg
+          class="nav-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
           <path stroke-linecap="round" stroke-linejoin="round" :d="tab.icon" />
         </svg>
         {{ tab.name }}
@@ -128,7 +134,9 @@ const indicatorStyle = computed((): { transform: string } => {
   z-index: 1; /* 确保文字在指示器上方 */
   -webkit-app-region: no-drag;
   /* 添加所有状态变化的平滑过渡 */
-  transition: color 0.2s ease, background-color 0.2s ease;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease;
   border-radius: 10px;
 }
 
@@ -161,11 +169,17 @@ const indicatorStyle = computed((): { transform: string } => {
 /* =========================================
    滚动条美化
    ========================================= */
-.sidebar-nav::-webkit-scrollbar { width: 6px; }
-.sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar-nav::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
 .sidebar-nav::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.15);
   border-radius: 10px;
 }
-.sidebar-nav::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.25); }
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
 </style>

@@ -37,6 +37,7 @@ const api = {
   artist_top_song: invoke('music:artistTopSong'),
   artist_album: invoke('music:artistAlbum'),
   artist_mv: invoke('music:artistMv'),
+  album: invoke('music:album'),
 
   // --- Rust 播放器操作 (多参数或特定逻辑) ---
   play_url: invokeArgs('player:playUrl'),

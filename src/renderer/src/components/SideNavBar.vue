@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import LoginModal from './LoginModal.vue';
-import { useUserStore } from '@renderer/stores/userStore';
-import { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist';
-import { resolveCachedMediaUrl } from '@renderer/utils/cache';
+import { computed, ref, watch } from 'vue'
+import LoginModal from './LoginModal.vue'
+import { useUserStore } from '@renderer/stores/userStore'
+import { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist'
+import { resolveCachedMediaUrl } from '@renderer/utils/cache'
 
 const userStore = useUserStore()
 const showLoginModal = ref(false)
@@ -36,9 +36,9 @@ const fetchPlaylists = async (): Promise<void> => {
   }
 
   try {
-    const res = await window.api.user_playlist({
-      uid: uid,
-    }) as { body?: PlaylistResponse }
+    const res = (await window.api.user_playlist({
+      uid: uid
+    })) as { body?: PlaylistResponse }
 
     if (res.body && res.body.playlist) {
       createdPlaylists.value = await Promise.all(
@@ -67,15 +67,13 @@ watch(
 
 const navItems = [
   { id: 'search', name: '搜索', icon: 'search', path: '/search' },
-  { id: 1, name: '主页', icon: 'home', path: '/home' },
+  { id: 1, name: '主页', icon: 'home', path: '/home' }
   // { id: 'test',   name: '测试界面', icon: 'test', path: '/artist/10000' },
 ]
 
-const openSettingsWindow =  () :void  => {
-   window.api.open_settings_window()
+const openSettingsWindow = (): void => {
+  window.api.open_settings_window()
 }
-
-
 </script>
 
 <template>
@@ -83,7 +81,8 @@ const openSettingsWindow =  () :void  => {
     <LoginModal
       v-if="showLoginModal"
       @close="showLoginModal = false"
-      @login-success="handleLoginSuccess"/>
+      @login-success="handleLoginSuccess"
+    />
   </Transition>
 
   <aside class="sidebar-floating glass-panel">
@@ -97,9 +96,48 @@ const openSettingsWindow =  () :void  => {
           class="nav-item"
           active-class="active"
         >
-          <svg v-if="item.icon === 'search'" class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-          <svg v-if="item.icon === 'home'" class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-          <svg v-if="item.icon === 'test'" class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+          <svg
+            v-if="item.icon === 'search'"
+            class="nav-icon"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+          <svg
+            v-if="item.icon === 'home'"
+            class="nav-icon"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+            />
+          </svg>
+          <svg
+            v-if="item.icon === 'test'"
+            class="nav-icon"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+            />
+          </svg>
           {{ item.name }}
         </RouterLink>
       </nav>
@@ -137,10 +175,12 @@ const openSettingsWindow =  () :void  => {
         <!-- 底部基础信息 -->
         <div class="bubble-trigger">
           <img
-            :src="userStore.userInfo?.profile.avatarUrl || 'https://placehold.co/40x40/ddd/888?text=U'"
+            :src="
+              userStore.userInfo?.profile.avatarUrl || 'https://placehold.co/40x40/ddd/888?text=U'
+            "
             alt="user"
             class="avatar"
-          >
+          />
           <span class="username">
             {{ userStore.userInfo?.profile.nickname || '请登录' }}
           </span>
@@ -173,21 +213,62 @@ const openSettingsWindow =  () :void  => {
   padding: 30px 20px 10px 20px;
   scrollbar-width: none;
 }
-.sidebar-content::-webkit-scrollbar { display: none; }
+.sidebar-content::-webkit-scrollbar {
+  display: none;
+}
 
-.nav-section { display: flex; flex-direction: column; gap: 4px; margin-bottom: 24px;-webkit-app-region: no-drag; }
-.nav-group-title { font-size: 12px; color: rgba(0,0,0,0.4); font-weight: 600; margin-bottom: 8px; padding-left: 12px; text-transform: uppercase; }
+.nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 24px;
+  -webkit-app-region: no-drag;
+}
+.nav-group-title {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.4);
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding-left: 12px;
+  text-transform: uppercase;
+}
 
 .nav-item {
-  display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px;
-  color: #444; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: #444;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
   text-decoration: none;
 }
-.nav-item:hover { background-color: rgba(255, 255, 255, 0.6); }
-.nav-item.active { background-color: #fff; color: #000; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+.nav-item:hover {
+  background-color: rgba(255, 255, 255, 0.6);
+}
+.nav-item.active {
+  background-color: #fff;
+  color: #000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
 
-.nav-icon { width: 20px; height: 20px; opacity: 0.7; flex-shrink: 0; border-radius: 6px; object-fit: cover; }
-.playlist-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.nav-icon {
+  width: 20px;
+  height: 20px;
+  opacity: 0.7;
+  flex-shrink: 0;
+  border-radius: 6px;
+  object-fit: cover;
+}
+.playlist-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
 
 /* --- 用户气泡样式 --- */
 .user-section {
@@ -227,7 +308,7 @@ const openSettingsWindow =  () :void  => {
   height: 32px;
   border-radius: 50%;
   background: #ccc;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
 .username {
@@ -253,7 +334,7 @@ const openSettingsWindow =  () :void  => {
   box-shadow:
     inset 4px 4px 8px rgba(0, 0, 0, 0.12),
     inset -3px -3px 6px rgba(255, 255, 255, 0.8),
-    0 10px 20px rgba(0,0,0,0.05);
+    0 10px 20px rgba(0, 0, 0, 0.05);
 }
 
 .profile-bubble.is-logged-in:hover .bubble-menu {
@@ -284,16 +365,41 @@ const openSettingsWindow =  () :void  => {
 
 /* 移动端适配 */
 @media (max-width: 1000px) {
-  .sidebar-floating { width: 80px; align-items: center; }
-  .sidebar-content { padding: 20px 5px; }
-  .nav-item { justify-content: center; }
-  .nav-group-title, .playlist-name, .username, .bubble-menu { display: none; }
-  .user-section { padding: 15px 10px; }
-  .profile-bubble { border-radius: 20px; }
-  .bubble-trigger { padding: 6px; justify-content: center; }
+  .sidebar-floating {
+    width: 80px;
+    align-items: center;
+  }
+  .sidebar-content {
+    padding: 20px 5px;
+  }
+  .nav-item {
+    justify-content: center;
+  }
+  .nav-group-title,
+  .playlist-name,
+  .username,
+  .bubble-menu {
+    display: none;
+  }
+  .user-section {
+    padding: 15px 10px;
+  }
+  .profile-bubble {
+    border-radius: 20px;
+  }
+  .bubble-trigger {
+    padding: 6px;
+    justify-content: center;
+  }
 }
 
 /* 动画 */
-.modal-fade-enter-active, .modal-fade-leave-active { transition: opacity 0.3s; }
-.modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.3s;
+}
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
 </style>

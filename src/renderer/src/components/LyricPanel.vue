@@ -26,7 +26,7 @@ const themeVars = computed(() => {
     '--lrc-text-color': isDark ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.9)',
     '--lrc-text-active-color': isDark ? '#ffffff' : '#000000',
     '--lrc-text-shadow': isDark ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.1)',
-    '--lrc-status-color': isDark ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.5)',
+    '--lrc-status-color': isDark ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.5)'
   }
 })
 
@@ -73,7 +73,7 @@ watch(
   (newId) => {
     if (newId) fetchLyrics(newId)
   },
-  { immediate: true },
+  { immediate: true }
 )
 
 // --- 逻辑优化：提前量计算 ---
@@ -91,7 +91,7 @@ watch(currentLyricIndex, (newIndex) => {
     if (activeEl) {
       activeEl.scrollIntoView({
         behavior: 'smooth',
-        block: 'center',
+        block: 'center'
       })
     }
   })
@@ -126,13 +126,7 @@ watch(currentLyricIndex, (newIndex) => {
   flex-direction: column;
   overflow: hidden;
   /* 增加遮罩的平滑度 */
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    black 20%,
-    black 80%,
-    transparent 100%
-  );
+  mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%);
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0%,

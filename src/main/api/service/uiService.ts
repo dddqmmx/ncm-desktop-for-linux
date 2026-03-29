@@ -5,7 +5,7 @@ import { is } from '@electron-toolkit/utils'
 let settingsWindow: BrowserWindow | null = null
 
 export const UiService = {
-  openSettingsWindow(mainWindow:BrowserWindow) {
+  openSettingsWindow(mainWindow: BrowserWindow) {
     if (settingsWindow) {
       settingsWindow.focus()
       return

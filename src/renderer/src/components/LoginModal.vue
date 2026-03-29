@@ -30,22 +30,22 @@ const initQrLogin = async (): Promise<void> => {
 
   try {
     // 1. 获取 Key
-    const keyRes = await window.api.login_qr_key({}) as { body?:  LoginQrKey}
+    const keyRes = (await window.api.login_qr_key({})) as { body?: LoginQrKey }
     const key = keyRes.body?.data.unikey
     if (!key) return
 
     // 2. 根据 Key 生成二维码
-    const createRes = await window.api.login_qr_create({
+    const createRes = (await window.api.login_qr_create({
       key,
       qrimg: true
-    }) as { body?: LoginQrCreate }
+    })) as { body?: LoginQrCreate }
 
     qrImg.value = createRes.body?.data.qrimg ?? ''
     qrStatus.value = '请使用 App 扫码'
 
     // 3. 开始轮询检测状态
     qrCheckTimer = window.setInterval(async () => {
-      const checkRes = await window.api.login_qr_check({ key }) as { body?: LoginQrCheck }
+      const checkRes = (await window.api.login_qr_check({ key })) as { body?: LoginQrCheck }
       const code = checkRes.body?.code
 
       // === 状态码处理 ===
@@ -80,7 +80,6 @@ const initQrLogin = async (): Promise<void> => {
         emit('login-success')
       }
     }, 2000) // 建议每 2-3 秒轮询一次，避免过于频繁
-
   } catch (err) {
     console.error('二维码初始化错误', err)
     qrStatus.value = '加载二维码失败'
@@ -150,22 +149,44 @@ const handleLogin = (): void => {
 
 <template>
   <div class="login-overlay" @click.self="handleClose">
-
     <!-- 增加一个翻转容器，用于卡片翻转动画 -->
     <div class="card-perspective">
       <div class="login-card" :class="{ 'is-flipped': loginMode === 'qr' }">
-
         <!-- === 正面：表单登录 === -->
         <div class="card-face face-front">
           <!-- 顶部操作栏 -->
           <div class="card-top-bar">
             <!-- 切换到二维码 -->
-            <button class="icon-btn qr-btn" @click="toggleLoginMode" title="扫码登录">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+            <button class="icon-btn qr-btn" title="扫码登录" @click="toggleLoginMode">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
             </button>
             <!-- 关闭 -->
-            <button class="icon-btn close-btn" @click="handleClose" title="关闭">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            <button class="icon-btn close-btn" title="关闭" @click="handleClose">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
             </button>
           </div>
 
@@ -176,20 +197,27 @@ const handleLogin = (): void => {
 
           <!-- 现代胶囊切换 Tab -->
           <div class="segmented-control">
-            <div class="segment-bg" :style="{ transform: tabType === 'password' ? 'translateX(0)' : 'translateX(100%)' }"></div>
+            <div
+              class="segment-bg"
+              :style="{ transform: tabType === 'password' ? 'translateX(0)' : 'translateX(100%)' }"
+            ></div>
             <button
               type="button"
               :class="{ active: tabType === 'password' }"
               @click="tabType = 'password'"
-            >密码登录</button>
+            >
+              密码登录
+            </button>
             <button
               type="button"
               :class="{ active: tabType === 'phone' }"
               @click="tabType = 'phone'"
-            >验证码登录</button>
+            >
+              验证码登录
+            </button>
           </div>
 
-          <form @submit.prevent="handleLogin" class="main-form">
+          <form class="main-form" @submit.prevent="handleLogin">
             <!-- 错误提示 -->
             <transition name="fade">
               <div v-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
@@ -198,17 +226,37 @@ const handleLogin = (): void => {
             <!-- 密码输入组 -->
             <div v-if="tabType === 'password'" class="input-group fade-in-up">
               <div class="input-field">
-                <input type="text" v-model="creds.username" placeholder=" " required />
+                <input v-model="creds.username" type="text" placeholder=" " required />
                 <label>邮箱</label>
                 <div class="icon-suffix">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                  </svg>
                 </div>
               </div>
               <div class="input-field">
-                <input type="password" v-model="creds.password" placeholder=" " required />
+                <input v-model="creds.password" type="password" placeholder=" " required />
                 <label>密码</label>
                 <div class="icon-suffix">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  </svg>
                 </div>
               </div>
             </div>
@@ -216,16 +264,38 @@ const handleLogin = (): void => {
             <!-- 手机输入组 -->
             <div v-else class="input-group fade-in-up">
               <div class="input-field">
-                <input type="tel" v-model="phoneData.phone" placeholder=" " required />
+                <input v-model="phoneData.phone" type="tel" placeholder=" " required />
                 <label>手机号码</label>
                 <div class="icon-suffix">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"
+                    ></path>
+                  </svg>
                 </div>
               </div>
               <div class="input-field">
-                <input type="text" v-model="phoneData.code" placeholder=" " required style="padding-right: 90px;" />
+                <input
+                  v-model="phoneData.code"
+                  type="text"
+                  placeholder=" "
+                  required
+                  style="padding-right: 90px"
+                />
                 <label>验证码</label>
-                <button type="button" class="verify-btn" :disabled="verificationCodeTimer > 0" @click="sendCode">
+                <button
+                  type="button"
+                  class="verify-btn"
+                  :disabled="verificationCodeTimer > 0"
+                  @click="sendCode"
+                >
                   {{ verificationCodeTimer > 0 ? `${verificationCodeTimer}秒` : '获取验证码' }}
                 </button>
               </div>
@@ -234,7 +304,7 @@ const handleLogin = (): void => {
             <!-- 底部辅助 -->
             <div class="form-actions">
               <label class="custom-checkbox">
-                <input type="checkbox" v-model="rememberMe">
+                <input v-model="rememberMe" type="checkbox" />
                 <span class="checkmark"></span>
                 <span>保持登录状态</span>
               </label>
@@ -247,18 +317,40 @@ const handleLogin = (): void => {
               <div v-else class="spinner"></div>
             </button>
           </form>
-
         </div>
 
         <!-- === 背面：二维码登录 === -->
         <div class="card-face face-back">
           <div class="card-top-bar">
             <!-- 返回电脑登录 -->
-            <button class="icon-btn pc-btn" @click="toggleLoginMode" title="密码登录">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+            <button class="icon-btn pc-btn" title="密码登录" @click="toggleLoginMode">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
             </button>
             <button class="icon-btn close-btn" @click="handleClose">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
             </button>
           </div>
 
@@ -266,20 +358,21 @@ const handleLogin = (): void => {
             <h2>扫码登录</h2>
             <div class="qr-box">
               <img v-if="qrImg" :src="qrImg" alt="二维码" />
-              <div v-else class="spinner" style="margin: 50px auto; border-top-color: #000;"></div>
+              <div v-else class="spinner" style="margin: 50px auto; border-top-color: #000"></div>
             </div>
-            <p style="font-weight: 600; color: #000; margin-bottom: 8px;">{{ qrStatus }}</p>
+            <p style="font-weight: 600; color: #000; margin-bottom: 8px">{{ qrStatus }}</p>
             <p>请打开 <b>移动端 App</b> 扫码即可快速登录。</p>
           </div>
         </div>
-
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 /* 基础变量 - 纯黑白极简 */
 .login-overlay {
@@ -292,8 +385,12 @@ const handleLogin = (): void => {
   --input-bg: #f4f4f5;
   --input-focus-bg: #ffffff;
 
-  position: fixed; inset: 0; z-index: 9999;
-  display: flex; align-items: center; justify-content: center;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background-color: var(--bg-overlay);
   backdrop-filter: blur(12px);
   font-family:
@@ -309,7 +406,9 @@ const handleLogin = (): void => {
 /* 3D 翻转容器 */
 .card-perspective {
   perspective: 1000px;
-  width: 100%; display: flex; justify-content: center;
+  width: 100%;
+  display: flex;
+  justify-content: center;
 }
 
 .login-card {
@@ -328,7 +427,8 @@ const handleLogin = (): void => {
 
 /* 卡片正反面通用 */
 .card-face {
-  position: absolute; inset: 0;
+  position: absolute;
+  inset: 0;
   backface-visibility: hidden;
   background: var(--card-bg);
   backdrop-filter: blur(20px);
@@ -336,27 +436,56 @@ const handleLogin = (): void => {
   border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: 24px;
   padding: 32px;
-  display: flex; flex-direction: column;
+  display: flex;
+  flex-direction: column;
 }
 
-.face-back { transform: rotateY(180deg); text-align: center; }
+.face-back {
+  transform: rotateY(180deg);
+  text-align: center;
+}
 
 /* 顶部按钮栏 */
 .card-top-bar {
-  display: flex; justify-content: space-between; margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 24px;
 }
 .icon-btn {
-  width: 36px; height: 36px; border-radius: 12px;
-  border: none; background: transparent; color: #888;
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: all 0.2s;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: none;
+  background: transparent;
+  color: #888;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
 }
-.icon-btn:hover { background: rgba(0,0,0,0.05); color: #000; transform: scale(1.05); }
+.icon-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #000;
+  transform: scale(1.05);
+}
 
 /* 标题区 */
-.header-section { margin-bottom: 24px; text-align: center; }
-h1 { font-size: 24px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.5px; }
-.subtitle { font-size: 14px; color: var(--text-sub); margin: 0; }
+.header-section {
+  margin-bottom: 24px;
+  text-align: center;
+}
+h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  letter-spacing: -0.5px;
+}
+.subtitle {
+  font-size: 14px;
+  color: var(--text-sub);
+  margin: 0;
+}
 
 /* === 胶囊切换器 (Segmented Control) === */
 .segmented-control {
@@ -368,140 +497,292 @@ h1 { font-size: 24px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.5px;
   margin-bottom: 28px;
 }
 .segment-bg {
-  position: absolute; top: 4px; left: 4px; bottom: 4px;
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  bottom: 4px;
   width: calc(50% - 4px);
   background: #fff;
   border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 1;
 }
 .segmented-control button {
   flex: 1;
-  position: relative; z-index: 2;
-  border: none; background: transparent;
-  font-size: 14px; font-weight: 600; color: #888;
-  padding: 8px; cursor: pointer;
+  position: relative;
+  z-index: 2;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: #888;
+  padding: 8px;
+  cursor: pointer;
   transition: color 0.3s;
 }
-.segmented-control button.active { color: #000; }
+.segmented-control button.active {
+  color: #000;
+}
 
 /* === 输入框风格 (Floating Label 风格) === */
-.input-group { display: flex; flex-direction: column; gap: 16px; margin-bottom: 20px; }
-.input-field { position: relative; }
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.input-field {
+  position: relative;
+}
 
 .input-field input {
-  width: 100%; height: 50px;
+  width: 100%;
+  height: 50px;
   background: var(--input-bg);
   border: 1px solid transparent;
   border-radius: 14px;
   padding: 20px 16px 6px; /* 为 Label 留出空间 */
-  font-size: 15px; font-weight: 600; color: #000;
-  outline: none; transition: all 0.2s;
+  font-size: 15px;
+  font-weight: 600;
+  color: #000;
+  outline: none;
+  transition: all 0.2s;
 }
 
 .input-field input:focus {
   background: var(--input-focus-bg);
   border-color: #000;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 /* Floating Label 逻辑 */
 .input-field label {
-  position: absolute; left: 16px; top: 15px;
-  font-size: 14px; color: #888; font-weight: 500;
-  pointer-events: none; transition: all 0.2s;
+  position: absolute;
+  left: 16px;
+  top: 15px;
+  font-size: 14px;
+  color: #888;
+  font-weight: 500;
+  pointer-events: none;
+  transition: all 0.2s;
 }
 .input-field input:focus ~ label,
 .input-field input:not(:placeholder-shown) ~ label {
-  top: 7px; font-size: 11px; color: #000; font-weight: 700;
+  top: 7px;
+  font-size: 11px;
+  color: #000;
+  font-weight: 700;
 }
 
 /* 右侧图标 */
 .icon-suffix {
-  position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
-  color: #aaa; pointer-events: none; transition: color 0.2s;
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #aaa;
+  pointer-events: none;
+  transition: color 0.2s;
 }
-.input-field input:focus ~ .icon-suffix { color: #000; }
+.input-field input:focus ~ .icon-suffix {
+  color: #000;
+}
 
 /* 验证码按钮 */
 .verify-btn {
-  position: absolute; right: 8px; top: 8px; bottom: 8px;
-  background: #000; color: #fff;
-  border: none; border-radius: 8px;
-  font-size: 12px; font-weight: 600; padding: 0 12px;
-  cursor: pointer; transition: opacity 0.2s;
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  bottom: 8px;
+  background: #000;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 12px;
+  cursor: pointer;
+  transition: opacity 0.2s;
 }
-.verify-btn:disabled { background: #ccc; cursor: not-allowed; }
-.verify-btn:hover:not(:disabled) { opacity: 0.8; }
+.verify-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+.verify-btn:hover:not(:disabled) {
+  opacity: 0.8;
+}
 
 /* 辅助行 */
 .form-actions {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 28px; font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 28px;
+  font-size: 13px;
 }
-.forgot-link { color: #555; text-decoration: none; font-weight: 600; transition: color 0.2s; }
-.forgot-link:hover { color: #000; text-decoration: underline; }
+.forgot-link {
+  color: #555;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.2s;
+}
+.forgot-link:hover {
+  color: #000;
+  text-decoration: underline;
+}
 
 /* 黑色 Checkbox */
 .custom-checkbox {
-  display: flex; align-items: center; gap: 8px; cursor: pointer; color: #555; font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #555;
+  font-weight: 500;
 }
-.custom-checkbox input { display: none; }
+.custom-checkbox input {
+  display: none;
+}
 .checkmark {
-  width: 18px; height: 18px; border: 2px solid #ddd; border-radius: 5px;
-  position: relative; transition: all 0.2s; background: #fff;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #ddd;
+  border-radius: 5px;
+  position: relative;
+  transition: all 0.2s;
+  background: #fff;
 }
-.custom-checkbox input:checked ~ .checkmark { background: #000; border-color: #000; }
+.custom-checkbox input:checked ~ .checkmark {
+  background: #000;
+  border-color: #000;
+}
 .checkmark::after {
-  content: ''; position: absolute; left: 5px; top: 2px; width: 4px; height: 9px;
-  border: solid white; border-width: 0 2px 2px 0; transform: rotate(45deg); opacity: 0;
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 9px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  opacity: 0;
 }
-.custom-checkbox input:checked ~ .checkmark::after { opacity: 1; }
+.custom-checkbox input:checked ~ .checkmark::after {
+  opacity: 1;
+}
 
 /* 提交按钮 */
 .submit-btn {
-  width: 100%; height: 52px;
-  background: #000; color: #fff;
-  border: none; border-radius: 14px;
-  font-size: 16px; font-weight: 700;
-  cursor: pointer; transition: transform 0.1s, background 0.2s;
-  display: flex; align-items: center; justify-content: center;
+  width: 100%;
+  height: 52px;
+  background: #000;
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 0.1s,
+    background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.submit-btn:hover { background: #222; transform: translateY(-1px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
-.submit-btn:active { transform: translateY(1px); }
-.submit-btn:disabled { background: #555; cursor: not-allowed; transform: none; }
+.submit-btn:hover {
+  background: #222;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+.submit-btn:active {
+  transform: translateY(1px);
+}
+.submit-btn:disabled {
+  background: #555;
+  cursor: not-allowed;
+  transform: none;
+}
 
 /* === 二维码面样式 === */
 .qr-content {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
-.qr-content h2 { font-size: 22px; margin-bottom: 20px; }
+.qr-content h2 {
+  font-size: 22px;
+  margin-bottom: 20px;
+}
 .qr-box {
-  padding: 10px; background: #fff; border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.08); margin-bottom: 20px;
+  padding: 10px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  margin-bottom: 20px;
 }
-.qr-box img { display: block; width: 180px; height: 180px; }
-.qr-content p { color: #666; width: 80%; line-height: 1.5; font-size: 14px; }
+.qr-box img {
+  display: block;
+  width: 180px;
+  height: 180px;
+}
+.qr-content p {
+  color: #666;
+  width: 80%;
+  line-height: 1.5;
+  font-size: 14px;
+}
 
 /* 错误消息 */
 .error-msg {
-  color: #d32f2f; font-size: 13px; font-weight: 600;
-  background: rgba(211, 47, 47, 0.05); padding: 8px; border-radius: 8px;
-  text-align: center; margin-bottom: 12px;
+  color: #d32f2f;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(211, 47, 47, 0.05);
+  padding: 8px;
+  border-radius: 8px;
+  text-align: center;
+  margin-bottom: 12px;
 }
 
 /* 动画工具类 */
-.fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
 
-.fade-in-up { animation: fadeInUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
-@keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.fade-in-up {
+  animation: fadeInUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
 .spinner {
-  width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.3);
-  border-top-color: #fff; border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 </style>

@@ -1,7 +1,11 @@
 import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
-import { getNativeModule, type NativeCacheBinding, type NativeCacheStats } from '../native/loadNativeModule'
+import {
+  getNativeModule,
+  type NativeCacheBinding,
+  type NativeCacheStats
+} from '../native/loadNativeModule'
 import { createCacheAssetUrl } from '../protocol/registerCacheProtocol'
 
 export type CacheBucket = 'song' | 'entity' | 'cover' | 'lyric'

@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
 import { ref, computed, watch } from 'vue'
-import { PlaylistDetail, Track } from '@renderer/types/playlistDetail'
 import { CurrentSong, createCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
 import { resolveCachedMediaUrl } from '@renderer/utils/cache'
+import { AlbumDetail, AlbumDetailInfo } from '@renderer/types/album'
+import { Song } from '@renderer/types/songDetail'
 
 const route = useRoute()
 
 // --- 响应式数据 ---
-const detail = ref<PlaylistDetail | null>(null)
+const album = ref<AlbumDetailInfo | null>(null)
+const tracks = ref<Song[]>([])
 const loading = ref(true)
-const activeSongId = ref<number | null>(null)
+const searchQuery = ref('')
 
 // --- 格式化工具 ---
 const formatDuration = (ms: number): string => {
@@ -20,96 +22,68 @@ const formatDuration = (ms: number): string => {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
-const formatCount = (num: number): string => {
-  if (num >= 100000000) return (num / 100000000).toFixed(1) + '亿'
-  if (num >= 10000) return (num / 10000).toFixed(1) + '万'
-  return num.toString()
-}
-
 const formatDate = (timestamp: number): string => {
   const date = new Date(timestamp)
   return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
 }
 
 // --- 数据获取 ---
-const fetchPlaylistDetail = async (playlistId: string | string[]): Promise<void> => {
+const fetchAlbumDetail = async (albumId: string | string[]): Promise<void> => {
   try {
     loading.value = true
-    const res = (await window.api.playlist_detail({ id: playlistId })) as { body?: PlaylistDetail }
-    if (res.body) {
-      detail.value = {
-        ...res.body,
-        playlist: {
-          ...res.body.playlist,
-          coverImgUrl: await resolveCachedMediaUrl(
-            `${res.body.playlist.coverImgUrl}?param=400y400`
-          ),
-          creator: {
-            ...res.body.playlist.creator,
-            avatarUrl: await resolveCachedMediaUrl(
-              `${res.body.playlist.creator.avatarUrl}?param=50y50`
-            )
-          },
-          tracks: await Promise.all(
-            res.body.playlist.tracks.map(async (track) => ({
-              ...track,
-              al: {
-                ...track.al,
-                picUrl: await resolveCachedMediaUrl(`${track.al.picUrl}?param=80y80`)
-              }
-            }))
-          )
-        }
+    const res = (await window.api.album({ id: albumId })) as { body?: AlbumDetail }
+    if (res.body && res.body.album) {
+      const rawAlbumPicUrl = res.body.album.picUrl || res.body.songs?.[0]?.al?.picUrl || ''
+      album.value = {
+        ...res.body.album,
+        picUrl: await resolveCachedMediaUrl(`${rawAlbumPicUrl}?param=400y400`)
       }
+      tracks.value = await Promise.all(
+        (res.body.songs || []).map(async (track) => ({
+          ...track,
+          al: {
+            ...track.al,
+            picUrl: await resolveCachedMediaUrl(`${track.al.picUrl || rawAlbumPicUrl}?param=80y80`)
+          }
+        }))
+      )
     }
   } catch (error) {
-    console.error('Failed to fetch playlist detail:', error)
+    console.error('Failed to fetch album detail:', error)
   } finally {
     loading.value = false
   }
 }
 
 // --- 辅助方法：将 Track 转换为 CurrentSong ---
-const mapTrackToCurrentSong = (track: Track): CurrentSong => ({
+const mapTrackToCurrentSong = (track: Song): CurrentSong => ({
   id: track.id,
   name: track.name,
   artists: createCurrentSongArtists(track.ar),
-  cover: track.al.picUrl,
+  // 优先使用专辑高清封面 (400x400)，否则退而求其次使用轨道封面
+  cover: album.value?.picUrl || track.al?.picUrl || '',
   duration: track.dt
 })
 
 // --- 处理“播放全部”按钮点击 ---
 const handlePlayAll = (): void => {
   if (!tracks.value.length) return
-
-  // 转换整个列表
   const songList = tracks.value.map(mapTrackToCurrentSong)
-
-  // 调用 store 里的 playAll
   void playerStore.playAll(songList)
-
-  // 更新当前活跃 ID（可选，用于 UI 高亮）
-  activeSongId.value = songList[0].id
 }
 
-const handlePlaySong = (song: Track): void => {
-  activeSongId.value = song.id
+const handlePlaySong = (song: Song): void => {
   void playerStore.playMusic(song.id)
 }
 
 watch(
   () => route.params.id,
-  (playlistId) => {
-    if (!playlistId) return
-    fetchPlaylistDetail(playlistId)
+  (albumId) => {
+    if (!albumId) return
+    fetchAlbumDetail(albumId)
   },
   { immediate: true }
 )
-
-const searchQuery = ref('')
-
-const playlist = computed(() => detail.value?.playlist)
-const tracks = computed(() => detail.value?.playlist.tracks || [])
 
 const filteredTracks = computed(() => {
   if (!searchQuery.value.trim()) {
@@ -119,7 +93,7 @@ const filteredTracks = computed(() => {
   return tracks.value.filter((track) => {
     return (
       track.name.toLowerCase().includes(query) || // 搜索歌名
-      track.al.name.toLowerCase().includes(query) || // 搜索专辑名
+      (track.al?.name || '').toLowerCase().includes(query) || // 搜索专辑名
       track.ar.some((artist) => artist.name.toLowerCase().includes(query)) // 搜索歌手名
     )
   })
@@ -135,30 +109,29 @@ const playerStore = usePlayerStore()
       <div class="spinner"></div>
     </div>
 
-    <div v-else-if="playlist" class="playlist-container">
-      <!-- 歌单头部 -->
+    <div v-else-if="album" class="playlist-container">
+      <!-- 专辑头部 -->
       <header class="playlist-header">
         <div class="cover-wrapper">
-          <img :src="playlist.coverImgUrl" :alt="playlist.name" class="playlist-cover" />
+          <img :src="album.picUrl" :alt="album.name" class="playlist-cover" />
         </div>
         <div class="playlist-details">
-          <div class="playlist-type-tag">PLAYLIST</div>
-          <h1 class="playlist-title">{{ playlist.name }}</h1>
+          <div class="playlist-type-tag">ALBUM</div>
+          <h1 class="playlist-title">{{ album.name }}</h1>
 
           <div class="creator-info">
-            <img :src="playlist.creator.avatarUrl" class="creator-avatar" />
-            <span class="creator-name">{{ playlist.creator.nickname }}</span>
-            <span class="create-time">{{ formatDate(playlist.createTime) }} 创建</span>
+            <span class="creator-name">{{ album.artists.map((a) => a.name).join(' / ') }}</span>
+            <span class="create-time">{{ formatDate(album.publishTime) }} 发行</span>
           </div>
 
-          <p v-if="playlist.description" class="playlist-description">
-            {{ playlist.description }}
+          <p v-if="album.description" class="playlist-description">
+            {{ album.description }}
           </p>
 
           <div class="playlist-meta">
-            <span>{{ playlist.trackCount }} 首歌曲</span>
-            <span class="dot"></span>
-            <span>{{ formatCount(playlist.playCount) }} 次播放</span>
+            <span>{{ album.size }} 首歌曲</span>
+            <span v-if="album.company" class="dot"></span>
+            <span v-if="album.company">{{ album.company }}</span>
           </div>
 
           <div class="action-bar">
@@ -184,7 +157,7 @@ const playerStore = usePlayerStore()
               <input
                 v-model="searchQuery"
                 type="text"
-                placeholder="在歌单内搜索..."
+                placeholder="在专辑内搜索..."
                 class="search-input"
               />
               <button v-if="searchQuery" class="clear-btn" @click="searchQuery = ''">
@@ -200,23 +173,6 @@ const playerStore = usePlayerStore()
                 </svg>
               </button>
             </div>
-            <button class="secondary-btn">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path
-                  d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.5 4.04 3 5.5l7 7 7-7z"
-                ></path>
-              </svg>
-              {{ formatCount(playlist.subscribedCount) }}
-            </button>
             <button class="icon-btn">
               <svg
                 width="20"

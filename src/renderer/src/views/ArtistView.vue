@@ -34,9 +34,14 @@
               <p class="artist-summary">{{ artistSummary }}</p>
 
               <div class="cta-row">
-                <button class="btn-play" type="button" :disabled="!topSongs.length" @click="handlePlayAll">
+                <button
+                  class="btn-play"
+                  type="button"
+                  :disabled="!topSongs.length"
+                  @click="handlePlayAll"
+                >
                   <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                    <path d="M7.5 5.5v13l10-6.5-10-6.5Z" fill="currentColor"/>
+                    <path d="M7.5 5.5v13l10-6.5-10-6.5Z" fill="currentColor" />
                   </svg>
                   播放
                 </button>
@@ -46,15 +51,24 @@
                   :disabled="!topSongs.length"
                   @click="handleShufflePlay"
                 >
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <g>
-                    <path d="M16 3h5v5" />
-                    <path d="M4 20L21 3" />
-                    <path d="M21 16v5h-5" />
-                    <path d="M15 15l6 6" />
-                    <path d="M4 4l5 5" />
-                  </g>
-                </svg>
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <g>
+                      <path d="M16 3h5v5" />
+                      <path d="M4 20L21 3" />
+                      <path d="M21 16v5h-5" />
+                      <path d="M15 15l6 6" />
+                      <path d="M4 4l5 5" />
+                    </g>
+                  </svg>
                   随机播放
                 </button>
               </div>
@@ -72,7 +86,7 @@
             <div class="latest-grid">
               <div v-for="item in latestReleases" :key="item.id" class="latest-item">
                 <div class="latest-img-wrap">
-                  <img :src="item.cover" :alt="item.title" loading="lazy"/>
+                  <img :src="item.cover" :alt="item.title" loading="lazy" />
                 </div>
 
                 <div class="latest-info">
@@ -102,11 +116,15 @@
                 @click="handlePlaySong(song.id)"
               >
                 <span class="song-num">{{ formatIndex(i + 1) }}</span>
-                <img :src="song.cover" :alt="song.title" class="song-thumb" loading="lazy"/>
+                <img :src="song.cover" :alt="song.title" class="song-thumb" loading="lazy" />
                 <div class="song-info">
                   <div class="song-name-row">
                     <span class="song-name">{{ song.title }}</span>
-                    <span v-if="i < 2" class="song-badge" :class="i === 0 ? 'badge-hot' : 'badge-rec'">
+                    <span
+                      v-if="i < 2"
+                      class="song-badge"
+                      :class="i === 0 ? 'badge-hot' : 'badge-rec'"
+                    >
                       {{ i === 0 ? '最热' : '推荐' }}
                     </span>
                   </div>
@@ -127,9 +145,14 @@
               <span class="count-badge">{{ albums.length }} 张</span>
             </div>
             <div class="media-grid">
-              <div v-for="album in albums" :key="album.id" class="media-tile">
+              <div
+                v-for="album in albums"
+                :key="album.id"
+                class="media-tile"
+                @click="$router.push('/album/' + album.id)"
+              >
                 <div class="tile-img-wrap">
-                  <img :src="album.cover" :alt="album.title" loading="lazy"/>
+                  <img :src="album.cover" :alt="album.title" loading="lazy" />
                 </div>
                 <p class="tile-type">Album</p>
                 <h4 class="tile-name">{{ album.title }}</h4>
@@ -148,11 +171,16 @@
               <span class="count-badge">{{ eps.length }} 张</span>
             </div>
             <div class="media-grid">
-              <div v-for="ep in eps" :key="ep.id" class="media-tile">
+              <div
+                v-for="ep in eps"
+                :key="ep.id"
+                class="media-tile"
+                @click="$router.push('/album/' + ep.id)"
+              >
                 <div class="tile-img-wrap">
-                  <img :src="ep.cover" :alt="ep.title" loading="lazy"/>
+                  <img :src="ep.cover" :alt="ep.title" loading="lazy" />
                 </div>
-                <p class="tile-type">Single / EP</p>
+                <p class="tile-type">EP / Single</p>
                 <h4 class="tile-name">{{ ep.title }}</h4>
                 <p class="tile-year">{{ ep.year }}</p>
               </div>
@@ -171,10 +199,10 @@
             <div class="media-grid mv-grid">
               <div v-for="mv in mvs" :key="mv.id" class="media-tile mv-tile">
                 <div class="tile-img-wrap mv-img-wrap">
-                  <img :src="mv.cover" :alt="mv.title" loading="lazy"/>
+                  <img :src="mv.cover" :alt="mv.title" loading="lazy" />
                   <div class="mv-play-btn" aria-hidden="true">
                     <svg viewBox="0 0 24 24" width="22" height="22">
-                      <path d="M8 6.5v11l9-5.5-9-5.5Z" fill="currentColor"/>
+                      <path d="M8 6.5v11l9-5.5-9-5.5Z" fill="currentColor" />
                     </svg>
                   </div>
                 </div>
@@ -333,9 +361,7 @@ const albums = computed<MediaItem[]>(() =>
   sortedAlbums.value.filter((album) => !isEpOrSingle(album)).map(toMediaItem)
 )
 
-const eps = computed<MediaItem[]>(() =>
-  sortedAlbums.value.filter(isEpOrSingle).map(toMediaItem)
-)
+const eps = computed<MediaItem[]>(() => sortedAlbums.value.filter(isEpOrSingle).map(toMediaItem))
 
 const mvs = computed<MediaItem[]>(() =>
   mvData.value.map((mv) => ({
@@ -524,7 +550,8 @@ watch(
   height: 100%;
   min-height: 0;
   box-sizing: border-box;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', sans-serif;
   color: var(--text-1);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
@@ -553,7 +580,9 @@ watch(
   background: rgba(29, 29, 31, 0.18);
   border-radius: 999px;
 }
-.scroll-container::-webkit-scrollbar { display: none; }
+.scroll-container::-webkit-scrollbar {
+  display: none;
+}
 
 /* ─── Main layout ────────────────────────────────────────── */
 .main-content {
@@ -662,7 +691,8 @@ watch(
 }
 
 /* ─── Eyebrow / labels ───────────────────────────────────── */
-.eyebrow, .eyebrow-sm {
+.eyebrow,
+.eyebrow-sm {
   margin: 0;
   font-size: 11px;
   font-weight: 700;
@@ -670,7 +700,9 @@ watch(
   text-transform: uppercase;
   color: var(--text-2);
 }
-.eyebrow-sm { font-size: 10px; }
+.eyebrow-sm {
+  font-size: 10px;
+}
 
 /* ─── Artist name ────────────────────────────────────────── */
 .artist-name {
@@ -683,13 +715,17 @@ watch(
 }
 
 /* ─── Pills ──────────────────────────────────────────────── */
-.pill-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .pill {
   padding: 6px 16px;
   border-radius: 999px;
-  border: 1px solid rgba(0,0,0,0.04);
+  border: 1px solid rgba(0, 0, 0, 0.04);
   background: var(--glass);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
   font-size: 13px;
   font-weight: 600;
   color: var(--text-2);
@@ -707,9 +743,15 @@ watch(
 }
 
 /* ─── CTA buttons ────────────────────────────────────────── */
-.cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.cta-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
 
-.btn-play, .btn-shuffle {
+.btn-play,
+.btn-shuffle {
   height: 44px;
   padding: 0 24px;
   border-radius: 22px;
@@ -722,9 +764,16 @@ watch(
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
 }
-.btn-play:hover, .btn-shuffle:hover { transform: scale(1.03); }
-.btn-play:active, .btn-shuffle:active { transform: scale(0.97); }
-.btn-play:disabled, .btn-shuffle:disabled {
+.btn-play:hover,
+.btn-shuffle:hover {
+  transform: scale(1.03);
+}
+.btn-play:active,
+.btn-shuffle:active {
+  transform: scale(0.97);
+}
+.btn-play:disabled,
+.btn-shuffle:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
@@ -737,10 +786,10 @@ watch(
 }
 .btn-shuffle {
   background: var(--glass);
-  border: 1px solid rgba(0,0,0,0.03);
+  border: 1px solid rgba(0, 0, 0, 0.03);
   color: #000;
   backdrop-filter: blur(20px) saturate(180%);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 
 /* ─── Glass card ─────────────────────────────────────────── */
@@ -770,8 +819,8 @@ watch(
   padding: 6px 14px;
   border-radius: 999px;
   background: var(--glass);
-  border: 1px solid rgba(0,0,0,0.03);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+  border: 1px solid rgba(0, 0, 0, 0.03);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
   font-size: 13px;
   font-weight: 600;
   color: var(--text-2);
@@ -780,7 +829,9 @@ watch(
 }
 
 /* ─── Songs card ─────────────────────────────────────────── */
-.songs-card { padding: 12px; }
+.songs-card {
+  padding: 12px;
+}
 
 .song-row {
   display: grid;
@@ -789,14 +840,18 @@ watch(
   align-items: center;
   padding: 10px 16px;
   border-radius: 14px;
-  transition: background 0.2s ease, transform 0.2s ease;
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
   cursor: pointer;
 }
-.song-row + .song-row { margin-top: 2px; }
+.song-row + .song-row {
+  margin-top: 2px;
+}
 .song-row:hover {
   background: var(--glass-hover);
   transform: scale(1.01);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
 }
 
 .song-num {
@@ -811,10 +866,17 @@ watch(
   height: 56px;
   border-radius: 10px;
   object-fit: cover;
-  border: 1px solid rgba(0,0,0,0.04);
+  border: 1px solid rgba(0, 0, 0, 0.04);
 }
-.song-info { min-width: 0; }
-.song-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.song-info {
+  min-width: 0;
+}
+.song-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 .song-name {
   font-size: 15px;
   font-weight: 600;
@@ -832,10 +894,26 @@ watch(
   font-weight: 700;
   letter-spacing: 0.04em;
 }
-.badge-hot { background: #000; color: #fff; }
-.badge-rec { background: rgba(0,0,0,0.05); color: var(--text-2); }
-.song-album { margin-top: 4px; font-size: 13px; font-weight: 400; color: var(--text-2); }
-.song-dur { font-size: 14px; font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.badge-hot {
+  background: #000;
+  color: #fff;
+}
+.badge-rec {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-2);
+}
+.song-album {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-2);
+}
+.song-dur {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
 
 /* ─── 优雅的 Grid 铺展布局 (替代原本难用的水平滚动) ─── */
 .media-grid {
@@ -904,10 +982,12 @@ watch(
   border-radius: var(--radius-img);
   overflow: hidden;
   margin-bottom: 14px;
-  border: 1px solid rgba(0,0,0,0.04);
-  box-shadow: 0 8px 24px -8px rgba(0,0,0,0.1);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.1);
   position: relative;
-  transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.3s ease;
+  transition:
+    transform 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+    box-shadow 0.3s ease;
 }
 .tile-img-wrap img {
   width: 100%;
@@ -918,11 +998,20 @@ watch(
 }
 .media-tile:hover .tile-img-wrap {
   transform: translateY(-4px);
-  box-shadow: 0 16px 32px -10px rgba(0,0,0,0.15);
+  box-shadow: 0 16px 32px -10px rgba(0, 0, 0, 0.15);
 }
-.media-tile:hover .tile-img-wrap img { transform: scale(1.03); }
+.media-tile:hover .tile-img-wrap img {
+  transform: scale(1.03);
+}
 
-.tile-type { margin: 0 0 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
+.tile-type {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
 .tile-name {
   margin: 0 0 4px;
   font-size: 15px;
@@ -934,10 +1023,16 @@ watch(
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.tile-year { margin: 0; font-size: 13px; color: var(--text-2); }
+.tile-year {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
 
 /* ─── MV tile ────────────────────────────────────────────── */
-.mv-img-wrap { aspect-ratio: 16/9; }
+.mv-img-wrap {
+  aspect-ratio: 16/9;
+}
 .mv-play-btn {
   position: absolute;
   bottom: 12px;
@@ -951,33 +1046,83 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   opacity: 0;
   transform: scale(0.9);
-  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
-.mv-tile:hover .mv-play-btn { opacity: 1; transform: scale(1); }
+.mv-tile:hover .mv-play-btn {
+  opacity: 1;
+  transform: scale(1);
+}
 
-.pb-safe { padding-bottom: 24px; }
+.pb-safe {
+  padding-bottom: 24px;
+}
 
 /* ─── Responsive ─────────────────────────────────────────── */
 @media (max-width: 900px) {
-  .main-content { padding: 40px 24px 100px; gap: 48px; }
-  .artist-header { flex-direction: column; gap: 32px; text-align: center; }
-  .artist-body { align-items: center; height: auto; }
-  .pill-row, .cta-row { justify-content: center; }
-  .artist-avatar-col { width: 180px; height: 180px; }
-  .latest-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .main-content {
+    padding: 40px 24px 100px;
+    gap: 48px;
+  }
+  .artist-header {
+    flex-direction: column;
+    gap: 32px;
+    text-align: center;
+  }
+  .artist-body {
+    align-items: center;
+    height: auto;
+  }
+  .pill-row,
+  .cta-row {
+    justify-content: center;
+  }
+  .artist-avatar-col {
+    width: 180px;
+    height: 180px;
+  }
+  .latest-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
-  .main-content { padding: 24px 16px 96px; gap: 40px; }
-  .artist-name { font-size: 38px; }
-  .cta-row { flex-direction: column; width: 100%; }
-  .btn-play, .btn-shuffle { width: 100%; justify-content: center; }
-  .section-header { align-items: flex-start; flex-direction: column; gap: 8px; }
-  .song-row { grid-template-columns: 32px 48px minmax(0, 1fr); padding: 8px 12px; }
-  .song-dur { display: none; }
-  .media-grid, .latest-grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); gap: 16px; }
+  .main-content {
+    padding: 24px 16px 96px;
+    gap: 40px;
+  }
+  .artist-name {
+    font-size: 38px;
+  }
+  .cta-row {
+    flex-direction: column;
+    width: 100%;
+  }
+  .btn-play,
+  .btn-shuffle {
+    width: 100%;
+    justify-content: center;
+  }
+  .section-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .song-row {
+    grid-template-columns: 32px 48px minmax(0, 1fr);
+    padding: 8px 12px;
+  }
+  .song-dur {
+    display: none;
+  }
+  .media-grid,
+  .latest-grid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+    gap: 16px;
+  }
 }
 </style>

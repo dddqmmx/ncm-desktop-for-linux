@@ -21,14 +21,16 @@ onMounted(async (): Promise<void> => {
     })) as { body?: RecommendResource }
     if (recommendResource.body?.recommend) {
       recommendPlaylists.value = await Promise.all(
-        recommendResource.body.recommend.map(async (item): Promise<RecommendItem> => ({
-          ...item,
-          picUrl: await resolveCachedMediaUrl(item.picUrl),
-          creator: {
-            ...item.creator,
-            avatarUrl: await resolveCachedMediaUrl(item.creator.avatarUrl)
-          }
-        }))
+        recommendResource.body.recommend.map(
+          async (item): Promise<RecommendItem> => ({
+            ...item,
+            picUrl: await resolveCachedMediaUrl(item.picUrl),
+            creator: {
+              ...item.creator,
+              avatarUrl: await resolveCachedMediaUrl(item.creator.avatarUrl)
+            }
+          })
+        )
       )
     }
 
@@ -37,13 +39,15 @@ onMounted(async (): Promise<void> => {
     })) as { body?: RecommendSongs }
     if (recommendSongsRes.body?.data?.dailySongs) {
       dailySongs.value = await Promise.all(
-        recommendSongsRes.body.data.dailySongs.map(async (song): Promise<Song> => ({
-          ...song,
-          al: {
-            ...song.al,
-            picUrl: await resolveCachedMediaUrl(song.al.picUrl + '?param=200y200')
-          }
-        }))
+        recommendSongsRes.body.data.dailySongs.map(
+          async (song): Promise<Song> => ({
+            ...song,
+            al: {
+              ...song.al,
+              picUrl: await resolveCachedMediaUrl(song.al.picUrl + '?param=200y200')
+            }
+          })
+        )
       )
     }
   } catch (error) {
@@ -53,11 +57,14 @@ onMounted(async (): Promise<void> => {
 
 /**
  * 处理滚轮事件：将垂直滚动转换为水平滚动
+ * 增加了加速度处理，使滚动更加流畅
  */
 const handleWheel = (e: WheelEvent): void => {
   const container = e.currentTarget as HTMLElement
   if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) {
-    container.scrollLeft += e.deltaY
+    // 使用 deltaY 进行滚动，并增加一定的倍率以提升响应感
+    // 浏览器原生的 deltaY 已经包含了速度信息
+    container.scrollLeft += e.deltaY * 1.5
     e.preventDefault()
   }
 }
@@ -80,10 +87,17 @@ const playSong = (song: Song): void => {
       </div>
 
       <div ref="playlistRow" class="horizontal-scroll-container" @wheel="handleWheel">
-        <div class="cards-grid media-card">
-          <MediaCard v-for="(item, index) in recommendPlaylists" :key="item.id" :title="item.name"
-            :desc="item.copywriter || item.creator.nickname" :image="item.picUrl" :is-first="index === 0"
-            type="playlist" @click="router.push('/playlist/' + item.id)" />
+        <div class="cards-grid">
+          <MediaCard
+            v-for="(item, index) in recommendPlaylists"
+            :key="item.id"
+            :title="item.name"
+            :desc="item.copywriter || item.creator.nickname"
+            :image="item.picUrl"
+            :is-first="index === 0"
+            type="playlist"
+            @click="router.push('/playlist/' + item.id)"
+          />
         </div>
       </div>
     </section>
@@ -97,8 +111,14 @@ const playSong = (song: Song): void => {
       <div ref="songsRow" class="horizontal-scroll-container" @wheel="handleWheel">
         <div v-if="dailySongs.length === 0" class="loading-text">加载中...</div>
         <div class="albums-row">
-          <AlbumItem v-for="song in dailySongs" :key="song.id" :title="song.name" :artist="formatArtists(song.ar)"
-            :cover="song.al.picUrl" @click="playSong(song)" />
+          <AlbumItem
+            v-for="song in dailySongs"
+            :key="song.id"
+            :title="song.name"
+            :artist="formatArtists(song.ar)"
+            :cover="song.al.picUrl"
+            @click="playSong(song)"
+          />
         </div>
       </div>
     </section>
@@ -170,8 +190,10 @@ const playSong = (song: Song): void => {
 /* 核心滚动容器 - 修复截断的关键 */
 .horizontal-scroll-container {
   overflow-x: auto;
-  scroll-behavior: smooth;
+  /* 移除强制平滑，让手动 Wheel 事件能快速响应并配合 Snap */
+  scroll-behavior: auto;
   scroll-snap-type: x mandatory;
+  scroll-padding-left: 24px;
   scrollbar-width: none;
   -webkit-app-region: no-drag;
   margin: -12px -24px;
@@ -188,29 +210,19 @@ const playSong = (song: Song): void => {
 .albums-row {
   display: flex;
   gap: 20px;
-  /* 确保子元素顶部对齐，防止被拉伸 */
   align-items: flex-start;
 }
 
-/* 保持原有宽度逻辑不变 */
-.cards-grid>*,
-.albums-row>* {
+.cards-grid > * {
   flex: 0 0 auto;
   scroll-snap-align: start;
-  width: 180px;
+  width: 200px; /* 推荐歌单卡片宽度 */
 }
 
-.media-card {
-  width: 200px;
-  height: 260px;
-  flex-shrink: 0;
-  /* 横向滚动必加 */
-}
-
-/* 针对 MediaCard 的特殊宽度处理 */
-.cards-grid :deep(.large-card) {
-  /* 这里建议直接指向子组件内的类名，或者保持你之前的 width: 200px */
-  width: 200px;
+.albums-row > * {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  width: 176px; /* 推荐歌曲卡片宽度，与 AlbumItem 内部一致 */
 }
 
 .loading-text {

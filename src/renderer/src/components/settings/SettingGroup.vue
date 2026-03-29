@@ -9,11 +9,13 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{ title: string, tip?: string, noCard?: boolean }>();
+defineProps<{ title: string; tip?: string; noCard?: boolean }>()
 </script>
 
 <style scoped>
-.setting-group { margin-bottom: 32px; }
+.setting-group {
+  margin-bottom: 32px;
+}
 .group-title {
   display: block;
   font-size: 12px;

@@ -5,13 +5,10 @@ import SettingGroup from '@renderer/components/settings/SettingGroup.vue'
 import { useConfigStore } from '@renderer/stores/configStore'
 
 const configStore = useConfigStore()
-const {
-  libPaths,
-} = storeToRefs(configStore)
+const { libPaths } = storeToRefs(configStore)
 
 const message = ref('')
 const messageType = ref<'success' | 'error'>('success')
-
 
 const addLibraryPath = (): void => {
   const input = window.prompt('请输入本地音乐文件夹路径')
@@ -31,7 +28,6 @@ const removeLibraryPath = (path: string): void => {
   messageType.value = 'success'
   message.value = '文件夹已从曲库列表移除。'
 }
-
 </script>
 
 <template>
@@ -67,5 +63,4 @@ const removeLibraryPath = (path: string): void => {
   </div>
 </template>
 
-<style scoped>
-</style>
+<style scoped></style>

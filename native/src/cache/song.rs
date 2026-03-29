@@ -90,18 +90,48 @@ impl SongStreamCacheMeta {
     }
 
     pub fn mark_complete(&mut self) {
+        if let Some(content_length) = self.content_length {
+            if self.downloaded_bytes() < content_length {
+                println!("[cache] 警告：尝试标记完成，但下载字节数（{}）小于内容长度（{}）", self.downloaded_bytes(), content_length);
+                return;
+            }
+        }
         self.is_complete = true;
         self.updated_at = now_unix_secs();
     }
 
     pub fn is_fully_downloaded(&self) -> bool {
-        let Some(content_length) = self.content_length else {
-            return false;
-        };
+        if let Some(content_length) = self.content_length {
+            return self.downloaded_ranges.len() == 1
+                && self.downloaded_ranges[0].start == 0
+                && self.downloaded_ranges[0].end >= content_length;
+        }
 
         self.is_complete
-            && self.downloaded_ranges.len() == 1
-            && self.downloaded_ranges[0].start == 0
-            && self.downloaded_ranges[0].end >= content_length
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_fully_downloaded_logic() {
+        let mut meta = SongStreamCacheMeta::new(1, "lossless", "http://example.com/1.flac");
+        meta.set_content_length(Some(1000));
+        
+        // Simulate incomplete download
+        meta.add_range(0..500);
+        meta.mark_complete(); 
+        
+        assert!(!meta.is_complete, "Should not mark complete if incomplete");
+        assert!(!meta.is_fully_downloaded(), "Should not be fully downloaded if ranges are incomplete");
+        
+        // Simulate complete download but mark_complete NOT called yet
+        meta.add_range(500..1000);
+        assert!(meta.is_fully_downloaded(), "Should be fully downloaded now even if is_complete is false");
+        
+        meta.mark_complete();
+        assert!(meta.is_complete);
     }
 }

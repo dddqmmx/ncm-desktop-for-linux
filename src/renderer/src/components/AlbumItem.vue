@@ -9,7 +9,7 @@ defineProps<{
 <template>
   <div class="album-item">
     <div class="album-cover">
-      <img :src="cover" :alt="title" loading="lazy">
+      <img :src="cover" :alt="title" loading="lazy" />
       <div class="album-overlay"></div>
     </div>
     <div class="album-info">
@@ -38,8 +38,7 @@ defineProps<{
   border-radius: 28px;
   overflow: hidden;
   margin-bottom: 14px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.8), rgba(214, 225, 255, 0.46));
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.8), rgba(214, 225, 255, 0.46));
   border: 1px solid rgba(255, 255, 255, 0.72);
   box-shadow:
     0 20px 44px rgba(38, 53, 84, 0.12),
@@ -116,7 +115,9 @@ defineProps<{
   border-radius: 50%;
   opacity: 0;
   transform: translateY(6px);
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
 }
 
 .album-item:hover .album-play-chip {

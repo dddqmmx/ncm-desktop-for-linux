@@ -24,7 +24,18 @@ defineProps<{ title: string; description?: string }>()
 .control-row:not(:last-child) {
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
 }
-.info { display: flex; flex-direction: column; gap: 2px; }
-.primary { font-size: 15px; font-weight: 600; color: #111; }
-.secondary { font-size: 12px; color: rgba(0, 0, 0, 0.4); }
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.primary {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111;
+}
+.secondary {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.4);
+}
 </style>

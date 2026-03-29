@@ -8,8 +8,8 @@
       v-for="opt in options"
       :key="opt.value"
       :class="{ active: modelValue === opt.value }"
-      @click="$emit('update:modelValue', opt.value)"
       type="button"
+      @click="$emit('update:modelValue', opt.value)"
     >
       {{ opt.label }}
     </button>
@@ -17,22 +17,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed } from 'vue'
 
 const props = defineProps<{
-  options: { label: string, value: string }[],
+  options: { label: string; value: string }[]
   modelValue: string
-}>();
+}>()
 
 const bgStyle = computed(() => {
-  const index = props.options.findIndex(o => o.value === props.modelValue);
-  const width = 100 / props.options.length;
+  const index = props.options.findIndex((o) => o.value === props.modelValue)
+  const width = 100 / props.options.length
   // 使用 padding 的值 (4px) 作为偏移参考
   return {
     width: `calc(${width}% - 8px)`, // 减去左右两侧的内边距差值
-    left: `calc(${index * width}% + 4px)`, // 加上起始内边距
-  };
-});
+    left: `calc(${index * width}% + 4px)` // 加上起始内边距
+  }
+})
 </script>
 
 <style scoped>

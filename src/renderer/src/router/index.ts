@@ -4,6 +4,7 @@ import HomeView from '@renderer/views/HomeView.vue'
 import SearchView from '@renderer/views/SearchView.vue'
 import PlaylistView from '@renderer/views/PlaylistView.vue'
 import ArtistView from '@renderer/views/ArtistView.vue'
+import AlbumView from '@renderer/views/AlbumView.vue'
 import SettingsModal from '@renderer/components/settings/SettingsModal.vue'
 
 const router = createRouter({
@@ -26,6 +27,11 @@ const router = createRouter({
           path: 'artist/:id',
           name: 'artist',
           component: ArtistView
+        },
+        {
+          path: 'album/:id',
+          name: 'album',
+          component: AlbumView
         },
         {
           path: 'search',

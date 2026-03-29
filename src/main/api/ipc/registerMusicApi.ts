@@ -25,6 +25,7 @@ export function registerMusicApi(): void {
     'music:artistTopSong': MusicService.artist_top_song,
     'music:artistAlbum': MusicService.artist_album,
     'music:artistMv': MusicService.artist_mv,
+    'music:album': MusicService.album
   } as Record<string, MusicApiHandler>
 
   // 批量注册

@@ -1,4 +1,4 @@
-mod audio_player;
+mod audio;
 mod cache;
 
 use napi::{Error, Result};
@@ -12,7 +12,7 @@ use std::time::Duration;
 use tokio::runtime::Runtime;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::audio_player::{AudioPlayer, OutputDeviceInfo};
+use crate::audio::{AudioPlayer, OutputDeviceInfo};
 use crate::cache::{CacheBucket, CacheStats, CachedSongSource, NativeCacheService};
 
 type BackendResult<T> = std::result::Result<T, String>;

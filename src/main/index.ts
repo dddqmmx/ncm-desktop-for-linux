@@ -53,15 +53,6 @@ function createWindow(): BrowserWindow {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
-  registerCacheProtocol(join(app.getPath('userData'), 'cache'))
-  registerMusicApi()
-  registerNativeApi()
-  registerCacheApi()
-
-  // 必须先创建窗口并赋值，再注册需要依赖窗口的 API
-  mainWindow = createWindow()
-  registerUiApi(mainWindow)
-
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 
@@ -71,6 +62,15 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
+  registerCacheProtocol(join(app.getPath('userData'), 'cache'))
+  registerMusicApi()
+  registerNativeApi()
+  registerCacheApi()
+
+  // 必须先创建窗口并赋值，再注册需要依赖窗口的 API
+  mainWindow = createWindow()
+  registerUiApi(mainWindow)
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))

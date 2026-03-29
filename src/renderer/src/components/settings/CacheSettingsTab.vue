@@ -65,7 +65,7 @@ const cacheUsagePercent = computed(() => {
   return Math.min(100, (cacheStats.value.totalBytes / cacheStats.value.maxSizeBytes) * 100)
 })
 
-const cacheBreakdown = computed(() =>[
+const cacheBreakdown = computed(() => [
   {
     label: '歌曲',
     usage: formatBytes(cacheStats.value.songBytes),
@@ -136,7 +136,6 @@ const clearCache = async (): Promise<void> => {
         <div class="cache-limit-row">
           <label class="cache-limit-label" for="cache-limit-range">最大缓存占用</label>
           <div class="cache-limit-controls">
-
             <!-- === 修改为 DIV 模拟视觉 + input 隐藏交互 === -->
             <div class="custom-slider-wrapper">
               <div class="custom-slider-track">
@@ -176,11 +175,13 @@ const clearCache = async (): Promise<void> => {
         <div class="cache-limit-row">
           <label class="cache-limit-label" for="song-cache-ahead-range">歌曲预缓存时长</label>
           <div class="cache-limit-controls">
-
             <!-- === 修改为 DIV 模拟视觉 + input 隐藏交互 === -->
             <div class="custom-slider-wrapper">
               <div class="custom-slider-track">
-                <div class="custom-slider-fill" :style="{ width: songCacheAheadPercent + '%' }"></div>
+                <div
+                  class="custom-slider-fill"
+                  :style="{ width: songCacheAheadPercent + '%' }"
+                ></div>
               </div>
               <input
                 id="song-cache-ahead-range"
@@ -231,7 +232,7 @@ const clearCache = async (): Promise<void> => {
       {{ message }}
     </p>
   </div>
-  </template>
+</template>
 
 <style scoped>
 .cache-card {
@@ -375,7 +376,7 @@ const clearCache = async (): Promise<void> => {
 .cache-breakdown-item span {
   font-size: 12px;
   color: rgba(0, 0, 0, 0.5);
-    display: block;
+  display: block;
 }
 
 .cache-breakdown-label {

@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue'
 import appIcon from '@renderer/assets/icon.png'
 import SettingGroup from '@renderer/components/settings/SettingGroup.vue'
 import SettingRow from '@renderer/components/settings/SettingRow.vue'
-import { AppInfo } from '@renderer/types/uiService';
+import { AppInfo } from '@renderer/types/uiService'
 
 const appInfo = ref<AppInfo>({
   name: '',

@@ -39,10 +39,9 @@ onBeforeUnmount(() => {
 const refreshResolvedCovers = async (): Promise<void> => {
   const currentToken = ++resolveToken
   const entries = await Promise.all(
-    playerStore.playlist.map(async (song) => [
-      song.id,
-      await resolveCachedMediaUrl(song.cover)
-    ] as const)
+    playerStore.playlist.map(
+      async (song) => [song.id, await resolveCachedMediaUrl(song.cover)] as const
+    )
   )
 
   if (currentToken !== resolveToken) {
@@ -82,7 +81,7 @@ const scrollToActive = (): void => {
  * 移除单曲
  */
 const removeSong = (id: string | number): void => {
-  const index = playerStore.playlist.findIndex(item => item.id === id)
+  const index = playerStore.playlist.findIndex((item) => item.id === id)
   if (index !== -1) {
     playerStore.playlist.splice(index, 1)
   }
@@ -121,12 +120,7 @@ const onDragEnd = (): void => {
       @end="onDragEnd"
     >
       <div ref="listRef" class="playlist-scroll">
-        <TransitionGroup
-          type="transition"
-          name="list-anim"
-          tag="div"
-          class="playlist-content"
-        >
+        <TransitionGroup type="transition" name="list-anim" tag="div" class="playlist-content">
           <div
             v-for="(song, index) in playerStore.playlist"
             :key="song.id"
@@ -135,13 +129,17 @@ const onDragEnd = (): void => {
             @click="playerStore.playMusic(song.id)"
           >
             <div class="item-status">
-              <div class="playing-icon" v-if="playerStore.currentSong?.id === song.id">
-                <span class="bar" v-for="i in 3" :key="i"></span>
+              <div v-if="playerStore.currentSong?.id === song.id" class="playing-icon">
+                <span v-for="i in 3" :key="i" class="bar"></span>
               </div>
-              <div class="item-index" v-else>{{ index + 1 }}</div>
+              <div v-else class="item-index">{{ index + 1 }}</div>
             </div>
 
-            <img :src="resolvedCoverMap[song.id] || song.cover" class="item-cover" draggable="false">
+            <img
+              :src="resolvedCoverMap[song.id] || song.cover"
+              class="item-cover"
+              draggable="false"
+            />
 
             <div class="item-info">
               <div class="item-name">{{ song.name }}</div>
@@ -151,7 +149,10 @@ const onDragEnd = (): void => {
             <div class="item-actions">
               <button class="action-btn remove" @click.stop="removeSong(song.id)">
                 <svg viewBox="0 0 24 24" width="16" height="16">
-                  <path fill="currentColor" d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
+                  <path
+                    fill="currentColor"
+                    d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"
+                  />
                 </svg>
               </button>
             </div>
@@ -177,7 +178,7 @@ const onDragEnd = (): void => {
   flex-direction: column; /* 纵向排列：Header + Draggable */
   overflow: hidden;
   user-select: none;
-      -webkit-app-region: no-drag;
+  -webkit-app-region: no-drag;
 }
 
 .draggable-container {
@@ -215,11 +216,20 @@ const onDragEnd = (): void => {
   flex-shrink: 0; /* 防止头部被压缩 */
 }
 
-.title { font-size: 18px; font-weight: 800; color: #111; }
-.count { font-size: 12px; color: rgba(0,0,0,0.4); font-weight: 600; margin-left: 8px; }
+.title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #111;
+}
+.count {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.4);
+  font-weight: 600;
+  margin-left: 8px;
+}
 
 .clear-btn {
-  background: rgba(0,0,0,0.05);
+  background: rgba(0, 0, 0, 0.05);
   border: none;
   padding: 6px 14px;
   border-radius: 10px;
@@ -229,7 +239,10 @@ const onDragEnd = (): void => {
   float: right;
 }
 
-.clear-btn:hover { background: rgba(255, 59, 48, 0.1); color: #ff3b30; }
+.clear-btn:hover {
+  background: rgba(255, 59, 48, 0.1);
+  color: #ff3b30;
+}
 
 /* --- 滚动条样式 --- */
 .playlist-scroll::-webkit-scrollbar {
@@ -253,10 +266,12 @@ const onDragEnd = (): void => {
   gap: 12px;
   margin-bottom: 4px;
   transition: all 0.2s;
-    border: 1px solid transparent; /* 预留边框位置 */
+  border: 1px solid transparent; /* 预留边框位置 */
 }
 
-.playlist-item:hover { background: rgba(0, 0, 0, 0.03); }
+.playlist-item:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
 .playlist-item.active {
   /* 背景：更通透的白色，降低不透明度 */
   background: rgba(255, 255, 255, 0.5);
@@ -289,37 +304,117 @@ const onDragEnd = (): void => {
   color: rgba(0, 0, 0, 0.6);
 }
 
-.item-status { width: 24px; display: flex; justify-content: center; }
-.item-index { font-size: 11px; font-weight: 700; color: rgba(0,0,0,0.2); }
-.item-cover { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; }
-.item-info { flex: 1; min-width: 0; }
-.item-name { font-size: 13px; font-weight: 600; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.item-artist { font-size: 11px; color: rgba(0,0,0,0.5); }
+.item-status {
+  width: 24px;
+  display: flex;
+  justify-content: center;
+}
+.item-index {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.2);
+}
+.item-cover {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.item-info {
+  flex: 1;
+  min-width: 0;
+}
+.item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.item-artist {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.5);
+}
 
-.item-actions { opacity: 0; }
-.playlist-item:hover .item-actions { opacity: 1; }
-.action-btn { background: none; border: none; cursor: pointer; color: #999; }
-.action-btn:hover { color: #ff3b30; }
+.item-actions {
+  opacity: 0;
+}
+.playlist-item:hover .item-actions {
+  opacity: 1;
+}
+.action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #999;
+}
+.action-btn:hover {
+  color: #ff3b30;
+}
 
 /* --- 动画 --- */
-.list-anim-enter-active, .list-anim-leave-active { transition: all 0.3s ease; }
-.list-anim-enter-from, .list-anim-leave-to { opacity: 0; transform: translateX(20px); }
+.list-anim-enter-active,
+.list-anim-leave-active {
+  transition: all 0.3s ease;
+}
+.list-anim-enter-from,
+.list-anim-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
+}
 /* 确保删除时其他元素平滑移动 */
-.list-anim-leave-active { position: absolute; width: 312px; }
-.list-anim-move { transition: transform 0.3s ease; }
+.list-anim-leave-active {
+  position: absolute;
+  width: 312px;
+}
+.list-anim-move {
+  transition: transform 0.3s ease;
+}
 
-.drag-ghost { opacity: 0.3; background: #eee !important; }
-.drag-active { transform: scale(1.02); z-index: 999; }
+.drag-ghost {
+  opacity: 0.3;
+  background: #eee !important;
+}
+.drag-active {
+  transform: scale(1.02);
+  z-index: 999;
+}
 
 /* --- 播放状态柱状图 --- */
-.playing-icon { display: flex; align-items: flex-end; gap: 2px; height: 12px; }
-.playing-icon .bar { width: 3px; background: #111; border-radius: 1px; animation: bounce 0.6s infinite alternate; }
-.playing-icon .bar:nth-child(2) { animation-delay: 0.2s; }
-.playing-icon .bar:nth-child(3) { animation-delay: 0.4s; }
-@keyframes bounce { from { height: 4px; } to { height: 12px; } }
+.playing-icon {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+.playing-icon .bar {
+  width: 3px;
+  background: #111;
+  border-radius: 1px;
+  animation: bounce 0.6s infinite alternate;
+}
+.playing-icon .bar:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.playing-icon .bar:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes bounce {
+  from {
+    height: 4px;
+  }
+  to {
+    height: 12px;
+  }
+}
 
 .empty-state {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  text-align: center; color: #ccc;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #ccc;
 }
 </style>
