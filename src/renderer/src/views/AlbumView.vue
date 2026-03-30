@@ -2,9 +2,10 @@
 import { useRoute } from 'vue-router'
 import { ref, computed, watch } from 'vue'
 import { CurrentSong, createCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
-import { resolveCachedMediaUrl } from '@renderer/utils/cache'
 import { AlbumDetail, AlbumDetailInfo } from '@renderer/types/album'
 import { Song } from '@renderer/types/songDetail'
+import AlbumCover from '../components/AlbumCover.vue'
+import SongCover from '../components/SongCover.vue'
 
 const route = useRoute()
 
@@ -33,20 +34,8 @@ const fetchAlbumDetail = async (albumId: string | string[]): Promise<void> => {
     loading.value = true
     const res = (await window.api.album({ id: albumId })) as { body?: AlbumDetail }
     if (res.body && res.body.album) {
-      const rawAlbumPicUrl = res.body.album.picUrl || res.body.songs?.[0]?.al?.picUrl || ''
-      album.value = {
-        ...res.body.album,
-        picUrl: await resolveCachedMediaUrl(`${rawAlbumPicUrl}?param=400y400`)
-      }
-      tracks.value = await Promise.all(
-        (res.body.songs || []).map(async (track) => ({
-          ...track,
-          al: {
-            ...track.al,
-            picUrl: await resolveCachedMediaUrl(`${track.al.picUrl || rawAlbumPicUrl}?param=80y80`)
-          }
-        }))
-      )
+      album.value = res.body.album
+      tracks.value = res.body.songs || []
     }
   } catch (error) {
     console.error('Failed to fetch album detail:', error)
@@ -113,7 +102,7 @@ const playerStore = usePlayerStore()
       <!-- 专辑头部 -->
       <header class="playlist-header">
         <div class="cover-wrapper">
-          <img :src="album.picUrl" :alt="album.name" class="playlist-cover" />
+          <AlbumCover :id="album.picUrl" :alt="album.name" size="400y400" />
         </div>
         <div class="playlist-details">
           <div class="playlist-type-tag">ALBUM</div>
@@ -230,7 +219,9 @@ const playerStore = usePlayerStore()
             </div>
 
             <div class="col-title">
-              <img :src="track.al.picUrl" class="mini-cover" loading="lazy" />
+              <div class="mini-cover-wrapper">
+                <SongCover :id="track.al.picUrl || album.picUrl" size="80y80" />
+              </div>
               <div class="song-info">
                 <span class="song-name">{{ track.name }}</span>
                 <span class="song-artist">
@@ -322,12 +313,6 @@ const playerStore = usePlayerStore()
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15); /* 加强阴影以在无背景时突出 */
-}
-
-.playlist-cover {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .playlist-details {
@@ -540,11 +525,13 @@ const playerStore = usePlayerStore()
   display: block;
 }
 
-.mini-cover {
+.mini-cover-wrapper {
   width: 40px;
   height: 40px;
   border-radius: 6px;
+  overflow: hidden;
   background: rgba(0, 0, 0, 0.05);
+  flex-shrink: 0;
 }
 
 .song-info {

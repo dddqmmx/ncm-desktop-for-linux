@@ -18,8 +18,8 @@
           <!-- ───── ARTIST HEADER ───── -->
           <header class="artist-header">
             <div class="artist-avatar-col">
-              <div class="avatar-ring">
-                <img :src="artist.avatar" :alt="artist.name" class="avatar-img" loading="eager" />
+              <div class="avatar-ring-wrapper">
+                <UserAvatar :id="artistProfile?.avatar || artistProfile?.cover" :alt="artistProfile?.name" size="400y400" />
               </div>
               <div class="avatar-glow" aria-hidden="true"></div>
             </div>
@@ -85,8 +85,8 @@
             </div>
             <div class="latest-grid">
               <div v-for="item in latestReleases" :key="item.id" class="latest-item">
-                <div class="latest-img-wrap">
-                  <img :src="item.cover" :alt="item.title" loading="lazy" />
+                <div class="latest-img-wrap-wrapper">
+                  <AlbumCover :id="item.cover" :alt="item.title" size="200y200" />
                 </div>
 
                 <div class="latest-info">
@@ -116,7 +116,9 @@
                 @click="handlePlaySong(song.id)"
               >
                 <span class="song-num">{{ formatIndex(i + 1) }}</span>
-                <img :src="song.cover" :alt="song.title" class="song-thumb" loading="lazy" />
+                <div class="song-thumb-wrapper">
+                  <SongCover :id="song.cover" :alt="song.title" size="112y112" />
+                </div>
                 <div class="song-info">
                   <div class="song-name-row">
                     <span class="song-name">{{ song.title }}</span>
@@ -151,8 +153,8 @@
                 class="media-tile"
                 @click="$router.push('/album/' + album.id)"
               >
-                <div class="tile-img-wrap">
-                  <img :src="album.cover" :alt="album.title" loading="lazy" />
+                <div class="tile-img-wrap-wrapper">
+                  <AlbumCover :id="album.cover" :alt="album.title" size="400y400" />
                 </div>
                 <p class="tile-type">Album</p>
                 <h4 class="tile-name">{{ album.title }}</h4>
@@ -177,8 +179,8 @@
                 class="media-tile"
                 @click="$router.push('/album/' + ep.id)"
               >
-                <div class="tile-img-wrap">
-                  <img :src="ep.cover" :alt="ep.title" loading="lazy" />
+                <div class="tile-img-wrap-wrapper">
+                  <AlbumCover :id="ep.cover" :alt="ep.title" size="400y400" />
                 </div>
                 <p class="tile-type">EP / Single</p>
                 <h4 class="tile-name">{{ ep.title }}</h4>
@@ -198,8 +200,8 @@
 
             <div class="media-grid mv-grid">
               <div v-for="mv in mvs" :key="mv.id" class="media-tile mv-tile">
-                <div class="tile-img-wrap mv-img-wrap">
-                  <img :src="mv.cover" :alt="mv.title" loading="lazy" />
+                <div class="tile-img-wrap-wrapper mv-img-wrap-wrapper">
+                   <LazyImage :id="mv.cover" :alt="mv.title" param="540y304" />
                   <div class="mv-play-btn" aria-hidden="true">
                     <svg viewBox="0 0 24 24" width="22" height="22">
                       <path d="M8 6.5v11l9-5.5-9-5.5Z" fill="currentColor" />
@@ -232,7 +234,10 @@ import type {
   ArtistSong,
   ArtistTopSongResponse
 } from '@renderer/types/artist'
-import { resolveCachedMediaUrl } from '@renderer/utils/cache'
+import AlbumCover from '../components/AlbumCover.vue'
+import SongCover from '../components/SongCover.vue'
+import UserAvatar from '../components/UserAvatar.vue'
+import LazyImage from '../components/LazyImage.vue'
 
 interface ServiceResponse<T> {
   body?: T | null
@@ -440,60 +445,10 @@ const fetchArtistData = async (artistIdParam: string | string[] | undefined): Pr
 
     if (currentRequest !== requestSerial) return
 
-    const nextArtistProfile = detailRes.body?.data?.artist ?? null
-    const nextTopSongs = topSongRes.body?.songs ?? []
-    const nextAlbums = albumRes.body?.hotAlbums ?? []
-    const nextMvs = mvRes.body?.mvs ?? []
-
-    const resolvedArtistProfile = nextArtistProfile
-      ? {
-          ...nextArtistProfile,
-          avatar: await resolveCachedMediaUrl(
-            withImageParam(nextArtistProfile.avatar || nextArtistProfile.cover, '400y400')
-          ),
-          cover: await resolveCachedMediaUrl(
-            withImageParam(nextArtistProfile.cover || nextArtistProfile.avatar, '400y400')
-          )
-        }
-      : null
-
-    const resolvedTopSongs = await Promise.all(
-      nextTopSongs.map(async (song) => ({
-        ...song,
-        al: {
-          ...song.al,
-          picUrl: await resolveCachedMediaUrl(withImageParam(song.al.picUrl, '200y200'))
-        }
-      }))
-    )
-
-    const resolvedAlbums = await Promise.all(
-      nextAlbums.map(async (album) => ({
-        ...album,
-        picUrl: await resolveCachedMediaUrl(withImageParam(album.picUrl, '400y400'))
-      }))
-    )
-
-    const resolvedMvs = await Promise.all(
-      nextMvs.map(async (mv) => {
-        const resolvedCover = await resolveCachedMediaUrl(
-          withImageParam(mv.imgurl16v9 || mv.imgurl, '540y304')
-        )
-
-        return {
-          ...mv,
-          imgurl16v9: resolvedCover,
-          imgurl: resolvedCover
-        }
-      })
-    )
-
-    if (currentRequest !== requestSerial) return
-
-    artistProfile.value = resolvedArtistProfile
-    topSongData.value = resolvedTopSongs
-    albumData.value = resolvedAlbums
-    mvData.value = resolvedMvs
+    artistProfile.value = detailRes.body?.data?.artist ?? null
+    topSongData.value = topSongRes.body?.songs ?? []
+    albumData.value = albumRes.body?.hotAlbums ?? []
+    mvData.value = mvRes.body?.mvs ?? []
 
     if (!artistProfile.value) {
       errorMessage.value = '未获取到歌手详情'
@@ -651,25 +606,16 @@ watch(
   justify-content: center;
 }
 
-.avatar-ring {
+.avatar-ring-wrapper {
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  padding: 4px;
+  overflow: hidden;
   transition: transform 0.3s ease;
 }
 
-.artist-avatar-col:hover .avatar-ring {
+.artist-avatar-col:hover .avatar-ring-wrapper {
   transform: scale(1.02);
-}
-
-.avatar-img {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
-  display: block;
-  box-sizing: border-box;
 }
 
 .avatar-glow {
@@ -861,11 +807,11 @@ watch(
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
-.song-thumb {
+.song-thumb-wrapper {
   width: 56px;
   height: 56px;
   border-radius: 10px;
-  object-fit: cover;
+  overflow: hidden;
   border: 1px solid rgba(0, 0, 0, 0.04);
 }
 .song-info {
@@ -937,19 +883,12 @@ watch(
 .latest-item:hover {
   transform: translateY(-2px);
 }
-.latest-img-wrap {
+.latest-img-wrap-wrapper {
   width: 80px;
   height: 80px;
   flex-shrink: 0;
-
   border-radius: 12px;
   overflow: hidden;
-}
-
-.latest-img-wrap img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .latest-info {
@@ -976,7 +915,7 @@ watch(
   min-width: 0;
   cursor: pointer;
 }
-.tile-img-wrap {
+.tile-img-wrap-wrapper {
   width: 100%;
   aspect-ratio: 1;
   border-radius: var(--radius-img);
@@ -989,19 +928,10 @@ watch(
     transform 0.3s cubic-bezier(0.25, 1, 0.5, 1),
     box-shadow 0.3s ease;
 }
-.tile-img-wrap img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  transition: transform 0.4s ease;
-}
-.media-tile:hover .tile-img-wrap {
+
+.media-tile:hover .tile-img-wrap-wrapper {
   transform: translateY(-4px);
   box-shadow: 0 16px 32px -10px rgba(0, 0, 0, 0.15);
-}
-.media-tile:hover .tile-img-wrap img {
-  transform: scale(1.03);
 }
 
 .tile-type {
@@ -1030,7 +960,7 @@ watch(
 }
 
 /* ─── MV tile ────────────────────────────────────────────── */
-.mv-img-wrap {
+.mv-img-wrap-wrapper {
   aspect-ratio: 16/9;
 }
 .mv-play-btn {

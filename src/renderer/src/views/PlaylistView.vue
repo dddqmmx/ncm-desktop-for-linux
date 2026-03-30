@@ -3,7 +3,9 @@ import { useRoute } from 'vue-router'
 import { ref, computed, watch } from 'vue'
 import { PlaylistDetail, Track } from '@renderer/types/playlistDetail'
 import { CurrentSong, createCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
-import { resolveCachedMediaUrl } from '@renderer/utils/cache'
+import AlbumCover from '../components/AlbumCover.vue'
+import SongCover from '../components/SongCover.vue'
+import UserAvatar from '../components/UserAvatar.vue'
 
 const route = useRoute()
 
@@ -37,30 +39,7 @@ const fetchPlaylistDetail = async (playlistId: string | string[]): Promise<void>
     loading.value = true
     const res = (await window.api.playlist_detail({ id: playlistId })) as { body?: PlaylistDetail }
     if (res.body) {
-      detail.value = {
-        ...res.body,
-        playlist: {
-          ...res.body.playlist,
-          coverImgUrl: await resolveCachedMediaUrl(
-            `${res.body.playlist.coverImgUrl}?param=400y400`
-          ),
-          creator: {
-            ...res.body.playlist.creator,
-            avatarUrl: await resolveCachedMediaUrl(
-              `${res.body.playlist.creator.avatarUrl}?param=50y50`
-            )
-          },
-          tracks: await Promise.all(
-            res.body.playlist.tracks.map(async (track) => ({
-              ...track,
-              al: {
-                ...track.al,
-                picUrl: await resolveCachedMediaUrl(`${track.al.picUrl}?param=80y80`)
-              }
-            }))
-          )
-        }
-      }
+      detail.value = res.body
     }
   } catch (error) {
     console.error('Failed to fetch playlist detail:', error)
@@ -139,14 +118,16 @@ const playerStore = usePlayerStore()
       <!-- 歌单头部 -->
       <header class="playlist-header">
         <div class="cover-wrapper">
-          <img :src="playlist.coverImgUrl" :alt="playlist.name" class="playlist-cover" />
+          <AlbumCover :id="playlist.coverImgUrl" :alt="playlist.name" size="400y400" />
         </div>
         <div class="playlist-details">
           <div class="playlist-type-tag">PLAYLIST</div>
           <h1 class="playlist-title">{{ playlist.name }}</h1>
 
           <div class="creator-info">
-            <img :src="playlist.creator.avatarUrl" class="creator-avatar" />
+            <div class="creator-avatar-wrapper">
+              <UserAvatar :id="playlist.creator.avatarUrl" size="50y50" />
+            </div>
             <span class="creator-name">{{ playlist.creator.nickname }}</span>
             <span class="create-time">{{ formatDate(playlist.createTime) }} 创建</span>
           </div>
@@ -274,7 +255,9 @@ const playerStore = usePlayerStore()
             </div>
 
             <div class="col-title">
-              <img :src="track.al.picUrl" class="mini-cover" loading="lazy" />
+              <div class="mini-cover-wrapper">
+                <SongCover :id="track.al.picUrl" size="80y80" />
+              </div>
               <div class="song-info">
                 <span class="song-name">{{ track.name }}</span>
                 <span class="song-artist">
@@ -368,12 +351,6 @@ const playerStore = usePlayerStore()
   box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15); /* 加强阴影以在无背景时突出 */
 }
 
-.playlist-cover {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 .playlist-details {
   flex: 1;
   display: flex;
@@ -403,10 +380,11 @@ const playerStore = usePlayerStore()
   font-size: 14px;
 }
 
-.creator-avatar {
+.creator-avatar-wrapper {
   width: 26px;
   height: 26px;
   border-radius: 50%;
+  overflow: hidden;
 }
 
 .creator-name {
@@ -584,11 +562,13 @@ const playerStore = usePlayerStore()
   display: block;
 }
 
-.mini-cover {
+.mini-cover-wrapper {
   width: 40px;
   height: 40px;
   border-radius: 6px;
+  overflow: hidden;
   background: rgba(0, 0, 0, 0.05);
+  flex-shrink: 0;
 }
 
 .song-info {
