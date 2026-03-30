@@ -6,6 +6,7 @@ import LyricPanel from './LyricPanel.vue'
 import { colord } from 'colord'
 import { extractColors } from 'extract-colors'
 import { useResolvedMediaUrl } from '@renderer/composables/useResolvedMediaUrl'
+import SongCover from './SongCover.vue'
 
 const playerStore = usePlayerStore()
 const router = useRouter()
@@ -161,11 +162,16 @@ const onImageLoad = (): void => {
         <!-- 左侧：封面与控制器 -->
         <section class="visual-panel">
           <div class="cover-wrapper">
+            <SongCover
+              :id="playerStore.currentSong?.cover"
+              size="500y500"
+              class="main-cover-component"
+              :class="{ playing: playerStore.isPlaying }"
+            />
             <img
               ref="imgRef"
               :src="resolvedCover"
-              class="main-cover"
-              :class="{ playing: playerStore.isPlaying }"
+              class="main-cover-hidden"
               crossorigin="anonymous"
               @load="onImageLoad"
             />
@@ -350,19 +356,29 @@ const onImageLoad = (): void => {
   aspect-ratio: 1;
   flex-shrink: 1;
   min-height: 0;
+  position: relative;
 }
 
-.main-cover {
+.main-cover-component {
   width: 100%;
   height: 100%;
-  object-fit: cover;
   border-radius: 24px;
   box-shadow: 0 30px 60px rgba(0, 0, 0, 0.3);
   transition: transform 0.8s cubic-bezier(0.2, 0, 0.2, 1);
 }
 
-.main-cover.playing {
+.main-cover-component.playing {
   transform: scale(1.02);
+}
+
+.main-cover-hidden {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+  object-fit: cover;
 }
 
 .track-meta {

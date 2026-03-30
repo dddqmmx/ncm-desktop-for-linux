@@ -2,14 +2,12 @@
 import { formatCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
 import { ref, nextTick, watch, onBeforeUnmount } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
-import { resolveCachedMediaUrl } from '@renderer/utils/cache'
+import SongCover from './SongCover.vue'
 
 const playerStore = usePlayerStore()
 const listRef = ref<HTMLElement | null>(null)
-const resolvedCoverMap = ref<Record<number, string>>({})
 let scrollFrame = 0
 let scrollFrameAfterLayout = 0
-let resolveToken = 0
 
 const scheduleScrollToActive = async (): Promise<void> => {
   await nextTick()
@@ -35,29 +33,6 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(scrollFrame)
   cancelAnimationFrame(scrollFrameAfterLayout)
 })
-
-const refreshResolvedCovers = async (): Promise<void> => {
-  const currentToken = ++resolveToken
-  const entries = await Promise.all(
-    playerStore.playlist.map(
-      async (song) => [song.id, await resolveCachedMediaUrl(song.cover)] as const
-    )
-  )
-
-  if (currentToken !== resolveToken) {
-    return
-  }
-
-  resolvedCoverMap.value = Object.fromEntries(entries)
-}
-
-watch(
-  () => playerStore.playlist.map((song) => `${song.id}:${song.cover}`).join(','),
-  () => {
-    void refreshResolvedCovers()
-  },
-  { immediate: true }
-)
 
 const getScrollContainer = (): HTMLElement | null => {
   return listRef.value
@@ -88,6 +63,14 @@ const removeSong = (id: string | number): void => {
 }
 
 /**
+ * 清空列表并停止播放
+ */
+const handleClear = (): void => {
+  playerStore.clearPlaylist()
+  playerStore.stopMusic()
+}
+
+/**
  * 拖拽结束回调
  */
 const onDragEnd = (): void => {
@@ -102,7 +85,7 @@ const onDragEnd = (): void => {
       <div class="header-content">
         <span class="title">待播清单</span>
         <span class="count">{{ playerStore.playlist?.length || 0 }} 首歌曲</span>
-        <button class="clear-btn" @click="playerStore.clearPlaylist">清空</button>
+        <button class="clear-btn" @click="handleClear">清空</button>
       </div>
     </div>
 
@@ -135,11 +118,9 @@ const onDragEnd = (): void => {
               <div v-else class="item-index">{{ index + 1 }}</div>
             </div>
 
-            <img
-              :src="resolvedCoverMap[song.id] || song.cover"
-              class="item-cover"
-              draggable="false"
-            />
+            <div class="item-cover">
+              <SongCover :id="song.cover" size="80y80" />
+            </div>
 
             <div class="item-info">
               <div class="item-name">{{ song.name }}</div>
@@ -318,7 +299,8 @@ const onDragEnd = (): void => {
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  object-fit: cover;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 .item-info {
   flex: 1;

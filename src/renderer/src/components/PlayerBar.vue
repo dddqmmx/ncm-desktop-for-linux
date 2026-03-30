@@ -3,20 +3,14 @@ import { formatCurrentSongArtists, usePlayerStore } from '@renderer/stores/playe
 import { ref, computed, onMounted } from 'vue'
 // 1. 必须导入新设计的播放列表组件
 import PlaylistOverlay from './PlaylistOverlay.vue'
-import { useResolvedMediaUrl } from '@renderer/composables/useResolvedMediaUrl'
+import SongCover from './SongCover.vue'
 
 const playerStore = usePlayerStore()
-const fallbackCover = 'https://placehold.co/100x100/444444/fff?text=None'
-const resolvedCover = useResolvedMediaUrl(
-  () => playerStore.currentSong?.cover || fallbackCover,
-  fallbackCover
-)
 
 // --- UI 显示绑定 ---
 const displayTrack = computed(() => ({
   title: playerStore.currentSong?.name || '未在播放',
-  artist: formatCurrentSongArtists(playerStore.currentSong?.artists),
-  cover: resolvedCover.value
+  artist: formatCurrentSongArtists(playerStore.currentSong?.artists)
 }))
 
 // --- 进度条逻辑 ---
@@ -75,7 +69,7 @@ onMounted(() => {
         <!-- 1. 左侧：歌曲信息 -->
         <div class="section-left" @click="playerStore.toggleFullScreen">
           <div class="cover-wrapper">
-            <img :src="displayTrack.cover" class="track-cover" />
+            <SongCover :id="playerStore.currentSong?.cover" size="100y100" />
           </div>
           <div class="track-metadata">
             <div class="track-title">{{ displayTrack.title }}</div>
@@ -228,8 +222,6 @@ onMounted(() => {
   /* 水平居中 */
   z-index: 100;
   pointer-events: none;
-  /* 允许点击到底层内容 */
-  -webkit-app-region: drag;
 }
 
 /* 4. 播放列表弹出位置 */
@@ -312,12 +304,6 @@ onMounted(() => {
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   -webkit-app-region: no-drag;
-}
-
-.track-cover {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .track-metadata {

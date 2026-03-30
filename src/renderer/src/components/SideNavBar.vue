@@ -4,6 +4,8 @@ import LoginModal from './LoginModal.vue'
 import { useUserStore } from '@renderer/stores/userStore'
 import { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist'
 import { resolveCachedMediaUrl } from '@renderer/utils/cache'
+import SongCover from './SongCover.vue'
+import UserAvatar from './UserAvatar.vue'
 
 const userStore = useUserStore()
 const showLoginModal = ref(false)
@@ -152,7 +154,9 @@ const openSettingsWindow = (): void => {
           class="nav-item"
           active-class="active"
         >
-          <img class="nav-icon" :src="item.coverImgUrl" alt="playlist" />
+          <div class="nav-icon-wrapper">
+            <SongCover :id="item.coverImgUrl" size="40y40" />
+          </div>
           <span class="playlist-name">{{ item.name }}</span>
         </RouterLink>
       </nav>
@@ -174,13 +178,14 @@ const openSettingsWindow = (): void => {
 
         <!-- 底部基础信息 -->
         <div class="bubble-trigger">
-          <img
-            :src="
-              userStore.userInfo?.profile.avatarUrl || 'https://placehold.co/40x40/ddd/888?text=U'
-            "
-            alt="user"
-            class="avatar"
-          />
+          <div class="avatar-wrapper">
+            <UserAvatar
+              :id="userStore.userInfo?.profile.avatarUrl"
+              :rounded="true"
+              size="64y64"
+              class="avatar"
+            />
+          </div>
           <span class="username">
             {{ userStore.userInfo?.profile.nickname || '请登录' }}
           </span>
@@ -263,6 +268,15 @@ const openSettingsWindow = (): void => {
   border-radius: 6px;
   object-fit: cover;
 }
+
+.nav-icon-wrapper {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
 .playlist-name {
   white-space: nowrap;
   overflow: hidden;
@@ -303,11 +317,12 @@ const openSettingsWindow = (): void => {
   z-index: 2;
 }
 
-.avatar {
+.avatar-wrapper {
   width: 32px;
   height: 32px;
+  flex-shrink: 0;
   border-radius: 50%;
-  background: #ccc;
+  overflow: hidden;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
