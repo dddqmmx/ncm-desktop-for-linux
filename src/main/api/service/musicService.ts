@@ -105,7 +105,7 @@ export const MusicService = {
   login: createMethod(login_cellphone),
   getBanner: createMethod(banner),
   getUserCloud: createMethod(user_cloud),
-  search(params: Record<string, unknown>) {
+  search(params: Parameters<typeof cloudsearch>[0]) {
     return createMethod(cloudsearch)(params).then((res) => {
       // 兼容旧接口的字段结构
       const body = res.body as Record<string, unknown>
