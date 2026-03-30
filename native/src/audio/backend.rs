@@ -343,10 +343,16 @@ pub(crate) fn should_list_linux_output_device(
 ) -> bool {
     // If this is the current device, always list it to avoid "ghost" devices
     // that cause switch_output_device to fail its "already active" check.
-    if let Some(curr) = current_id {
-        if id == curr {
-            return true;
-        }
+    //
+    // On Linux, the effective current ID is either the explicitly requested one
+    // or the system "default" if no specific device was requested.
+    let is_current = match current_id {
+        Some(curr) => id == curr,
+        None => id == "default",
+    };
+
+    if is_current {
+        return true;
     }
 
     if id == "default" {
@@ -361,7 +367,7 @@ pub(crate) fn should_list_linux_output_device(
         || id.contains("vmax");
 
     if is_virtual {
-        return default_id.map_or(false, |d| d == id) || current_id.map_or(false, |c| c == id);
+        return default_id.map_or(false, |d| d == id);
     }
 
     true
@@ -437,7 +443,7 @@ mod tests {
             Some("default"),
             Some("default")
         ));
-        assert!(!should_list_linux_output_device(
+        assert!(should_list_linux_output_device(
             "default",
             Some("default"),
             Some("default")
@@ -484,4 +490,3 @@ mod tests {
         assert_eq!(devices[2].name, "System Default");
     }
 }
-
