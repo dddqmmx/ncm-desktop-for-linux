@@ -169,11 +169,13 @@ const openSettingsWindow = (): void => {
         :class="{ 'is-logged-in': !!userStore.userInfo }"
         @click="toggleLoginModal"
       >
-        <!-- 悬浮出现的菜单 (仅登录后) -->
-        <div v-if="userStore.userInfo" class="bubble-menu">
-          <div class="menu-item">修改个人信息</div>
+        <!-- 悬浮出现的菜单 -->
+        <div class="bubble-menu">
+          <div v-if="userStore.userInfo" class="menu-item">修改个人信息</div>
           <div class="menu-item" @click.stop="openSettingsWindow">设置</div>
-          <div class="menu-item logout" @click.stop="handleLogout">退出登录</div>
+          <div v-if="userStore.userInfo" class="menu-item logout" @click.stop="handleLogout">
+            退出登录
+          </div>
         </div>
 
         <!-- 底部基础信息 -->
@@ -343,7 +345,7 @@ const openSettingsWindow = (): void => {
 }
 
 /* 登录后悬浮效果 */
-.profile-bubble.is-logged-in:hover {
+.profile-bubble:hover {
   background: #e0e0e0;
   transform: translateY(-5px);
   box-shadow:
@@ -352,7 +354,7 @@ const openSettingsWindow = (): void => {
     0 10px 20px rgba(0, 0, 0, 0.05);
 }
 
-.profile-bubble.is-logged-in:hover .bubble-menu {
+.profile-bubble:hover .bubble-menu {
   max-height: 200px;
   opacity: 1;
   padding-bottom: 8px;
