@@ -152,8 +152,8 @@ export type RawAudioDeviceInfo = {
   is_current?: unknown
 }
 
-export function normalizeOutputDevice(device: RawAudioDeviceInfo): AudioDeviceInfo | null {
-  if (typeof device.id !== 'string' || typeof device.name !== 'string') {
+export function normalizeOutputDevice(device: RawAudioDeviceInfo | null | undefined): AudioDeviceInfo | null {
+  if (!device || typeof device.id !== 'string' || typeof device.name !== 'string') {
     return null
   }
 
@@ -182,7 +182,10 @@ export function normalizeOutputDevice(device: RawAudioDeviceInfo): AudioDeviceIn
   }
 }
 
-export function normalizeOutputDevices(devices: RawAudioDeviceInfo[]): AudioDeviceInfo[] {
+export function normalizeOutputDevices(devices: RawAudioDeviceInfo[] | null | undefined): AudioDeviceInfo[] {
+  if (!Array.isArray(devices)) {
+    return []
+  }
   return devices
     .map(normalizeOutputDevice)
     .filter((device): device is AudioDeviceInfo => device !== null)
@@ -330,6 +333,12 @@ export function isMissingOutputDeviceError(error: unknown): boolean {
 }
 
 export function isOutputDeviceActive(devices: AudioDeviceInfo[], targetDeviceId: string): boolean {
+  if (devices.length === 0) {
+    // If we have no device list yet, assume the status quo is fine
+    // to avoid redundant switch attempts during early initialization.
+    return true
+  }
+
   const currentDevice = devices.find((device) => device.isCurrent)
 
   if (!currentDevice) {

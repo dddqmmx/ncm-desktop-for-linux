@@ -24,6 +24,7 @@ use crate::audio::utils::estimate_prefetch_bytes;
 
 pub struct AudioPlayer {
     device: cpal::Device,
+    requested_device_id: Option<String>,
     stream: Option<cpal::Stream>,
     state: Arc<SharedState>,
 }
@@ -47,6 +48,7 @@ impl AudioPlayer {
         
         Ok(Self {
             device,
+            requested_device_id: device_name.map(|s| s.to_string()),
             stream: None,
             state: Arc::new(SharedState {
                 is_paused: AtomicBool::new(false),
@@ -98,7 +100,6 @@ impl AudioPlayer {
         let host = cpal::default_host();
         let default_device = host.default_output_device();
         let default_id = default_device.as_ref().map(|d| backend::device_id(d));
-        let current_id = backend::device_id(&self.device);
 
         let mut devices = Vec::new();
         for d in host.output_devices()? {
@@ -106,15 +107,21 @@ impl AudioPlayer {
             let name = backend::device_display_name(&d);
 
             #[cfg(target_os = "linux")]
-            if !backend::should_list_linux_output_device(&id, default_id.as_deref(), Some(&current_id)) {
+            if !backend::should_list_linux_output_device(&id, default_id.as_deref(), self.requested_device_id.as_deref()) {
                 continue;
             }
+
+            let is_default = default_id.as_deref() == Some(&id);
+            let is_current = match self.requested_device_id.as_deref() {
+                Some(rid) => id == rid,
+                None => is_default,
+            };
 
             devices.push(OutputDeviceInfo {
                 id: id.clone(),
                 name,
-                is_default: default_id.as_deref() == Some(&id),
-                is_current: id == current_id,
+                is_default,
+                is_current,
             });
         }
 
@@ -134,6 +141,7 @@ impl AudioPlayer {
         
         if let Some(d) = device {
             self.device = d;
+            self.requested_device_id = Some(device_id.to_string());
         } else {
             return Err(format!("Device not found: {}", device_id).into());
         }

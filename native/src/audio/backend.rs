@@ -341,6 +341,14 @@ pub(crate) fn should_list_linux_output_device(
     default_id: Option<&str>,
     current_id: Option<&str>,
 ) -> bool {
+    // If this is the current device, always list it to avoid "ghost" devices
+    // that cause switch_output_device to fail its "already active" check.
+    if let Some(curr) = current_id {
+        if id == curr {
+            return true;
+        }
+    }
+
     if id == "default" {
         return default_id.is_none();
     }

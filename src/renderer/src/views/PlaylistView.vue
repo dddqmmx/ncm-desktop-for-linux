@@ -2,6 +2,7 @@
 import { useRoute } from 'vue-router'
 import { ref, computed, watch } from 'vue'
 import { PlaylistDetail, Track } from '@renderer/types/playlistDetail'
+import { Song } from '@renderer/types/songDetail'
 import { CurrentSong, createCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
 import MediaDetailLayout from '../components/MediaDetailLayout.vue'
 import SongList from '../components/SongList.vue'
@@ -58,7 +59,7 @@ const handlePlayAll = (): void => {
   void playerStore.playAll(songList)
 }
 
-const handlePlaySong = (song: Track): void => {
+const handlePlaySong = (song: Song): void => {
   void playerStore.playMusic(song.id)
 }
 

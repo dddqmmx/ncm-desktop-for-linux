@@ -410,8 +410,7 @@ where
         let current_device = devices.iter().find(|device| device.is_current);
 
         match (device_name, current_device) {
-            (Some(target_device_id), Some(current_device)) => Ok(current_device.id
-                == target_device_id
+            (Some(target_device_id), Some(current_device)) => Ok(current_device.id == target_device_id
                 || current_device.name == target_device_id),
             (None, Some(current_device)) => Ok(current_device.is_default),
             _ => Ok(false),
