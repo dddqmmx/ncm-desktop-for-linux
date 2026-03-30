@@ -23,7 +23,7 @@ defineProps<{
         <span v-if="logo" class="logo-text">{{ logo }}</span>
       </div>
       <div class="card-center">
-        <h3 v-if="title" v-html="title"></h3>
+        <h3 v-if="title">{{ title }}</h3>
         <h4 v-if="subtitle">{{ subtitle }}</h4>
       </div>
       <div class="card-bottom">

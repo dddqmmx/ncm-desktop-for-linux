@@ -29,7 +29,7 @@ defineEmits<{
       <header class="playlist-header">
         <!-- 左侧：封面 -->
         <div class="cover-wrapper">
-          <AlbumCover :key="coverUrl || 'placeholder'" :id="coverUrl" :alt="title" size="400y400" />
+          <AlbumCover :id="coverUrl" :key="coverUrl || 'placeholder'" :alt="title" size="400y400" />
         </div>
 
         <!-- 右侧：详情与操作 -->
@@ -66,13 +66,33 @@ defineEmits<{
             </button>
 
             <div class="search-box-container">
-              <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <svg
+                class="search-icon"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+              >
                 <circle cx="11" cy="11" r="8" />
                 <path d="m21 21-4.3-4.3" />
               </svg>
-              <input v-model="searchQuery" type="text" :placeholder="searchPlaceholder || '在专辑内搜索...'" class="search-input" />
+              <input
+                v-model="searchQuery"
+                type="text"
+                :placeholder="searchPlaceholder || '在专辑内搜索...'"
+                class="search-input"
+              />
               <button v-if="searchQuery" class="clear-btn" @click="searchQuery = ''">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
                   <path d="M18 6L6 18M6 6l12 12" />
                 </svg>
               </button>
@@ -81,7 +101,14 @@ defineEmits<{
             <slot name="actions"></slot>
 
             <button class="icon-btn" title="更多">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
                 <circle cx="12" cy="12" r="1.5" />
                 <circle cx="19" cy="12" r="1.5" />
                 <circle cx="5" cy="12" r="1.5" />
@@ -106,8 +133,13 @@ defineEmits<{
   scrollbar-width: thin;
 }
 
-.main-content-scroll-wrapper::-webkit-scrollbar { width: 4px; }
-.main-content-scroll-wrapper::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.1); border-radius: 10px; }
+.main-content-scroll-wrapper::-webkit-scrollbar {
+  width: 4px;
+}
+.main-content-scroll-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
 
 .playlist-container {
   padding: 40px; /* 增加一点内边距让呼吸感更好 */
@@ -132,7 +164,9 @@ defineEmits<{
   border-radius: 12px; /* 稍微硬一点的圆角更显质感 */
   background: rgba(0, 0, 0, 0.03);
   /* 增强弥散阴影，营造悬浮感 */
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.15), 0 8px 16px rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.15),
+    0 8px 16px rgba(0, 0, 0, 0.08);
   overflow: hidden;
   position: relative;
 }
@@ -182,7 +216,9 @@ defineEmits<{
   color: #555;
   font-weight: 500;
 }
-.meta-text { color: #666; }
+.meta-text {
+  color: #666;
+}
 
 .dot {
   width: 4px;
@@ -225,7 +261,9 @@ defineEmits<{
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  transition: transform 0.2s, background 0.2s;
+  transition:
+    transform 0.2s,
+    background 0.2s;
 }
 
 .play-main-btn:hover {
@@ -251,7 +289,10 @@ defineEmits<{
   width: 260px; /* 聚焦时微微变长 */
 }
 
-.search-icon { color: #888; margin-right: 8px; }
+.search-icon {
+  color: #888;
+  margin-right: 8px;
+}
 
 .search-input {
   background: transparent;
@@ -263,7 +304,9 @@ defineEmits<{
   color: #333;
 }
 
-.search-input::placeholder { color: #999; }
+.search-input::placeholder {
+  color: #999;
+}
 
 .clear-btn {
   background: none;
@@ -275,7 +318,9 @@ defineEmits<{
   align-items: center;
 }
 
-.clear-btn:hover { color: #333; }
+.clear-btn:hover {
+  color: #333;
+}
 
 /* 更多按钮去掉了边框，改为悬浮背景色 */
 .icon-btn {
@@ -297,16 +342,48 @@ defineEmits<{
   color: #111;
 }
 
-.loading-state { display: flex; justify-content: center; align-items: center; height: 300px; }
-.spinner { width: 30px; height: 30px; border: 3px solid rgba(0,0,0,0.1); border-top-color: #111; border-radius: 50%; animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.spacer-bottom { height: 80px; }
+.loading-state {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 300px;
+}
+.spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-top-color: #111;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spacer-bottom {
+  height: 80px;
+}
 
 @media (max-width: 900px) {
-  .playlist-header { flex-direction: column; align-items: flex-start; }
-  .cover-wrapper { width: 200px; height: 200px; }
-  .playlist-details { min-height: auto; }
-  .action-bar { margin-top: 24px; flex-wrap: wrap; width: 100%; }
-  .search-box-container { width: 100%; }
+  .playlist-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .cover-wrapper {
+    width: 200px;
+    height: 200px;
+  }
+  .playlist-details {
+    min-height: auto;
+  }
+  .action-bar {
+    margin-top: 24px;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .search-box-container {
+    width: 100%;
+  }
 }
 </style>

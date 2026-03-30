@@ -20,13 +20,7 @@ withDefaults(defineProps<Props>(), {
 
 <template>
   <div class="user-avatar-container" :class="{ 'is-rounded': rounded }">
-    <LazyImage 
-      :id="id" 
-      :alt="alt" 
-      :rounded="rounded"
-      :param="size"
-      type="avatar"
-    />
+    <LazyImage :id="id" :alt="alt" :rounded="rounded" :param="size" type="avatar" />
   </div>
 </template>
 

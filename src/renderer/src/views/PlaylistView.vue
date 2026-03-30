@@ -96,7 +96,15 @@ const filteredTracks = computed(() => {
     :cover-url="playlist?.coverImgUrl"
     :title="playlist?.name"
     :description="playlist?.description"
-    :meta="playlist ? [`${formatDate(playlist.createTime)} 创建`, `${playlist.trackCount} 首歌曲`, `${formatCount(playlist.playCount)} 次播放`] : []"
+    :meta="
+      playlist
+        ? [
+            `${formatDate(playlist.createTime)} 创建`,
+            `${playlist.trackCount} 首歌曲`,
+            `${formatCount(playlist.playCount)} 次播放`
+          ]
+        : []
+    "
     search-placeholder="在歌单内搜索..."
     @play-all="handlePlayAll"
   >

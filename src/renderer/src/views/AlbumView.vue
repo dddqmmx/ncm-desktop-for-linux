@@ -89,7 +89,13 @@ const filteredTracks = computed(() => {
     :cover-url="album?.picUrl"
     :title="album?.name"
     :description="album?.description"
-    :meta="album ? [`${formatDate(album.publishTime)} 发行`, `${album.size} 首歌曲`, album.company].filter(Boolean) as string[] : []"
+    :meta="
+      album
+        ? ([`${formatDate(album.publishTime)} 发行`, `${album.size} 首歌曲`, album.company].filter(
+            Boolean
+          ) as string[])
+        : []
+    "
     search-placeholder="在专辑内搜索..."
     @play-all="handlePlayAll"
   >

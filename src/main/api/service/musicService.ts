@@ -8,7 +8,6 @@ import {
   login_qr_key,
   login_qr_create,
   login_qr_check,
-  search as search_deprecated,
   cloudsearch,
   user_account,
   song_url_v1,
@@ -106,16 +105,21 @@ export const MusicService = {
   login: createMethod(login_cellphone),
   getBanner: createMethod(banner),
   getUserCloud: createMethod(user_cloud),
-  search(params: any) {
+  search(params: Record<string, unknown>) {
     return createMethod(cloudsearch)(params).then((res) => {
       // 兼容旧接口的字段结构
-      if (res.body?.result?.songs) {
-        res.body.result.songs = res.body.result.songs.map((song: any) => ({
-          ...song,
-          artists: song.ar || song.artists,
-          album: song.al || song.album,
-          duration: song.dt || song.duration
-        }))
+      const body = res.body as Record<string, unknown>
+      const result = body?.result as Record<string, unknown>
+      if (result?.songs && Array.isArray(result.songs)) {
+        result.songs = result.songs.map((songItem) => {
+          const song = songItem as Record<string, unknown>
+          return {
+            ...song,
+            artists: song.ar || song.artists,
+            album: song.al || song.album,
+            duration: song.dt || song.duration
+          }
+        })
       }
       return res
     })

@@ -17,12 +17,7 @@ withDefaults(defineProps<Props>(), {
 
 <template>
   <div class="song-cover-container">
-    <LazyImage 
-      :id="id" 
-      :alt="alt" 
-      :param="size" 
-      type="cover"
-    />
+    <LazyImage :id="id" :alt="alt" :param="size" type="cover" />
   </div>
 </template>
 

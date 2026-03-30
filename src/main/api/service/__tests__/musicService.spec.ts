@@ -1,14 +1,13 @@
-
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('electron', () => ({
   app: {
-    getPath: vi.fn().mockReturnValue('/tmp'),
+    getPath: vi.fn().mockReturnValue('/tmp')
   },
   protocol: {
-    registerSchemesAsPrivileged: vi.fn(),
-  },
-}));
+    registerSchemesAsPrivileged: vi.fn()
+  }
+}))
 
 vi.mock('NeteaseCloudMusicApi', () => ({
   login_cellphone: vi.fn(),
@@ -32,16 +31,16 @@ vi.mock('NeteaseCloudMusicApi', () => ({
   artist_top_song: vi.fn(),
   artist_album: vi.fn(),
   artist_mv: vi.fn(),
-  album: vi.fn(),
-}));
+  album: vi.fn()
+}))
 
 // Mock loadNativeModule to avoid native binding errors in tests
 vi.mock('../native/loadNativeModule', () => ({
-  getNativeModule: vi.fn().mockReturnValue(null),
-}));
+  getNativeModule: vi.fn().mockReturnValue(null)
+}))
 
-import { MusicService } from '../musicService';
-import * as Netease from 'NeteaseCloudMusicApi';
+import { MusicService } from '../musicService'
+import * as Netease from 'NeteaseCloudMusicApi'
 
 describe('MusicService search mapping', () => {
   it('should map cloudsearch result fields to legacy search format', async () => {
@@ -51,11 +50,11 @@ describe('MusicService search mapping', () => {
         name: 'Song 1',
         ar: [{ id: 10, name: 'Artist 1' }],
         al: { id: 100, name: 'Album 1' },
-        dt: 180000,
+        dt: 180000
       }
-    ];
+    ]
 
-    (Netease.cloudsearch as any).mockResolvedValue({
+    const mockResult = {
       status: 200,
       body: {
         result: {
@@ -63,14 +62,19 @@ describe('MusicService search mapping', () => {
           songCount: 1
         }
       }
-    });
+    }
 
-    const res = await MusicService.search({ keywords: 'test' });
-    const song = (res.body as any).result.songs[0];
+    vi.mocked(Netease.cloudsearch).mockResolvedValue(
+      mockResult as unknown as ReturnType<typeof Netease.cloudsearch>
+    )
 
-    expect(song.artists).toEqual(mockSongs[0].ar);
-    expect(song.album).toEqual(mockSongs[0].al);
-    expect(song.duration).toBe(mockSongs[0].dt);
-    expect(song.name).toBe('Song 1');
-  });
-});
+    const res = await MusicService.search({ keywords: 'test' })
+    const body = res.body as Record<string, { songs: Array<Record<string, unknown>> }>
+    const song = body.result.songs[0]
+
+    expect(song.artists).toEqual(mockSongs[0].ar)
+    expect(song.album).toEqual(mockSongs[0].al)
+    expect(song.duration).toBe(mockSongs[0].dt)
+    expect(song.name).toBe('Song 1')
+  })
+})

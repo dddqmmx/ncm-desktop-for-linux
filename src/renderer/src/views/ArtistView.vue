@@ -19,7 +19,11 @@
           <header class="artist-header">
             <div class="artist-avatar-col">
               <div class="avatar-ring-wrapper">
-                <UserAvatar :id="artistProfile?.avatar || artistProfile?.cover" :alt="artistProfile?.name" size="400y400" />
+                <UserAvatar
+                  :id="artistProfile?.avatar || artistProfile?.cover"
+                  :alt="artistProfile?.name"
+                  size="400y400"
+                />
               </div>
               <div class="avatar-glow" aria-hidden="true"></div>
             </div>
@@ -201,7 +205,7 @@
             <div class="media-grid mv-grid">
               <div v-for="mv in mvs" :key="mv.id" class="media-tile mv-tile">
                 <div class="tile-img-wrap-wrapper mv-img-wrap-wrapper">
-                   <LazyImage :id="mv.cover" :alt="mv.title" param="540y304" />
+                  <LazyImage :id="mv.cover" :alt="mv.title" param="540y304" />
                   <div class="mv-play-btn" aria-hidden="true">
                     <svg viewBox="0 0 24 24" width="22" height="22">
                       <path d="M8 6.5v11l9-5.5-9-5.5Z" fill="currentColor" />
