@@ -3,6 +3,7 @@ import { ElectronAPI } from '@electron-toolkit/preload'
 interface CustomApi {
   // 网易云api操作
   login: (p: unknown) => Promise<unknown>
+  captcha_sent: (p: unknown) => Promise<unknown>
   banner: (p: unknown) => Promise<unknown>
   userCloud: (p: unknown) => Promise<unknown>
   search: (p: unknown) => Promise<unknown>

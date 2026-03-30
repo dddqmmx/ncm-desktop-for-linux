@@ -263,6 +263,20 @@ export const usePlaybackStore = defineStore('playback', () => {
     await playMusic(targetSong.id)
   }
 
+  const stop = async (): Promise<void> => {
+    try {
+      await window.api.stop()
+    } catch {
+      // ignore
+    }
+    currentSong.value = null
+    currentSongId.value = null
+    isPlaying.value = false
+    currentTime.value = 0
+    isHistorySong.value = true
+    stopTimer()
+  }
+
   // --- 监听器 ---
 
   watch(currentSongId, (id) => {
@@ -301,6 +315,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     seek,
     playNext,
     playPrev,
+    stop,
     initFromStorage,
     playAll
   }

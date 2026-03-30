@@ -21,7 +21,8 @@ import {
   artist_top_song,
   artist_album,
   artist_mv,
-  album
+  album,
+  captcha_sent
 } from 'NeteaseCloudMusicApi'
 import { CacheService } from './cacheService'
 
@@ -103,6 +104,7 @@ const createCachedMethod = <P, T>(
 
 export const MusicService = {
   login: createMethod(login_cellphone),
+  captcha_sent: createMethod(captcha_sent),
   getBanner: createMethod(banner),
   getUserCloud: createMethod(user_cloud),
   search(params: Parameters<typeof cloudsearch>[0]) {

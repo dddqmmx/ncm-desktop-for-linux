@@ -2,8 +2,11 @@ import { UserAccount } from '@renderer/types/userAccount'
 import { resolveCachedMediaUrl } from '@renderer/utils/cache'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { usePlayerStore } from './playerStore'
 
 export const useUserStore = defineStore('user', () => {
+  const playerStore = usePlayerStore()
+
   // === 状态 ===
   const cookie = ref(localStorage.getItem('app_cookie') || '')
   const userInfo = ref<UserAccount | undefined>(undefined)
@@ -47,6 +50,10 @@ export const useUserStore = defineStore('user', () => {
 
     localStorage.removeItem('app_cookie')
     localStorage.removeItem('app_user_info')
+
+    // 清除播放列表并停止播放
+    playerStore.clearPlaylist()
+    playerStore.stopMusic()
   }
 
   return {

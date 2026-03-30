@@ -18,6 +18,7 @@ const invokeArgs =
 const api = {
   // --- 网易云 API (单参数模式) ---
   login: invoke('music:login'),
+  captcha_sent: invoke('music:captcha_sent'),
   banner: invoke('music:banner'),
   userCloud: invoke('music:userCloud'),
   search: invoke('music:search'),

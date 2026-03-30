@@ -7,6 +7,7 @@ export function registerMusicApi(): void {
   // 基础的一对一映射
   const simpleMappings = {
     'music:login': MusicService.login,
+    'music:captcha_sent': MusicService.captcha_sent,
     'music:userCloud': MusicService.getUserCloud,
     'music:search': MusicService.search,
     'music:songDetail': MusicService.song_detail,

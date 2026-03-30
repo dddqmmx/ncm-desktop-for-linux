@@ -58,6 +58,7 @@ export const usePlayerStore = defineStore('player', () => {
     initFromStorage: playbackStore.initFromStorage,
     playAll: playbackStore.playAll,
     playMusic: playbackStore.playMusic,
+    stopMusic: playbackStore.stop,
     togglePlay: playbackStore.togglePlay,
     seek: playbackStore.seek,
     toggleFullScreen: uiStore.toggleFullScreen,
