@@ -61,7 +61,6 @@ impl StorageProvider for PersistentFileStorageProvider {
 
         let writer = OpenOptions::new()
             .create(true)
-            .truncate(true)
             .read(true)
             .write(true)
             .open(&self.path)?;

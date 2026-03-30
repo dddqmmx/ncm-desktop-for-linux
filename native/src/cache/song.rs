@@ -134,4 +134,54 @@ mod tests {
         meta.mark_complete();
         assert!(meta.is_complete);
     }
+
+    #[test]
+    fn test_persistent_cache_resumption_and_no_truncation() {
+        use std::fs;
+        use std::io::{Read, Write, Seek};
+        let temp_dir = std::env::temp_dir().join("music_cache_resumption_test");
+        if temp_dir.exists() {
+            let _ = fs::remove_dir_all(&temp_dir);
+        }
+        fs::create_dir_all(&temp_dir).unwrap();
+        let data_path = temp_dir.join("song.mp3");
+        let meta_path = temp_dir.join("song.json");
+
+        // 1. Initial download session (incomplete)
+        let mut meta = SongStreamCacheMeta::new(1, "lossless", "url");
+        meta.set_content_length(Some(100));
+        meta.add_range(0..50);
+        fs::write(&data_path, vec![0xA5u8; 50]).unwrap(); // Original data
+        fs::write(&meta_path, serde_json::to_string(&meta).unwrap()).unwrap();
+
+        // 2. Interruption: New session starts (simulating switch_output_device)
+        // Ensure NO truncation!
+        fs::OpenOptions::new().write(true).truncate(false).create(true).open(&data_path).unwrap();
+        
+        // New tracker loads existing meta
+        let mut new_meta: SongStreamCacheMeta = serde_json::from_str(&fs::read_to_string(&meta_path).unwrap()).unwrap();
+        assert_eq!(new_meta.downloaded_bytes(), 50);
+
+        // New tracker downloads the rest (50..100)
+        new_meta.add_range(50..100);
+        
+        // Simulating writing the rest at offset 50
+        let mut f = fs::OpenOptions::new().write(true).read(true).open(&data_path).unwrap();
+        f.seek(std::io::SeekFrom::Start(50)).unwrap();
+        f.write_all(&[0x5Au8; 50]).unwrap();
+        
+        new_meta.mark_complete();
+        assert!(new_meta.is_complete);
+
+        let file_size = fs::metadata(&data_path).unwrap().len();
+        assert_eq!(file_size, 100);
+        
+        // VERIFY: First 50 bytes are PRESERVED!
+        let mut first_50 = vec![0u8; 50];
+        f.seek(std::io::SeekFrom::Start(0)).unwrap();
+        f.read_exact(&mut first_50).unwrap();
+        assert_eq!(first_50, vec![0xA5u8; 50], "Data from first session must be preserved");
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
 }
