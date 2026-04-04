@@ -11,7 +11,9 @@ import { createCurrentSongArtists } from './utils'
 import { getAvailableQualities, computePlayableLevel } from './quality'
 
 export const usePlaybackStore = defineStore('playback', () => {
-  const currentSong = ref<CurrentSong | null>(null)
+  const currentSong = ref<CurrentSong | null>(
+    JSON.parse(localStorage.getItem('currentSong') || 'null')
+  )
   const currentSongId = ref<number | null>(Number(localStorage.getItem('currentSongId')) || null)
   const currentTime = ref(Number(localStorage.getItem('currentTime') || 0))
   const isPlaying = ref(false)
@@ -112,6 +114,7 @@ export const usePlaybackStore = defineStore('playback', () => {
       if (currentSongId.value !== songId) return
 
       isPlaying.value = false
+      isHistorySong.value = true
       stopTimer()
       currentTime.value = duration.value
       await playNext(true)
@@ -249,6 +252,19 @@ export const usePlaybackStore = defineStore('playback', () => {
 
   const initFromStorage = async (): Promise<void> => {
     if (!currentSongId.value) return
+
+    if (currentSong.value && currentSong.value.id === currentSongId.value) {
+      isHistorySong.value = true
+      // 仍然尝试异步更新一下详情，但不阻塞
+      getSongDetailData(currentSongId.value).then((data) => {
+        if (data && data.song) {
+          setPlayerData(data.song, false)
+          isHistorySong.value = true
+        }
+      })
+      return
+    }
+
     const data = await getSongDetailData(currentSongId.value)
     if (data && data.song) {
       setPlayerData(data.song, false)
@@ -278,6 +294,14 @@ export const usePlaybackStore = defineStore('playback', () => {
   }
 
   // --- 监听器 ---
+
+  watch(currentSong, (song) => {
+    if (song) {
+      localStorage.setItem('currentSong', JSON.stringify(song))
+    } else {
+      localStorage.removeItem('currentSong')
+    }
+  })
 
   watch(currentSongId, (id) => {
     if (id !== null) {
