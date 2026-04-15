@@ -61,7 +61,7 @@ export const useConfigStore = defineStore('config', () => {
     }
 
     initializePromise = (async () => {
-      await Promise.all([audio.ensureConfiguredOutputDevice(), cache.refreshCacheStats()])
+      await Promise.all([audio.refreshOutputDevices(), cache.refreshCacheStats()])
     })().catch((error) => {
       initializePromise = null
       console.error('初始化设置失败', error)

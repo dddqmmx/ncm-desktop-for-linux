@@ -194,12 +194,18 @@ const handleLogin = async (): Promise<void> => {
   <div class="login-overlay" @click.self="handleClose">
     <div class="card-perspective">
       <div class="login-card" :class="{ 'is-flipped': loginMode === 'qr' }">
-
         <!-- === 正面：表单登录 === -->
         <div class="card-face face-front">
           <div class="card-top-bar">
             <button class="icon-btn qr-btn" title="扫码登录" @click="toggleLoginMode">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
                 <rect x="3" y="3" width="7" height="7"></rect>
                 <rect x="14" y="3" width="7" height="7"></rect>
                 <rect x="14" y="14" width="7" height="7"></rect>
@@ -207,7 +213,16 @@ const handleLogin = async (): Promise<void> => {
               </svg>
             </button>
             <button class="icon-btn close-btn" title="关闭" @click="handleClose">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
               </svg>
@@ -220,11 +235,22 @@ const handleLogin = async (): Promise<void> => {
           </div>
 
           <div class="segmented-control">
-            <div class="segment-bg" :style="{ transform: tabType === 'password' ? 'translateX(0)' : 'translateX(100%)' }"></div>
-            <button type="button" :class="{ active: tabType === 'password' }" @click="tabType = 'password'">
+            <div
+              class="segment-bg"
+              :style="{ transform: tabType === 'password' ? 'translateX(0)' : 'translateX(100%)' }"
+            ></div>
+            <button
+              type="button"
+              :class="{ active: tabType === 'password' }"
+              @click="tabType = 'password'"
+            >
               密码登录
             </button>
-            <button type="button" :class="{ active: tabType === 'phone' }" @click="tabType = 'phone'">
+            <button
+              type="button"
+              :class="{ active: tabType === 'phone' }"
+              @click="tabType = 'phone'"
+            >
               验证码登录
             </button>
           </div>
@@ -244,20 +270,50 @@ const handleLogin = async (): Promise<void> => {
                   <input v-model="creds.countrycode" type="text" placeholder="86" />
                 </div>
                 <div class="main-input">
-                  <input id="pwd-phone" v-model="creds.phone" class="has-icon" type="tel" placeholder=" " required />
+                  <input
+                    id="pwd-phone"
+                    v-model="creds.phone"
+                    class="has-icon"
+                    type="tel"
+                    placeholder=" "
+                    required
+                  />
                   <label for="pwd-phone">手机号码</label>
                 </div>
                 <div class="icon-suffix">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"
+                    ></path>
                   </svg>
                 </div>
               </div>
               <div class="input-field">
-                <input id="pwd-input" v-model="creds.password" class="has-icon" type="password" placeholder=" " required />
+                <input
+                  id="pwd-input"
+                  v-model="creds.password"
+                  class="has-icon"
+                  type="password"
+                  placeholder=" "
+                  required
+                />
                 <label for="pwd-input">密码</label>
                 <div class="icon-suffix">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                   </svg>
@@ -273,20 +329,50 @@ const handleLogin = async (): Promise<void> => {
                   <input v-model="phoneData.countrycode" type="text" placeholder="86" />
                 </div>
                 <div class="main-input">
-                  <input id="code-phone" v-model="phoneData.phone" class="has-icon" type="tel" placeholder=" " required />
+                  <input
+                    id="code-phone"
+                    v-model="phoneData.phone"
+                    class="has-icon"
+                    type="tel"
+                    placeholder=" "
+                    required
+                  />
                   <label for="code-phone">手机号码</label>
                 </div>
                 <div class="icon-suffix">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"
+                    ></path>
                   </svg>
                 </div>
               </div>
               <div class="input-field">
-                <input id="code-input" v-model="phoneData.code" class="has-btn" type="text" placeholder=" " required />
+                <input
+                  id="code-input"
+                  v-model="phoneData.code"
+                  class="has-btn"
+                  type="text"
+                  placeholder=" "
+                  required
+                />
                 <label for="code-input">验证码</label>
-                <button type="button" class="verify-btn" :disabled="verificationCodeTimer > 0" @click="sendCode">
-                  {{ verificationCodeTimer > 0 ? `${verificationCodeTimer}秒后获取` : '获取验证码' }}
+                <button
+                  type="button"
+                  class="verify-btn"
+                  :disabled="verificationCodeTimer > 0"
+                  @click="sendCode"
+                >
+                  {{
+                    verificationCodeTimer > 0 ? `${verificationCodeTimer}秒后获取` : '获取验证码'
+                  }}
                 </button>
               </div>
             </div>
@@ -312,14 +398,30 @@ const handleLogin = async (): Promise<void> => {
         <div class="card-face face-back">
           <div class="card-top-bar">
             <button class="icon-btn pc-btn" title="密码登录" @click="toggleLoginMode">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
                 <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
                 <line x1="8" y1="21" x2="16" y2="21"></line>
                 <line x1="12" y1="17" x2="12" y2="21"></line>
               </svg>
             </button>
             <button class="icon-btn close-btn" @click="handleClose">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
               </svg>
@@ -365,7 +467,13 @@ const handleLogin = async (): Promise<void> => {
   justify-content: center;
   background-color: var(--bg-overlay);
   backdrop-filter: blur(12px);
-  font-family: 'SF Pro Text', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family:
+    'SF Pro Text',
+    'SF Pro Display',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   color: var(--text-main);
 }
 
@@ -499,7 +607,8 @@ h1 {
   margin-bottom: 24px;
 }
 
-.input-field, .phone-input-container {
+.input-field,
+.phone-input-container {
   position: relative;
   background: var(--input-bg);
   border-radius: 14px;
@@ -508,14 +617,16 @@ h1 {
   display: flex;
 }
 
-.input-field:focus-within, .phone-input-container:focus-within {
+.input-field:focus-within,
+.phone-input-container:focus-within {
   background: var(--input-focus-bg);
   border-color: #000;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 /* 基础 Input 样式 */
-.input-field input, .main-input input {
+.input-field input,
+.main-input input {
   width: 100%;
   height: 54px;
   background: transparent;
@@ -528,11 +639,16 @@ h1 {
 }
 
 /* 预留右侧空间防止文字被盖住 */
-input.has-icon { padding-right: 42px; }
-input.has-btn { padding-right: 110px; }
+input.has-icon {
+  padding-right: 42px;
+}
+input.has-btn {
+  padding-right: 110px;
+}
 
 /* 悬浮标签 Floating Label 核心逻辑 */
-.input-field label, .main-input label {
+.input-field label,
+.main-input label {
   position: absolute;
   left: 16px;
   top: 17px;
@@ -677,7 +793,9 @@ input.has-btn { padding-right: 110px; }
   color: #555;
   font-weight: 500;
 }
-.custom-checkbox input { display: none; }
+.custom-checkbox input {
+  display: none;
+}
 .checkmark {
   width: 18px;
   height: 18px;
@@ -703,7 +821,9 @@ input.has-btn { padding-right: 110px; }
   transform: rotate(45deg);
   opacity: 0;
 }
-.custom-checkbox input:checked ~ .checkmark::after { opacity: 1; }
+.custom-checkbox input:checked ~ .checkmark::after {
+  opacity: 1;
+}
 
 /* 提交按钮 */
 .submit-btn {
@@ -716,7 +836,10 @@ input.has-btn { padding-right: 110px; }
   font-size: 16px;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 0.1s, background 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.1s,
+    background 0.2s,
+    box-shadow 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -777,13 +900,27 @@ input.has-btn { padding-right: 110px; }
 }
 
 /* 动画工具 */
-.fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
 
-.fade-in-up { animation: fadeInUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.fade-in-up {
+  animation: fadeInUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .spinner {
@@ -795,6 +932,8 @@ input.has-btn { padding-right: 110px; }
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

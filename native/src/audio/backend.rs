@@ -287,25 +287,19 @@ pub(crate) fn find_best_config(
 }
 
 pub(crate) fn device_id(device: &cpal::Device) -> String {
+    let alsa_name = device
+        .name()
+        .unwrap_or_else(|_| "Unknown Device".to_string());
+
     #[cfg(target_os = "linux")]
     {
         use alsa::device_name::HintIter;
         use std::ffi::CStr;
-        let name = device_display_name(device);
 
         if let Ok(iter) = HintIter::new(None, unsafe { CStr::from_bytes_with_nul_unchecked(b"pcm\0") }) {
             for hint in iter {
-                if let Some(desc) = hint.desc {
-                    let desc: String = desc;
-                    if desc.contains(&name) || name.contains(&desc) {
-                        if let Some(id) = hint.name {
-                            return id;
-                        }
-                    }
-                }
                 if let Some(hint_name) = hint.name {
-                    let hint_name: String = hint_name;
-                    if hint_name.contains(&name) || name.contains(&hint_name) {
+                    if hint_name == alsa_name {
                         return hint_name;
                     }
                 }
@@ -313,13 +307,39 @@ pub(crate) fn device_id(device: &cpal::Device) -> String {
         }
     }
 
-    device_display_name(device)
+    alsa_name
 }
 
 pub(crate) fn device_display_name(device: &cpal::Device) -> String {
-    device
+    let alsa_name = device
         .name()
-        .unwrap_or_else(|_| "Unknown Device".to_string())
+        .unwrap_or_else(|_| "Unknown Device".to_string());
+
+    #[cfg(target_os = "linux")]
+    {
+        use alsa::device_name::HintIter;
+        use std::ffi::CStr;
+
+        if let Ok(iter) = HintIter::new(None, unsafe { CStr::from_bytes_with_nul_unchecked(b"pcm\0") }) {
+            for hint in iter {
+                if let Some(hint_name) = hint.name {
+                    if hint_name == alsa_name {
+                        if let Some(desc) = hint.desc {
+                            if let Some(first_line) = desc.lines().next() {
+                                let friendly_name = first_line.trim().to_string();
+                                if !friendly_name.is_empty() {
+                                    return friendly_name;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    alsa_name
 }
 
 #[cfg(target_os = "linux")]
@@ -341,33 +361,17 @@ pub(crate) fn should_list_linux_output_device(
     default_id: Option<&str>,
     current_id: Option<&str>,
 ) -> bool {
-    // If this is the current device, always list it to avoid "ghost" devices
-    // that cause switch_output_device to fail its "already active" check.
-    //
-    // On Linux, the effective current ID is either the explicitly requested one
-    // or the system "default" if no specific device was requested.
-    let is_current = match current_id {
-        Some(curr) => id == curr,
-        None => id == "default",
-    };
-
-    if is_current {
-        return true;
-    }
-
     if id == "default" {
-        return default_id.is_none();
+        return default_id.map_or(true, |d| d == "default") || current_id.map_or(false, |c| c == "default");
     }
 
     let is_virtual = id.starts_with("null")
-        || id.starts_with("pulse")
-        || id.starts_with("dmix")
         || id.starts_with("surround")
         || id.contains("upmix")
         || id.contains("vmax");
 
     if is_virtual {
-        return default_id.map_or(false, |d| d == id);
+        return default_id.map_or(false, |d| d == id) || current_id.map_or(false, |c| c == id);
     }
 
     true
@@ -448,12 +452,8 @@ mod tests {
             Some("default"),
             Some("default")
         ));
+        // We now allow pulse and dmix by default
         assert!(should_list_linux_output_device(
-            "pulse",
-            Some("pulse"),
-            Some("default")
-        ));
-        assert!(!should_list_linux_output_device(
             "pulse",
             Some("hw:CARD=0,DEV=0"),
             Some("default")

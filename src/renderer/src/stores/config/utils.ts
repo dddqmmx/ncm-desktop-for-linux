@@ -152,7 +152,9 @@ export type RawAudioDeviceInfo = {
   is_current?: unknown
 }
 
-export function normalizeOutputDevice(device: RawAudioDeviceInfo | null | undefined): AudioDeviceInfo | null {
+export function normalizeOutputDevice(
+  device: RawAudioDeviceInfo | null | undefined
+): AudioDeviceInfo | null {
   if (!device || typeof device.id !== 'string' || typeof device.name !== 'string') {
     return null
   }
@@ -182,7 +184,9 @@ export function normalizeOutputDevice(device: RawAudioDeviceInfo | null | undefi
   }
 }
 
-export function normalizeOutputDevices(devices: RawAudioDeviceInfo[] | null | undefined): AudioDeviceInfo[] {
+export function normalizeOutputDevices(
+  devices: RawAudioDeviceInfo[] | null | undefined
+): AudioDeviceInfo[] {
   if (!Array.isArray(devices)) {
     return []
   }
