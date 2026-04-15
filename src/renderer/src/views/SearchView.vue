@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usePlayerStore } from '@renderer/stores/playerStore'
 import { SongDetailResult } from '@renderer/types/songDetail'
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { PlaylistCatlist, PlaylistCategory } from '@renderer/types/playlistCatlist'
 import type { SearchResult, Song as SearchSong } from '@renderer/types/search'
 import { resolveCachedMediaUrl } from '@renderer/utils/cache'
@@ -9,10 +9,15 @@ import { resolveCachedMediaUrl } from '@renderer/utils/cache'
 const searchQuery = ref('')
 const searchResults = ref<SearchResult | null>(null)
 const isSearching = ref(false)
+const isLoadingMore = ref(false)
+const hasMore = ref(false)
+const offset = ref(0)
+const limit = 30
 const coverMap = ref<Record<number, string>>({})
 
 // --- 滚动逻辑控制 ---
 const scrollContainer = ref<HTMLElement | null>(null)
+const bottomObserver = ref<HTMLElement | null>(null)
 const isFloating = ref(false) // 是否处于悬浮气泡状态
 const lastScrollTop = ref(0) // 记录上次滚动位置
 
@@ -63,13 +68,40 @@ const getBrowseCategories = async (): Promise<void> => {
   }
 }
 
+// Intersection Observer for infinite scroll
+let observer: IntersectionObserver | null = null
+
 onMounted(() => {
   getBrowseCategories()
   scrollContainer.value?.addEventListener('scroll', handleScroll, { passive: true })
+
+  observer = new IntersectionObserver(
+    (entries) => {
+      if (entries[0].isIntersecting && hasMore.value && !isLoadingMore.value && !isSearching.value) {
+        loadMore()
+      }
+    },
+    { 
+      root: scrollContainer.value,
+      threshold: 0.1 
+    }
+  )
+})
+
+watch(bottomObserver, (newEl) => {
+  if (observer) {
+    observer.disconnect()
+    if (newEl) {
+      observer.observe(newEl)
+    }
+  }
 })
 
 onUnmounted(() => {
   scrollContainer.value?.removeEventListener('scroll', handleScroll)
+  if (observer) {
+    observer.disconnect()
+  }
 })
 
 const hasSearched = computed(
@@ -92,22 +124,63 @@ const handleSearch = async (): Promise<void> => {
     return
   }
   isSearching.value = true
+  offset.value = 0
   try {
     const res = (await window.api.search({
       keywords: kw,
-      limit: 20
+      limit,
+      offset: offset.value
     })) as { body?: { result?: SearchResult } }
     if (res.body?.result?.songs) {
       searchResults.value = res.body.result
+      const count = res.body.result.songCount || 0
+      hasMore.value = res.body.result.songs.length + offset.value < count
       res.body.result.songs.forEach((song) => loadCover(song.id))
     } else {
       searchResults.value = null
+      hasMore.value = false
     }
   } catch (err) {
     console.error('搜索失败', err)
     searchResults.value = null
+    hasMore.value = false
   } finally {
     isSearching.value = false
+  }
+}
+
+const loadMore = async (): Promise<void> => {
+  const kw = searchQuery.value.trim()
+  if (!kw || isLoadingMore.value || !hasMore.value) return
+
+  isLoadingMore.value = true
+  offset.value += limit
+
+  try {
+    const res = (await window.api.search({
+      keywords: kw,
+      limit,
+      offset: offset.value
+    })) as { body?: { result?: SearchResult } }
+
+    if (res.body?.result?.songs) {
+      if (searchResults.value) {
+        searchResults.value.songs.push(...res.body.result.songs)
+        const totalLoaded = searchResults.value.songs.length
+        const totalAvailable = res.body.result.songCount || searchResults.value.songCount || 0
+        hasMore.value = totalLoaded < totalAvailable
+      } else {
+        searchResults.value = res.body.result
+        hasMore.value = res.body.result.songs.length + offset.value < (res.body.result.songCount || 0)
+      }
+      res.body.result.songs.forEach((song) => loadCover(song.id))
+    } else {
+      hasMore.value = false
+    }
+  } catch (err) {
+    console.error('加载更多失败', err)
+  } finally {
+    isLoadingMore.value = false
   }
 }
 
@@ -219,6 +292,17 @@ const playSong = (song: SearchSong): void => {
             </div>
           </div>
           <div v-if="searchResults?.songs.length === 0" class="empty-tips">No songs found</div>
+        </div>
+
+        <!-- 底部加载更多观测点 -->
+        <div ref="bottomObserver" class="bottom-observer">
+          <div v-if="isLoadingMore" class="loading-more">
+            <div class="spinner"></div>
+            <span>正在加载更多...</span>
+          </div>
+          <div v-else-if="!hasMore && searchResults?.songs.length" class="no-more">
+            没有更多了
+          </div>
         </div>
       </section>
 
@@ -485,5 +569,42 @@ const playSong = (song: SearchSong): void => {
   text-align: center;
   padding: 40px;
   color: #999;
+}
+
+.bottom-observer {
+  padding: 24px 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 60px;
+}
+
+.loading-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #888;
+  font-size: 14px;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-top-color: #888;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.no-more {
+  color: #bbb;
+  font-size: 13px;
+  letter-spacing: 1px;
 }
 </style>
