@@ -78,7 +78,7 @@ function normalizeCachedPath(value: string | null | undefined): string | null {
 }
 
 function normalizeCachedSongSource(
-  raw: ReturnType<NativeCacheBinding['prepareSongSource']> | null | undefined
+  raw: Awaited<ReturnType<NativeCacheBinding['prepareSongSource']>> | null | undefined
 ): CachedSongSource | null {
   if (!raw || typeof raw !== 'object') {
     return null
@@ -131,7 +131,7 @@ export function buildCacheKey(value: unknown): string {
 }
 
 async function readJson<T>(bucket: CacheBucket, key: string): Promise<T | null> {
-  const raw = getNativeCache().getJson(bucket, key)
+  const raw = await getNativeCache().getJson(bucket, key)
   if (typeof raw !== 'string' || raw.trim().length === 0) {
     return null
   }
@@ -149,34 +149,34 @@ async function writeJson(
   key: string,
   value: CacheableJsonValue
 ): Promise<CacheStats> {
-  return normalizeCacheStats(getNativeCache().putJson(bucket, key, JSON.stringify(value)))
+  return normalizeCacheStats(await getNativeCache().putJson(bucket, key, JSON.stringify(value)))
 }
 
 export const CacheService = {
   buildKey: buildCacheKey,
 
-  getStats(): CacheStats {
-    return normalizeCacheStats(getNativeCache().getStats())
+  async getStats(): Promise<CacheStats> {
+    return normalizeCacheStats(await getNativeCache().getStats())
   },
 
-  setMaxSizeBytes(maxSizeBytes: number): CacheStats {
-    return normalizeCacheStats(getNativeCache().setMaxSizeBytes(Math.max(0, maxSizeBytes)))
+  async setMaxSizeBytes(maxSizeBytes: number): Promise<CacheStats> {
+    return normalizeCacheStats(await getNativeCache().setMaxSizeBytes(Math.max(0, maxSizeBytes)))
   },
 
-  getSongCacheAheadSecs(): number {
-    return Math.max(5, Number(getNativeCache().getSongCacheAheadSecs()) || 30)
+  async getSongCacheAheadSecs(): Promise<number> {
+    return Math.max(5, Number(await getNativeCache().getSongCacheAheadSecs()) || 30)
   },
 
-  setSongCacheAheadSecs(songCacheAheadSecs: number): number {
+  async setSongCacheAheadSecs(songCacheAheadSecs: number): Promise<number> {
     return Math.max(
       5,
-      Number(getNativeCache().setSongCacheAheadSecs(Math.max(5, songCacheAheadSecs))) || 30
+      Number(await getNativeCache().setSongCacheAheadSecs(Math.max(5, songCacheAheadSecs))) || 30
     )
   },
 
-  clear(): CacheStats {
+  async clear(): Promise<CacheStats> {
     resolvedMediaUrlCache.clear()
-    return normalizeCacheStats(getNativeCache().clear())
+    return normalizeCacheStats(await getNativeCache().clear())
   },
 
   async getJson<T>(bucket: CacheBucket, key: string): Promise<T | null> {
@@ -257,7 +257,7 @@ export const CacheService = {
 
     try {
       const source = normalizeCachedSongSource(
-        getNativeCache().prepareSongSource(songId, quality, normalizedUrl)
+        await getNativeCache().prepareSongSource(songId, quality, normalizedUrl)
       )
       if (source) {
         return source

@@ -669,58 +669,95 @@ impl CacheService {
     }
 
     #[napi]
-    pub fn get_stats(&self) -> Result<CacheStats> {
-        self.service
-            .get_stats()
-            .map_err(|err| Error::from_reason(err.to_string()))
+    pub async fn get_stats(&self) -> Result<CacheStats> {
+        let service = Arc::clone(&self.service);
+        get_runtime()
+            .spawn_blocking(move || {
+                service
+                    .get_stats()
+                    .map_err(|err| Error::from_reason(err.to_string()))
+            })
+            .await
+            .map_err(|e| Error::from_reason(e.to_string()))?
     }
 
     #[napi]
-    pub fn get_json(&self, bucket: String, key: String) -> Result<Option<String>> {
-        let bucket = CacheBucket::try_from(bucket.as_str())
-            .map_err(|err| Error::from_reason(err.to_string()))?;
+    pub async fn get_json(&self, bucket: String, key: String) -> Result<Option<String>> {
+        let bucket_str = bucket.clone();
+        let key_str = key.clone();
+        let service = Arc::clone(&self.service);
 
-        self.service
-            .get_json(bucket, &key)
-            .map_err(|err| Error::from_reason(err.to_string()))
+        get_runtime()
+            .spawn_blocking(move || {
+                let bucket = CacheBucket::try_from(bucket_str.as_str())
+                    .map_err(|err| Error::from_reason(err.to_string()))?;
+
+                service
+                    .get_json(bucket, &key_str)
+                    .map_err(|err| Error::from_reason(err.to_string()))
+            })
+            .await
+            .map_err(|e| Error::from_reason(e.to_string()))?
     }
 
     #[napi]
-    pub fn put_json(&self, bucket: String, key: String, value: String) -> Result<CacheStats> {
-        let bucket = CacheBucket::try_from(bucket.as_str())
-            .map_err(|err| Error::from_reason(err.to_string()))?;
+    pub async fn put_json(&self, bucket: String, key: String, value: String) -> Result<CacheStats> {
+        let bucket_str = bucket.clone();
+        let key_str = key.clone();
+        let value_str = value.clone();
+        let service = Arc::clone(&self.service);
 
-        self.service
-            .put_json(bucket, &key, &value)
-            .map_err(|err| Error::from_reason(err.to_string()))
+        get_runtime()
+            .spawn_blocking(move || {
+                let bucket = CacheBucket::try_from(bucket_str.as_str())
+                    .map_err(|err| Error::from_reason(err.to_string()))?;
+
+                service
+                    .put_json(bucket, &key_str, &value_str)
+                    .map_err(|err| Error::from_reason(err.to_string()))
+            })
+            .await
+            .map_err(|e| Error::from_reason(e.to_string()))?
     }
 
     #[napi]
-    pub fn set_max_size_bytes(&self, max_size_bytes: i64) -> Result<CacheStats> {
-        self.service
-            .set_max_size_bytes(max_size_bytes.max(0) as u64)
-            .map_err(|err| Error::from_reason(err.to_string()))
+    pub async fn set_max_size_bytes(&self, max_size_bytes: i64) -> Result<CacheStats> {
+        let service = Arc::clone(&self.service);
+        get_runtime()
+            .spawn_blocking(move || {
+                service
+                    .set_max_size_bytes(max_size_bytes.max(0) as u64)
+                    .map_err(|err| Error::from_reason(err.to_string()))
+            })
+            .await
+            .map_err(|e| Error::from_reason(e.to_string()))?
     }
 
     #[napi]
-    pub fn get_song_cache_ahead_secs(&self) -> Result<u32> {
+    pub async fn get_song_cache_ahead_secs(&self) -> Result<u32> {
         self.service
             .get_song_cache_ahead_secs()
             .map_err(|err| Error::from_reason(err.to_string()))
     }
 
     #[napi]
-    pub fn set_song_cache_ahead_secs(&self, song_cache_ahead_secs: u32) -> Result<u32> {
+    pub async fn set_song_cache_ahead_secs(&self, song_cache_ahead_secs: u32) -> Result<u32> {
         self.service
             .set_song_cache_ahead_secs(song_cache_ahead_secs)
             .map_err(|err| Error::from_reason(err.to_string()))
     }
 
     #[napi]
-    pub fn clear(&self) -> Result<CacheStats> {
-        self.service
-            .clear()
-            .map_err(|err| Error::from_reason(err.to_string()))
+    pub async fn clear(&self) -> Result<CacheStats> {
+        let service = Arc::clone(&self.service);
+        get_runtime()
+            .spawn_blocking(move || {
+                service
+                    .clear()
+                    .map_err(|err| Error::from_reason(err.to_string()))
+            })
+            .await
+            .map_err(|e| Error::from_reason(e.to_string()))?
     }
 
     #[napi]
@@ -741,15 +778,21 @@ impl CacheService {
     }
 
     #[napi]
-    pub fn prepare_song_source(
+    pub async fn prepare_song_source(
         &self,
         song_id: i64,
         quality: String,
         url: String,
     ) -> Result<CachedSongSource> {
-        self.service
-            .prepare_song_source(song_id, &quality, &url)
-            .map_err(|err| Error::from_reason(err.to_string()))
+        let service = Arc::clone(&self.service);
+        get_runtime()
+            .spawn_blocking(move || {
+                service
+                    .prepare_song_source(song_id, &quality, &url)
+                    .map_err(|err| Error::from_reason(err.to_string()))
+            })
+            .await
+            .map_err(|e| Error::from_reason(e.to_string()))?
     }
 }
 

@@ -48,19 +48,19 @@ export interface NativePlayerBinding {
 }
 
 export interface NativeCacheBinding {
-  getStats(): NativeCacheStats
-  getJson(bucket: string, key: string): string | null | undefined
-  putJson(bucket: string, key: string, value: string): NativeCacheStats
-  setMaxSizeBytes(maxSizeBytes: number): NativeCacheStats
-  getSongCacheAheadSecs(): number
-  setSongCacheAheadSecs(songCacheAheadSecs: number): number
-  clear(): NativeCacheStats
+  getStats(): Promise<NativeCacheStats>
+  getJson(bucket: string, key: string): Promise<string | null | undefined>
+  putJson(bucket: string, key: string, value: string): Promise<NativeCacheStats>
+  setMaxSizeBytes(maxSizeBytes: number): Promise<NativeCacheStats>
+  getSongCacheAheadSecs(): Promise<number>
+  setSongCacheAheadSecs(songCacheAheadSecs: number): Promise<number>
+  clear(): Promise<NativeCacheStats>
   cacheRemoteFile(bucket: string, key: string, url: string): Promise<string | null | undefined>
   prepareSongSource(
     songId: number,
     quality: string,
     url: string
-  ): {
+  ): Promise<{
     type?: string
     value?: string
     cachePath?: string
@@ -69,7 +69,7 @@ export interface NativeCacheBinding {
     metadata_path?: string
     cacheAheadSecs?: number
     cache_ahead_secs?: number
-  }
+  }>
 }
 
 type NativeModule = {
