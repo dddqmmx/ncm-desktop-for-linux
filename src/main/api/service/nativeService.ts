@@ -20,6 +20,7 @@ export const NativeService = {
     metadataPath: string,
     durationMs?: number,
     cacheAheadSecs?: number,
+    maxCacheAheadBytes?: number,
     startSecs?: number
   ) {
     try {
@@ -29,6 +30,7 @@ export const NativeService = {
         metadataPath,
         durationMs,
         cacheAheadSecs,
+        maxCacheAheadBytes,
         startSecs
       )
     } catch (e) {

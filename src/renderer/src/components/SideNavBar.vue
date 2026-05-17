@@ -2,11 +2,13 @@
 import { computed, ref, watch } from 'vue'
 import LoginModal from './LoginModal.vue'
 import { useUserStore } from '@renderer/stores/userStore'
+import { useFavoriteStore } from '@renderer/stores/favoriteStore'
 import { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist'
 import SongCover from './SongCover.vue'
 import UserAvatar from './UserAvatar.vue'
 
 const userStore = useUserStore()
+const favoriteStore = useFavoriteStore()
 const showLoginModal = ref(false)
 const createdPlaylists = ref<Playlist[]>([])
 
@@ -25,6 +27,7 @@ const handleLoginSuccess = async (): Promise<void> => {
 const handleLogout = (): void => {
   // 假设 store 中有 logout 方法，没有的话请根据实际情况清除状态
   userStore.logout()
+  favoriteStore.clearFavorites()
   createdPlaylists.value = []
 }
 
@@ -63,7 +66,8 @@ watch(
 
 const navItems = [
   { id: 'search', name: '搜索', icon: 'search', path: '/search' },
-  { id: 1, name: '主页', icon: 'home', path: '/home' }
+  { id: 1, name: '主页', icon: 'home', path: '/home' },
+  { id: 'favorites', name: '喜欢的音乐', icon: 'heart', path: '/favorites' }
   // { id: 'test',   name: '测试界面', icon: 'test', path: '/artist/10000' },
 ]
 
@@ -118,6 +122,20 @@ const openSettingsWindow = (): void => {
               stroke-linejoin="round"
               stroke-width="2"
               d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+            />
+          </svg>
+          <svg
+            v-if="item.icon === 'heart'"
+            class="nav-icon"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7 7-7Z"
             />
           </svg>
           <svg
@@ -294,7 +312,7 @@ const openSettingsWindow = (): void => {
   /* 核心：内阴影实现“挖洞”感 */
   box-shadow:
     inset 3px 3px 6px rgba(0, 0, 0, 0.1),
-    inset -2px -2px 4px rgba(255, 255, 255, 0.7);
+    inset -2px -2px 4px rgba(162, 162, 162, 0.7);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -360,6 +378,10 @@ const openSettingsWindow = (): void => {
   color: var(--sys-text-secondary);
   border-bottom: 1px solid var(--sys-border);
   transition: background 0.2s;
+}
+
+.menu-item:hover:first-child {
+  border-radius: 30px 30px 0 0;
 }
 
 .menu-item:hover {

@@ -17,6 +17,7 @@ export interface CachedSongSource {
   cachePath?: string
   metadataPath?: string
   cacheAheadSecs?: number
+  maxCacheAheadBytes?: number
 }
 
 export interface SongCacheProgress {

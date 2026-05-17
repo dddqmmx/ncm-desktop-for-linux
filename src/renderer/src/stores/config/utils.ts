@@ -16,7 +16,9 @@ import {
   MAX_CACHE_LIMIT_MB,
   MIN_CACHE_LIMIT_MB,
   MAX_SONG_CACHE_AHEAD_SECS,
-  MIN_SONG_CACHE_AHEAD_SECS
+  MIN_SONG_CACHE_AHEAD_SECS,
+  MAX_SONG_MAX_CACHE_AHEAD_MB,
+  MIN_SONG_MAX_CACHE_AHEAD_MB
 } from './types'
 
 export function isSoundQuality(value: unknown): value is SoundQualityType {
@@ -84,6 +86,17 @@ export function normalizeSongCacheAheadSecs(value: unknown): number {
   return Math.min(MAX_SONG_CACHE_AHEAD_SECS, Math.max(MIN_SONG_CACHE_AHEAD_SECS, Math.round(value)))
 }
 
+export function normalizeSongMaxCacheAheadMb(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_SETTINGS.songMaxCacheAheadMb
+  }
+
+  return Math.min(
+    MAX_SONG_MAX_CACHE_AHEAD_MB,
+    Math.max(MIN_SONG_MAX_CACHE_AHEAD_MB, Math.round(value))
+  )
+}
+
 export function loadSettings(): PersistedSettings {
   const fallbackSettings: PersistedSettings = {
     ...DEFAULT_SETTINGS,
@@ -129,7 +142,8 @@ export function loadSettings(): PersistedSettings {
           : fallbackSettings.accentColor,
       libPaths: normalizeLibraryPaths(parsed.libPaths),
       cacheLimitMb: normalizeCacheLimitMb(parsed.cacheLimitMb),
-      songCacheAheadSecs: normalizeSongCacheAheadSecs(parsed.songCacheAheadSecs)
+      songCacheAheadSecs: normalizeSongCacheAheadSecs(parsed.songCacheAheadSecs),
+      songMaxCacheAheadMb: normalizeSongMaxCacheAheadMb(parsed.songMaxCacheAheadMb)
     }
   } catch (error) {
     console.warn('读取设置失败，使用默认配置。', error)

@@ -5,11 +5,14 @@ import { onMounted } from 'vue'
 import { useUserStore } from '@renderer/stores/userStore'
 import PlayerFullscreen from '@renderer/components/PlayerFullscreen.vue'
 import { usePlayerStore } from '@renderer/stores/playerStore'
+import { useFavoriteStore } from '@renderer/stores/favoriteStore'
 const userStore = useUserStore()
 const playerStore = usePlayerStore()
+const favoriteStore = useFavoriteStore()
 
 onMounted(async () => {
   await userStore.getUserAccount()
+  await favoriteStore.fetchFavoriteSongs()
 })
 </script>
 

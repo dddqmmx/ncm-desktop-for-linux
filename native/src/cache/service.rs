@@ -24,6 +24,10 @@ impl CacheState {
     fn song_cache_ahead_secs(&self) -> u32 {
         self.settings.song_cache_ahead_secs()
     }
+
+    fn song_max_cache_ahead_bytes(&self) -> u64 {
+        self.settings.song_max_cache_ahead_bytes()
+    }
 }
 
 pub struct NativeCacheService {
@@ -113,6 +117,22 @@ impl NativeCacheService {
         Ok(state.song_cache_ahead_secs())
     }
 
+    pub fn get_song_max_cache_ahead_bytes(&self) -> CacheResult<u64> {
+        let state = self.lock_state()?;
+        Ok(state.song_max_cache_ahead_bytes())
+    }
+
+    pub fn set_song_max_cache_ahead_bytes(
+        &self,
+        song_max_cache_ahead_bytes: u64,
+    ) -> CacheResult<u64> {
+        let mut state = self.lock_state()?;
+        state
+            .settings
+            .set_song_max_cache_ahead_bytes(song_max_cache_ahead_bytes)?;
+        Ok(state.song_max_cache_ahead_bytes())
+    }
+
     pub fn clear(&self) -> CacheResult<CacheStats> {
         {
             let mut state = self.lock_state()?;
@@ -185,6 +205,7 @@ impl NativeCacheService {
                 cache_path: None,
                 metadata_path: None,
                 cache_ahead_secs: None,
+                max_cache_ahead_bytes: None,
             });
         }
 
@@ -193,7 +214,7 @@ impl NativeCacheService {
         let normalized_quality = quality.trim().to_ascii_lowercase();
         let cache_key = song_stream_key(song_id, &normalized_quality);
 
-        let (same_quality_entry, variant_victims, cache_ahead_secs) = {
+        let (same_quality_entry, variant_victims, cache_ahead_secs, max_cache_ahead_bytes) = {
             let state = self.lock_state()?;
             let same_quality_entry = state.catalog.entries().find_map(|(_, entry)| {
                 if entry.bucket != CacheBucket::Song {
@@ -231,6 +252,7 @@ impl NativeCacheService {
                 same_quality_entry,
                 variant_victims,
                 state.song_cache_ahead_secs(),
+                state.song_max_cache_ahead_bytes(),
             )
         };
 
@@ -280,6 +302,7 @@ impl NativeCacheService {
                     cache_path: None,
                     metadata_path: None,
                     cache_ahead_secs: Some(cache_ahead_secs),
+                    max_cache_ahead_bytes: Some(max_cache_ahead_bytes.min(i64::MAX as u64) as i64),
                 });
             }
 
@@ -297,6 +320,7 @@ impl NativeCacheService {
                     cache_path: None,
                     metadata_path: None,
                     cache_ahead_secs: Some(cache_ahead_secs),
+                    max_cache_ahead_bytes: Some(max_cache_ahead_bytes.min(i64::MAX as u64) as i64),
                 });
             }
 
@@ -338,6 +362,7 @@ impl NativeCacheService {
             cache_path: Some(absolute_path.to_string_lossy().into_owned()),
             metadata_path: Some(metadata_path.to_string_lossy().into_owned()),
             cache_ahead_secs: Some(cache_ahead_secs),
+            max_cache_ahead_bytes: Some(max_cache_ahead_bytes.min(i64::MAX as u64) as i64),
         })
     }
 

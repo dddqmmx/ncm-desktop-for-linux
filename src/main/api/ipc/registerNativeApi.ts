@@ -15,6 +15,7 @@ export function registerNativeApi(): void {
       metadataPath: string,
       durationMs?: number,
       cacheAheadSecs?: number,
+      maxCacheAheadBytes?: number,
       startSecs?: number
     ) => {
       void _event
@@ -24,6 +25,7 @@ export function registerNativeApi(): void {
         metadataPath,
         durationMs,
         cacheAheadSecs,
+        maxCacheAheadBytes,
         startSecs
       )
     }

@@ -2,8 +2,10 @@
 import { usePlayerStore } from '@renderer/stores/playerStore'
 import SongCover from './SongCover.vue'
 import { Song } from '@renderer/types/songDetail'
+import { CurrentSong, createCurrentSongArtists } from '@renderer/stores/playerStore'
+import { useFavoriteStore } from '@renderer/stores/favoriteStore'
 
-defineProps<{
+const props = defineProps<{
   songs: Song[]
   searchQuery?: string
   fallbackCover?: string
@@ -14,6 +16,7 @@ const emit = defineEmits<{
 }>()
 
 const playerStore = usePlayerStore()
+const favoriteStore = useFavoriteStore()
 
 const formatDuration = (ms: number): string => {
   const totalSeconds = Math.floor(ms / 1000)
@@ -24,6 +27,18 @@ const formatDuration = (ms: number): string => {
 
 const handlePlaySong = (song: Song): void => {
   emit('play', song)
+}
+
+const mapSongToCurrentSong = (song: Song): CurrentSong => ({
+  id: song.id,
+  name: song.name,
+  artists: createCurrentSongArtists(song.ar),
+  cover: song.al?.picUrl || props.fallbackCover || '',
+  duration: song.dt
+})
+
+const toggleFavorite = (song: Song): void => {
+  void favoriteStore.toggleFavorite(mapSongToCurrentSong(song))
 }
 </script>
 
@@ -84,6 +99,18 @@ const handlePlaySong = (song: Song): void => {
         </div>
 
         <div class="col-time">
+          <button
+            class="favorite-btn"
+            :class="{ active: favoriteStore.isFavorite(track.id) }"
+            :title="favoriteStore.isFavorite(track.id) ? '取消喜欢' : '喜欢'"
+            @click.stop="toggleFavorite(track)"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16">
+              <path
+                d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7 7-7Z"
+              />
+            </svg>
+          </button>
           <span class="duration-text">{{ formatDuration(track.dt) }}</span>
           <button class="row-more">
             <svg
@@ -178,10 +205,11 @@ const handlePlaySong = (song: Song): void => {
   white-space: nowrap;
 }
 .col-time {
-  width: 80px;
+  width: 116px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 10px;
   color: var(--sys-text-tertiary);
   font-size: 12px;
 }
@@ -239,6 +267,44 @@ const handlePlaySong = (song: Song): void => {
   border: none;
   color: var(--sys-text-disabled);
   cursor: pointer;
+}
+.favorite-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sys-text-disabled);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    color 0.2s,
+    opacity 0.2s,
+    background 0.2s;
+}
+.favorite-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.favorite-btn:hover {
+  background: var(--sys-control-hover);
+  color: var(--theme-color-strong);
+}
+.favorite-btn.active {
+  color: var(--theme-color-strong);
+  opacity: 1;
+}
+.favorite-btn.active svg {
+  fill: currentColor;
+}
+.track-row:hover .favorite-btn {
+  opacity: 1;
 }
 .track-row:hover .row-more {
   display: block;

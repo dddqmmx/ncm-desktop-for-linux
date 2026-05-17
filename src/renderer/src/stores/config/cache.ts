@@ -9,6 +9,7 @@ import {
   bytesToMegabytes,
   normalizeCacheLimitMb,
   normalizeSongCacheAheadSecs,
+  normalizeSongMaxCacheAheadMb,
   RawCacheStats
 } from './utils'
 
@@ -18,6 +19,7 @@ export const useCacheConfigStore = defineStore('cacheConfig', () => {
   const libPaths = ref<string[]>(initialSettings.libPaths)
   const cacheLimitMb = ref(initialSettings.cacheLimitMb)
   const songCacheAheadSecs = ref(initialSettings.songCacheAheadSecs)
+  const songMaxCacheAheadMb = ref(initialSettings.songMaxCacheAheadMb)
 
   const cacheStats = ref<CacheStats>(
     normalizeCacheStats(null, megabytesToBytes(cacheLimitMb.value))
@@ -25,6 +27,7 @@ export const useCacheConfigStore = defineStore('cacheConfig', () => {
   const isLoadingCacheStats = ref(false)
   const isUpdatingCacheLimit = ref(false)
   const isUpdatingSongCacheAheadSecs = ref(false)
+  const isUpdatingSongMaxCacheAheadBytes = ref(false)
   const isClearingCache = ref(false)
   const cacheError = ref('')
 
@@ -33,9 +36,10 @@ export const useCacheConfigStore = defineStore('cacheConfig', () => {
     cacheError.value = ''
 
     try {
-      const [rawStats, rawSongCacheAheadSecs] = await Promise.all([
+      const [rawStats, rawSongCacheAheadSecs, rawSongMaxCacheAheadBytes] = await Promise.all([
         window.api.cache_get_stats(),
-        window.api.cache_get_song_cache_ahead_secs()
+        window.api.cache_get_song_cache_ahead_secs(),
+        window.api.cache_get_song_max_cache_ahead_bytes()
       ])
       const stats = normalizeCacheStats(
         rawStats as RawCacheStats,
@@ -44,6 +48,9 @@ export const useCacheConfigStore = defineStore('cacheConfig', () => {
       cacheStats.value = stats
       cacheLimitMb.value = normalizeCacheLimitMb(bytesToMegabytes(stats.maxSizeBytes))
       songCacheAheadSecs.value = normalizeSongCacheAheadSecs(rawSongCacheAheadSecs)
+      songMaxCacheAheadMb.value = normalizeSongMaxCacheAheadMb(
+        Number(rawSongMaxCacheAheadBytes) / (1024 * 1024)
+      )
       return stats
     } catch (error) {
       cacheError.value = '读取缓存状态失败，请稍后重试。'
@@ -122,6 +129,28 @@ export const useCacheConfigStore = defineStore('cacheConfig', () => {
     }
   }
 
+  const setSongMaxCacheAheadSize = async (nextMb: number): Promise<boolean> => {
+    isUpdatingSongMaxCacheAheadBytes.value = true
+    cacheError.value = ''
+
+    const normalizedMb = normalizeSongMaxCacheAheadMb(nextMb)
+
+    try {
+      songMaxCacheAheadMb.value = normalizeSongMaxCacheAheadMb(
+        Number(await window.api.cache_set_song_max_cache_ahead_bytes(normalizedMb * 1024 * 1024)) /
+          (1024 * 1024)
+      )
+      return true
+    } catch (error) {
+      cacheError.value = '更新歌曲最大预下载大小失败，请重试。'
+      console.error('更新歌曲最大预下载大小失败', error)
+      await refreshCacheStats()
+      return false
+    } finally {
+      isUpdatingSongMaxCacheAheadBytes.value = false
+    }
+  }
+
   const addLibraryPath = (path: string): boolean => {
     const normalizedPath = path.trim()
     if (!normalizedPath || libPaths.value.includes(normalizedPath)) {
@@ -139,16 +168,19 @@ export const useCacheConfigStore = defineStore('cacheConfig', () => {
     libPaths,
     cacheLimitMb,
     songCacheAheadSecs,
+    songMaxCacheAheadMb,
     cacheStats,
     isLoadingCacheStats,
     isUpdatingCacheLimit,
     isUpdatingSongCacheAheadSecs,
+    isUpdatingSongMaxCacheAheadBytes,
     isClearingCache,
     cacheError,
     refreshCacheStats,
     setCacheLimit,
     clearCache,
     setSongCacheAheadTime,
+    setSongMaxCacheAheadSize,
     addLibraryPath,
     removeLibraryPath
   }

@@ -33,6 +33,7 @@ export interface NativePlayerBinding {
     metadataPath: string,
     durationMs?: number,
     cacheAheadSecs?: number,
+    maxCacheAheadBytes?: number,
     startSecs?: number
   ): void
   playFile(filePath: string, startSecs?: number): void
@@ -54,6 +55,8 @@ export interface NativeCacheBinding {
   setMaxSizeBytes(maxSizeBytes: number): Promise<NativeCacheStats>
   getSongCacheAheadSecs(): Promise<number>
   setSongCacheAheadSecs(songCacheAheadSecs: number): Promise<number>
+  getSongMaxCacheAheadBytes(): Promise<number>
+  setSongMaxCacheAheadBytes(songMaxCacheAheadBytes: number): Promise<number>
   clear(): Promise<NativeCacheStats>
   cacheRemoteFile(bucket: string, key: string, url: string): Promise<string | null | undefined>
   prepareSongSource(
@@ -69,6 +72,8 @@ export interface NativeCacheBinding {
     metadata_path?: string
     cacheAheadSecs?: number
     cache_ahead_secs?: number
+    maxCacheAheadBytes?: number
+    max_cache_ahead_bytes?: number
   }>
 }
 

@@ -1,25 +1,25 @@
 use cpal::traits::{HostTrait, StreamTrait};
 use ringbuf::HeapRb;
 use ringbuf::traits::{Producer, Split};
+use std::num::NonZeroUsize;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
-use std::path::Path;
-use std::num::NonZeroUsize;
-use symphonia::core::conv::ConvertibleSample;
-use tokio::sync::Notify;
 use stream_download::http::HttpStream;
 use stream_download::http::reqwest::Client;
-use stream_download::{Settings, StreamDownload};
 use stream_download::source::SourceStream;
 use stream_download::storage::adaptive::AdaptiveStorageProvider;
 use stream_download::storage::temp::TempStorageProvider;
+use stream_download::{Settings, StreamDownload};
+use symphonia::core::conv::ConvertibleSample;
+use tokio::sync::Notify;
 
-use crate::audio::state::SharedState;
-use crate::audio::decoder::{self, AudioMetadata};
 use crate::audio::backend::{self, OutputDeviceInfo};
-use crate::audio::source::{SeekableSource, PersistentFileStorageProvider};
 use crate::audio::cache_tracker::SongCacheTracker;
+use crate::audio::decoder::{self, AudioMetadata};
+use crate::audio::source::{PersistentFileStorageProvider, SeekableSource};
+use crate::audio::state::SharedState;
 use crate::audio::utils::estimate_prefetch_bytes;
 
 pub struct AudioPlayer {
@@ -45,7 +45,7 @@ impl AudioPlayer {
             host.default_output_device()
                 .ok_or("No default output device found")?
         };
-        
+
         Ok(Self {
             device,
             requested_device_id: device_name.map(|s| s.to_string()),
@@ -86,7 +86,9 @@ impl AudioPlayer {
                 devices.push(OutputDeviceInfo {
                     id,
                     name,
-                    is_default: default_id.as_ref().map_or(false, |did| did == &backend::device_id(&d)),
+                    is_default: default_id
+                        .as_ref()
+                        .map_or(false, |did| did == &backend::device_id(&d)),
                     is_current: false,
                 });
             }
@@ -107,7 +109,11 @@ impl AudioPlayer {
             let name = backend::device_display_name(&d);
 
             #[cfg(target_os = "linux")]
-            if !backend::should_list_linux_output_device(&id, default_id.as_deref(), self.requested_device_id.as_deref()) {
+            if !backend::should_list_linux_output_device(
+                &id,
+                default_id.as_deref(),
+                self.requested_device_id.as_deref(),
+            ) {
                 continue;
             }
 
@@ -131,14 +137,17 @@ impl AudioPlayer {
 
     pub fn set_output_device(&mut self, device_id: &str) -> Result<(), Box<dyn std::error::Error>> {
         let host = cpal::default_host();
-        
+
         #[cfg(target_os = "linux")]
-        let target_id = backend::linux_plughw_locator(device_id).unwrap_or_else(|| device_id.to_string());
+        let target_id =
+            backend::linux_plughw_locator(device_id).unwrap_or_else(|| device_id.to_string());
         #[cfg(not(target_os = "linux"))]
         let target_id = device_id;
 
-        let device = host.output_devices()?.find(|d| backend::device_id(d) == target_id);
-        
+        let device = host
+            .output_devices()?
+            .find(|d| backend::device_id(d) == target_id);
+
         if let Some(d) = device {
             self.device = d;
             self.requested_device_id = Some(device_id.to_string());
@@ -181,6 +190,7 @@ impl AudioPlayer {
         metadata_path: &str,
         duration_ms: Option<u64>,
         cache_ahead_secs: Option<u32>,
+        max_cache_ahead_bytes: Option<u64>,
         start_at: Option<Duration>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let extension = Path::new(url)
@@ -192,10 +202,15 @@ impl AudioPlayer {
         let tracker = SongCacheTracker::new(metadata_path)?;
         tracker.set_content_length(content_len)?;
 
-        let prefetch_bytes = estimate_prefetch_bytes(content_len, duration_ms, cache_ahead_secs.unwrap_or(30));
+        let prefetch_bytes =
+            estimate_prefetch_bytes(content_len, duration_ms, cache_ahead_secs.unwrap_or(30));
+        let prefetch_bytes = max_cache_ahead_bytes
+            .map(|max_bytes| prefetch_bytes.min(max_bytes))
+            .unwrap_or(prefetch_bytes);
         let reader = StreamDownload::from_stream(
             stream,
-            PersistentFileStorageProvider::new(cache_path),
+            PersistentFileStorageProvider::new(cache_path)
+                .max_write_ahead_bytes(max_cache_ahead_bytes),
             Settings::default()
                 .prefetch_bytes(prefetch_bytes)
                 .on_progress(move |stream: &HttpStream<Client>, state, _| {
@@ -268,8 +283,12 @@ impl AudioPlayer {
                         channels,
                         meta.bits_per_sample,
                         meta.sample_format,
-                    ).map_err(|fallback_err| {
-                        format!("No compatible output config: primary={}; fallback={}", primary_msg, fallback_err)
+                    )
+                    .map_err(|fallback_err| {
+                        format!(
+                            "No compatible output config: primary={}; fallback={}",
+                            primary_msg, fallback_err
+                        )
                     })?
                 } else {
                     return Err(primary_msg.into());
@@ -282,70 +301,130 @@ impl AudioPlayer {
             cpal::SampleFormat::I16 => {
                 let rb = HeapRb::<i16>::new(sr as usize * channels as usize * 2);
                 let (producer, consumer) = rb.split();
-                let stream = backend::build_stream::<i16, _>(&self.device, &config, consumer, state_for_cb, channels as usize)?;
+                let stream = backend::build_stream::<i16, _>(
+                    &self.device,
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
                 self.start_decode_thread::<i16>(meta, producer);
                 stream
             }
             cpal::SampleFormat::U16 => {
                 let rb = HeapRb::<u16>::new(sr as usize * channels as usize * 2);
                 let (producer, consumer) = rb.split();
-                let stream = backend::build_stream::<u16, _>(&self.device, &config, consumer, state_for_cb, channels as usize)?;
+                let stream = backend::build_stream::<u16, _>(
+                    &self.device,
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
                 self.start_decode_thread::<u16>(meta, producer);
                 stream
             }
             cpal::SampleFormat::I8 => {
                 let rb = HeapRb::<i8>::new(sr as usize * channels as usize * 2);
                 let (producer, consumer) = rb.split();
-                let stream = backend::build_stream::<i8, _>(&self.device, &config, consumer, state_for_cb, channels as usize)?;
+                let stream = backend::build_stream::<i8, _>(
+                    &self.device,
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
                 self.start_decode_thread::<i8>(meta, producer);
                 stream
             }
             cpal::SampleFormat::U8 => {
                 let rb = HeapRb::<u8>::new(sr as usize * channels as usize * 2);
                 let (producer, consumer) = rb.split();
-                let stream = backend::build_stream::<u8, _>(&self.device, &config, consumer, state_for_cb, channels as usize)?;
+                let stream = backend::build_stream::<u8, _>(
+                    &self.device,
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
                 self.start_decode_thread::<u8>(meta, producer);
                 stream
             }
             cpal::SampleFormat::I24 => {
                 let rb = HeapRb::<i32>::new(sr as usize * channels as usize * 2);
                 let (producer, consumer) = rb.split();
-                let stream = backend::build_stream_converted::<i32, cpal::I24, _>(&self.device, &config, consumer, state_for_cb, channels as usize)?;
+                let stream = backend::build_stream_converted::<i32, cpal::I24, _>(
+                    &self.device,
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
                 self.start_decode_thread::<i32>(meta, producer);
                 stream
             }
             cpal::SampleFormat::U24 => {
                 let rb = HeapRb::<u32>::new(sr as usize * channels as usize * 2);
                 let (producer, consumer) = rb.split();
-                let stream = backend::build_stream_converted::<u32, cpal::U24, _>(&self.device, &config, consumer, state_for_cb, channels as usize)?;
+                let stream = backend::build_stream_converted::<u32, cpal::U24, _>(
+                    &self.device,
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
                 self.start_decode_thread::<u32>(meta, producer);
                 stream
             }
             cpal::SampleFormat::I32 => {
                 let rb = HeapRb::<i32>::new(sr as usize * channels as usize * 2);
                 let (producer, consumer) = rb.split();
-                let stream = backend::build_stream::<i32, _>(&self.device, &config, consumer, state_for_cb, channels as usize)?;
+                let stream = backend::build_stream::<i32, _>(
+                    &self.device,
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
                 self.start_decode_thread::<i32>(meta, producer);
                 stream
             }
             cpal::SampleFormat::U32 => {
                 let rb = HeapRb::<u32>::new(sr as usize * channels as usize * 2);
                 let (producer, consumer) = rb.split();
-                let stream = backend::build_stream::<u32, _>(&self.device, &config, consumer, state_for_cb, channels as usize)?;
+                let stream = backend::build_stream::<u32, _>(
+                    &self.device,
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
                 self.start_decode_thread::<u32>(meta, producer);
                 stream
             }
             cpal::SampleFormat::F32 => {
                 let rb = HeapRb::<f32>::new(sr as usize * channels as usize * 2);
                 let (producer, consumer) = rb.split();
-                let stream = backend::build_stream::<f32, _>(&self.device, &config, consumer, state_for_cb, channels as usize)?;
+                let stream = backend::build_stream::<f32, _>(
+                    &self.device,
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
                 self.start_decode_thread::<f32>(meta, producer);
                 stream
             }
             cpal::SampleFormat::F64 => {
                 let rb = HeapRb::<f64>::new(sr as usize * channels as usize * 2);
                 let (producer, consumer) = rb.split();
-                let stream = backend::build_stream::<f64, _>(&self.device, &config, consumer, state_for_cb, channels as usize)?;
+                let stream = backend::build_stream::<f64, _>(
+                    &self.device,
+                    &config,
+                    consumer,
+                    state_for_cb,
+                    channels as usize,
+                )?;
                 self.start_decode_thread::<f64>(meta, producer);
                 stream
             }
@@ -437,7 +516,9 @@ impl AudioPlayer {
 
         let target_frame =
             (target.as_secs_f64() * self.state.sample_rate.load(Ordering::Relaxed) as f64) as u64;
-        self.state.current_frame.store(target_frame, Ordering::SeqCst);
+        self.state
+            .current_frame
+            .store(target_frame, Ordering::SeqCst);
         self.state.waiting_for_seek.store(true, Ordering::SeqCst);
         self.state.has_seek_request.store(true, Ordering::SeqCst);
     }
@@ -504,7 +585,8 @@ mod tests {
             let mut seek_req = state.seek_request.lock().unwrap();
             *seek_req = Some(target);
         }
-        let target_frame = (target.as_secs_f64() * state.sample_rate.load(Ordering::Relaxed) as f64) as u64;
+        let target_frame =
+            (target.as_secs_f64() * state.sample_rate.load(Ordering::Relaxed) as f64) as u64;
         state.current_frame.store(target_frame, Ordering::SeqCst);
         state.waiting_for_seek.store(true, Ordering::SeqCst);
         state.has_seek_request.store(true, Ordering::SeqCst);

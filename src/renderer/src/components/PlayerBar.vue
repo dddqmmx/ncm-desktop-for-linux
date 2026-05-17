@@ -4,8 +4,10 @@ import { ref, computed, onMounted } from 'vue'
 // 1. 必须导入新设计的播放列表组件
 import PlaylistOverlay from './PlaylistOverlay.vue'
 import SongCover from './SongCover.vue'
+import { useFavoriteStore } from '@renderer/stores/favoriteStore'
 
 const playerStore = usePlayerStore()
+const favoriteStore = useFavoriteStore()
 
 // --- UI 显示绑定 ---
 const displayTrack = computed(() => ({
@@ -51,6 +53,11 @@ const togglePlaylist = (): void => {
   isPlaylistVisible.value = !isPlaylistVisible.value
 }
 
+const toggleCurrentFavorite = (): void => {
+  if (!playerStore.currentSong) return
+  void favoriteStore.toggleFavorite(playerStore.currentSong)
+}
+
 onMounted(() => {
   playerStore.initFromStorage()
 })
@@ -80,7 +87,13 @@ onMounted(() => {
         <!-- 2. 中间：核心控制 + 进度条 -->
         <div class="section-center">
           <div class="playback-controls">
-            <button class="icon-btn sm shuffle">
+            <button
+              class="icon-btn sm shuffle favorite-current-btn"
+              :class="{ active: favoriteStore.isFavorite(playerStore.currentSongId) }"
+              :disabled="!playerStore.currentSong"
+              :title="favoriteStore.isFavorite(playerStore.currentSongId) ? '取消喜欢' : '喜欢'"
+              @click="toggleCurrentFavorite"
+            >
               <svg
                 width="14"
                 height="14"
@@ -265,6 +278,14 @@ onMounted(() => {
   padding: 0 24px;
   display: flex;
   align-items: center;
+}
+
+.favorite-current-btn.active {
+  color: var(--theme-color-strong);
+}
+
+.favorite-current-btn.active svg {
+  fill: currentColor;
 }
 
 /* 进场和退场动画 */
@@ -472,7 +493,6 @@ onMounted(() => {
 }
 
 .icon-btn.active {
-  background: var(--sys-control-active);
   color: var(--theme-color-strong);
 }
 

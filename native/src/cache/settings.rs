@@ -43,6 +43,19 @@ impl CacheSettingsStore {
         self.persist()
     }
 
+    pub fn song_max_cache_ahead_bytes(&self) -> u64 {
+        self.settings.song_max_cache_ahead_bytes
+    }
+
+    pub fn set_song_max_cache_ahead_bytes(
+        &mut self,
+        song_max_cache_ahead_bytes: u64,
+    ) -> CacheResult<()> {
+        self.settings.song_max_cache_ahead_bytes =
+            song_max_cache_ahead_bytes.clamp(1024 * 1024, 128 * 1024 * 1024);
+        self.persist()
+    }
+
     pub fn persist(&self) -> CacheResult<()> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;

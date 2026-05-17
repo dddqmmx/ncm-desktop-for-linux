@@ -71,6 +71,8 @@ pub struct CacheSettingsData {
     pub max_size_bytes: u64,
     #[serde(default = "default_song_cache_ahead_secs")]
     pub song_cache_ahead_secs: u32,
+    #[serde(default = "default_song_max_cache_ahead_bytes")]
+    pub song_max_cache_ahead_bytes: u64,
 }
 
 impl Default for CacheSettingsData {
@@ -78,6 +80,7 @@ impl Default for CacheSettingsData {
         Self {
             max_size_bytes: 512 * 1024 * 1024,
             song_cache_ahead_secs: default_song_cache_ahead_secs(),
+            song_max_cache_ahead_bytes: default_song_max_cache_ahead_bytes(),
         }
     }
 }
@@ -105,6 +108,7 @@ pub struct CachedSongSource {
     pub cache_path: Option<String>,
     pub metadata_path: Option<String>,
     pub cache_ahead_secs: Option<u32>,
+    pub max_cache_ahead_bytes: Option<i64>,
 }
 
 impl CacheStats {
@@ -161,4 +165,8 @@ fn as_i64(value: u64) -> i64 {
 
 fn default_song_cache_ahead_secs() -> u32 {
     30
+}
+
+fn default_song_max_cache_ahead_bytes() -> u64 {
+    16 * 1024 * 1024
 }

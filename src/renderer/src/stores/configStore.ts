@@ -29,7 +29,8 @@ export const useConfigStore = defineStore('config', () => {
     accentColor: appearance.accentColor,
     libPaths: [...cache.libPaths],
     cacheLimitMb: cache.cacheLimitMb,
-    songCacheAheadSecs: cache.songCacheAheadSecs
+    songCacheAheadSecs: cache.songCacheAheadSecs,
+    songMaxCacheAheadMb: cache.songMaxCacheAheadMb
   })
 
   const applyExternalAppearanceSettings = (settings: PersistedSettings): void => {
@@ -57,7 +58,8 @@ export const useConfigStore = defineStore('config', () => {
       () => appearance.accentColor,
       () => cache.libPaths,
       () => cache.cacheLimitMb,
-      () => cache.songCacheAheadSecs
+      () => cache.songCacheAheadSecs,
+      () => cache.songMaxCacheAheadMb
     ],
     () => {
       const nextSettings = snapshotSettings()
@@ -186,10 +188,16 @@ export const useConfigStore = defineStore('config', () => {
       get: () => cache.songCacheAheadSecs,
       set: (val) => (cache.songCacheAheadSecs = val)
     }),
+    songMaxCacheAheadMb: computed({
+      get: () => cache.songMaxCacheAheadMb,
+      set: (val) => (cache.songMaxCacheAheadMb = val)
+    }),
+    songMaxCacheAheadBytes: computed(() => cache.songMaxCacheAheadMb * 1024 * 1024),
     cacheStats: computed(() => cache.cacheStats),
     isLoadingCacheStats: computed(() => cache.isLoadingCacheStats),
     isUpdatingCacheLimit: computed(() => cache.isUpdatingCacheLimit),
     isUpdatingSongCacheAheadSecs: computed(() => cache.isUpdatingSongCacheAheadSecs),
+    isUpdatingSongMaxCacheAheadBytes: computed(() => cache.isUpdatingSongMaxCacheAheadBytes),
     isClearingCache: computed(() => cache.isClearingCache),
     cacheError: computed(() => cache.cacheError),
 
@@ -202,6 +210,7 @@ export const useConfigStore = defineStore('config', () => {
     setOutputDevice: (deviceId: string) => audio.applyOutputDevice(deviceId, true),
     setCacheLimit: cache.setCacheLimit,
     setSongCacheAheadTime: cache.setSongCacheAheadTime,
+    setSongMaxCacheAheadSize: cache.setSongMaxCacheAheadSize,
     clearCache: cache.clearCache,
     addLibraryPath: cache.addLibraryPath,
     removeLibraryPath: cache.removeLibraryPath

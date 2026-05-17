@@ -22,7 +22,9 @@ import {
   artist_album,
   artist_mv,
   album,
-  captcha_sent
+  captcha_sent,
+  like,
+  likelist
 } from 'NeteaseCloudMusicApi'
 import { CacheService } from './cacheService'
 
@@ -153,6 +155,8 @@ export const MusicService = {
   ),
   recommend_resource: createMethod(recommend_resource),
   recommend_songs: createMethod(recommend_songs),
+  like: createMethod(like),
+  likelist: createMethod(likelist),
   artist_detail: createCachedMethod(
     'entity',
     (params: { id: number | string }) =>

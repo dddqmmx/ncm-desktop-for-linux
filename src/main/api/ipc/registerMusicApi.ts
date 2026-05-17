@@ -21,6 +21,8 @@ export function registerMusicApi(): void {
     'music:lyric': MusicService.lyric,
     'music:recommendResource': MusicService.recommend_resource,
     'music:recommendSongs': MusicService.recommend_songs,
+    'music:like': MusicService.like,
+    'music:likelist': MusicService.likelist,
     'music:songUrl': MusicService.song_url,
     'music:artistDetail': MusicService.artist_detail,
     'music:artistTopSong': MusicService.artist_top_song,

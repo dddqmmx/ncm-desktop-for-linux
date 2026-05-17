@@ -20,6 +20,15 @@ export function registerCacheApi(): void {
     return CacheService.setSongCacheAheadSecs(songCacheAheadSecs)
   })
 
+  ipcMain.handle('cache:getSongMaxCacheAheadBytes', () => {
+    return CacheService.getSongMaxCacheAheadBytes()
+  })
+
+  ipcMain.handle('cache:setSongMaxCacheAheadBytes', (_event, songMaxCacheAheadBytes: number) => {
+    void _event
+    return CacheService.setSongMaxCacheAheadBytes(songMaxCacheAheadBytes)
+  })
+
   ipcMain.handle('cache:clear', () => {
     return CacheService.clear()
   })

@@ -47,6 +47,7 @@ struct CachedUrlPlaybackRequest {
     metadata_path: String,
     duration_ms: Option<u64>,
     cache_ahead_secs: Option<u32>,
+    max_cache_ahead_bytes: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,6 +190,7 @@ impl PlayerBackend for NativePlayer {
                     &request.metadata_path,
                     request.duration_ms,
                     request.cache_ahead_secs,
+                    request.max_cache_ahead_bytes,
                     start_at,
                 )
                 .await
@@ -410,7 +412,8 @@ where
         let current_device = devices.iter().find(|device| device.is_current);
 
         match (device_name, current_device) {
-            (Some(target_device_id), Some(current_device)) => Ok(current_device.id == target_device_id
+            (Some(target_device_id), Some(current_device)) => Ok(current_device.id
+                == target_device_id
                 || current_device.name == target_device_id),
             (None, Some(current_device)) => Ok(current_device.is_default),
             _ => Ok(false),
@@ -554,6 +557,7 @@ impl PlayerService {
         metadata_path: String,
         duration_ms: Option<i64>,
         cache_ahead_secs: Option<u32>,
+        max_cache_ahead_bytes: Option<i64>,
         start_secs: Option<f64>,
     ) -> Result<()> {
         self.sender
@@ -564,6 +568,7 @@ impl PlayerService {
                     metadata_path,
                     duration_ms: duration_ms.map(|value| value.max(0) as u64),
                     cache_ahead_secs,
+                    max_cache_ahead_bytes: max_cache_ahead_bytes.map(|value| value.max(0) as u64),
                 },
                 start_secs,
             ))
@@ -744,6 +749,25 @@ impl CacheService {
     pub async fn set_song_cache_ahead_secs(&self, song_cache_ahead_secs: u32) -> Result<u32> {
         self.service
             .set_song_cache_ahead_secs(song_cache_ahead_secs)
+            .map_err(|err| Error::from_reason(err.to_string()))
+    }
+
+    #[napi]
+    pub async fn get_song_max_cache_ahead_bytes(&self) -> Result<i64> {
+        self.service
+            .get_song_max_cache_ahead_bytes()
+            .map(|value| value.min(i64::MAX as u64) as i64)
+            .map_err(|err| Error::from_reason(err.to_string()))
+    }
+
+    #[napi]
+    pub async fn set_song_max_cache_ahead_bytes(
+        &self,
+        song_max_cache_ahead_bytes: i64,
+    ) -> Result<i64> {
+        self.service
+            .set_song_max_cache_ahead_bytes(song_max_cache_ahead_bytes.max(0) as u64)
+            .map(|value| value.min(i64::MAX as u64) as i64)
             .map_err(|err| Error::from_reason(err.to_string()))
     }
 

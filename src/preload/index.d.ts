@@ -19,6 +19,8 @@ interface CustomApi {
   lyric: (p: unknown) => Promise<unknown>
   recommend_resource: (p: unknown) => Promise<unknown>
   recommend_songs: (p: unknown) => Promise<unknown>
+  like: (p: unknown) => Promise<unknown>
+  likelist: (p: unknown) => Promise<unknown>
   artist_detail: (p: unknown) => Promise<unknown>
   artist_top_song: (p: unknown) => Promise<unknown>
   artist_album: (p: unknown) => Promise<unknown>
@@ -32,6 +34,7 @@ interface CustomApi {
     metadataPath: string,
     durationMs?: number,
     cacheAheadSecs?: number,
+    maxCacheAheadBytes?: number,
     startSecs?: number
   ) => Promise<unknown>
   play_file: (filePath: string, startSecs?: number) => Promise<unknown>
@@ -48,6 +51,8 @@ interface CustomApi {
   cache_set_max_size: (maxSizeBytes: number) => Promise<CacheStats>
   cache_get_song_cache_ahead_secs: () => Promise<number>
   cache_set_song_cache_ahead_secs: (songCacheAheadSecs: number) => Promise<number>
+  cache_get_song_max_cache_ahead_bytes: () => Promise<number>
+  cache_set_song_max_cache_ahead_bytes: (songMaxCacheAheadBytes: number) => Promise<number>
   cache_clear: () => Promise<CacheStats>
   resolve_cached_media_url: (url: string) => Promise<string>
   prepare_cached_song_source: (payload: {
@@ -93,6 +98,7 @@ interface CachedSongSource {
   cachePath?: string
   metadataPath?: string
   cacheAheadSecs?: number
+  maxCacheAheadBytes?: number
 }
 
 interface SongCacheProgress {

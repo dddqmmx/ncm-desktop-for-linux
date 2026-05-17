@@ -29,6 +29,7 @@ export interface CachedSongSource {
   cachePath?: string
   metadataPath?: string
   cacheAheadSecs?: number
+  maxCacheAheadBytes?: number
 }
 
 export interface SongCacheProgress {
@@ -104,13 +105,19 @@ function normalizeCachedSongSource(
     Number.isFinite(raw.cacheAheadSecs ?? raw.cache_ahead_secs)
       ? Number(raw.cacheAheadSecs ?? raw.cache_ahead_secs)
       : undefined
+  const maxCacheAheadBytes =
+    typeof (raw.maxCacheAheadBytes ?? raw.max_cache_ahead_bytes) === 'number' &&
+    Number.isFinite(raw.maxCacheAheadBytes ?? raw.max_cache_ahead_bytes)
+      ? Number(raw.maxCacheAheadBytes ?? raw.max_cache_ahead_bytes)
+      : undefined
 
   return {
     type,
     value,
     ...(cachePath ? { cachePath } : {}),
     ...(metadataPath ? { metadataPath } : {}),
-    ...(cacheAheadSecs !== undefined ? { cacheAheadSecs } : {})
+    ...(cacheAheadSecs !== undefined ? { cacheAheadSecs } : {}),
+    ...(maxCacheAheadBytes !== undefined ? { maxCacheAheadBytes } : {})
   }
 }
 
@@ -229,6 +236,24 @@ export const CacheService = {
     return Math.max(
       5,
       Number(await getNativeCache().setSongCacheAheadSecs(Math.max(5, songCacheAheadSecs))) || 30
+    )
+  },
+
+  async getSongMaxCacheAheadBytes(): Promise<number> {
+    return Math.max(
+      1024 * 1024,
+      Number(await getNativeCache().getSongMaxCacheAheadBytes()) || 16 * 1024 * 1024
+    )
+  },
+
+  async setSongMaxCacheAheadBytes(songMaxCacheAheadBytes: number): Promise<number> {
+    return Math.max(
+      1024 * 1024,
+      Number(
+        await getNativeCache().setSongMaxCacheAheadBytes(
+          Math.max(1024 * 1024, songMaxCacheAheadBytes)
+        )
+      ) || 16 * 1024 * 1024
     )
   },
 

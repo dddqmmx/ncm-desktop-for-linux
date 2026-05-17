@@ -5,6 +5,8 @@ import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { PlaylistCatlist, PlaylistCategory } from '@renderer/types/playlistCatlist'
 import type { SearchResult, Song as SearchSong } from '@renderer/types/search'
 import { resolveCachedMediaUrl } from '@renderer/utils/cache'
+import { useFavoriteStore } from '@renderer/stores/favoriteStore'
+import { CurrentSong, createCurrentSongArtists } from '@renderer/stores/playerStore'
 
 const searchQuery = ref('')
 const searchResults = ref<SearchResult | null>(null)
@@ -196,8 +198,21 @@ const clearSearch = (): void => {
 }
 
 const playerStore = usePlayerStore()
+const favoriteStore = useFavoriteStore()
 const playSong = (song: SearchSong): void => {
   void playerStore.playMusic(song.id)
+}
+
+const mapSearchSongToCurrentSong = (song: SearchSong): CurrentSong => ({
+  id: song.id,
+  name: song.name,
+  artists: createCurrentSongArtists(song.artists),
+  cover: coverMap.value[song.id] || '',
+  duration: song.duration
+})
+
+const toggleFavorite = (song: SearchSong): void => {
+  void favoriteStore.toggleFavorite(mapSearchSongToCurrentSong(song))
 }
 </script>
 
@@ -289,6 +304,18 @@ const playSong = (song: SearchSong): void => {
               </div>
             </div>
             <div class="song-right">
+              <button
+                class="favorite-btn"
+                :class="{ active: favoriteStore.isFavorite(song.id) }"
+                :title="favoriteStore.isFavorite(song.id) ? '取消喜欢' : '喜欢'"
+                @click.stop="toggleFavorite(song)"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16">
+                  <path
+                    d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7 7-7Z"
+                  />
+                </svg>
+              </button>
               <span class="song-duration">
                 {{ Math.floor(song.duration / 60000) }}:{{
                   String(Math.floor((song.duration % 60000) / 1000)).padStart(2, '0')
@@ -542,6 +569,49 @@ const playSong = (song: SearchSong): void => {
 .song-duration {
   font-size: 13px;
   color: var(--sys-text-tertiary);
+}
+.song-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.favorite-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sys-text-disabled);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    color 0.2s,
+    opacity 0.2s,
+    background 0.2s;
+}
+.favorite-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.favorite-btn:hover {
+  background: var(--sys-control-hover);
+  color: var(--theme-color-strong);
+}
+.favorite-btn.active {
+  color: var(--theme-color-strong);
+  opacity: 1;
+}
+.favorite-btn.active svg {
+  fill: currentColor;
+}
+.song-row:hover .favorite-btn {
+  opacity: 1;
 }
 .more-btn {
   border: none;

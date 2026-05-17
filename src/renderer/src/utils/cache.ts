@@ -69,6 +69,10 @@ export async function prepareCachedSongSource(
           : {}),
         ...(typeof payload.cacheAheadSecs === 'number' && Number.isFinite(payload.cacheAheadSecs)
           ? { cacheAheadSecs: payload.cacheAheadSecs }
+          : {}),
+        ...(typeof payload.maxCacheAheadBytes === 'number' &&
+        Number.isFinite(payload.maxCacheAheadBytes)
+          ? { maxCacheAheadBytes: payload.maxCacheAheadBytes }
           : {})
       }
     }

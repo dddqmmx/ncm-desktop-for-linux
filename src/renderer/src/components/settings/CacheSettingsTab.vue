@@ -10,16 +10,19 @@ const {
   isLoadingCacheStats,
   isUpdatingCacheLimit,
   isUpdatingSongCacheAheadSecs,
+  isUpdatingSongMaxCacheAheadBytes,
   isClearingCache,
   cacheError,
   cacheLimitMb,
-  songCacheAheadSecs
+  songCacheAheadSecs,
+  songMaxCacheAheadMb
 } = storeToRefs(configStore)
 
 const message = ref('')
 const messageType = ref<'success' | 'error'>('success')
 const cacheLimitDraft = ref(cacheLimitMb.value)
 const songCacheAheadDraft = ref(songCacheAheadSecs.value)
+const songMaxCacheAheadDraft = ref(songMaxCacheAheadMb.value)
 
 watch(cacheLimitMb, (value) => {
   cacheLimitDraft.value = value
@@ -27,6 +30,10 @@ watch(cacheLimitMb, (value) => {
 
 watch(songCacheAheadSecs, (value) => {
   songCacheAheadDraft.value = value
+})
+
+watch(songMaxCacheAheadMb, (value) => {
+  songMaxCacheAheadDraft.value = value
 })
 
 // === 计算滑块进度的百分比用于 div 宽度渲染 ===
@@ -38,6 +45,11 @@ const cacheLimitPercent = computed(() => {
 const songCacheAheadPercent = computed(() => {
   const val = Number(songCacheAheadDraft.value) || 10
   return Math.max(0, Math.min(100, ((val - 10) / (300 - 10)) * 100))
+})
+
+const songMaxCacheAheadPercent = computed(() => {
+  const val = Number(songMaxCacheAheadDraft.value) || 1
+  return Math.max(0, Math.min(100, ((val - 1) / (128 - 1)) * 100))
 })
 // =============================================
 
@@ -98,6 +110,12 @@ const applySongCacheAhead = async (): Promise<void> => {
   const applied = await configStore.setSongCacheAheadTime(songCacheAheadDraft.value)
   messageType.value = applied ? 'success' : 'error'
   message.value = applied ? '歌曲预缓存时长已更新。' : '歌曲预缓存时长更新失败。'
+}
+
+const applySongMaxCacheAhead = async (): Promise<void> => {
+  const applied = await configStore.setSongMaxCacheAheadSize(songMaxCacheAheadDraft.value)
+  messageType.value = applied ? 'success' : 'error'
+  message.value = applied ? '歌曲最大预下载大小已更新。' : '歌曲最大预下载大小更新失败。'
 }
 
 const clearCache = async (): Promise<void> => {
@@ -210,6 +228,46 @@ const clearCache = async (): Promise<void> => {
               @click="applySongCacheAhead"
             >
               {{ isUpdatingSongCacheAheadSecs ? '应用中...' : '应用' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="cache-limit-row">
+          <label class="cache-limit-label" for="song-max-cache-ahead-range">最大预下载大小</label>
+          <div class="cache-limit-controls">
+            <div class="custom-slider-wrapper">
+              <div class="custom-slider-track">
+                <div
+                  class="custom-slider-fill"
+                  :style="{ width: songMaxCacheAheadPercent + '%' }"
+                ></div>
+              </div>
+              <input
+                id="song-max-cache-ahead-range"
+                v-model.number="songMaxCacheAheadDraft"
+                class="custom-slider-input"
+                type="range"
+                min="1"
+                max="128"
+                step="1"
+              />
+            </div>
+
+            <input
+              v-model.number="songMaxCacheAheadDraft"
+              class="cache-number-input"
+              type="number"
+              min="1"
+              max="128"
+              step="1"
+            />
+            <span class="cache-unit">MB</span>
+            <button
+              class="settings-action-btn"
+              :disabled="isUpdatingSongMaxCacheAheadBytes || isLoadingCacheStats"
+              @click="applySongMaxCacheAhead"
+            >
+              {{ isUpdatingSongMaxCacheAheadBytes ? '应用中...' : '应用' }}
             </button>
           </div>
         </div>
