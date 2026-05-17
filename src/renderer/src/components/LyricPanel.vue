@@ -129,18 +129,28 @@ const currentLyricIndex = computed(() => {
 })
 
 // --- 滚动逻辑 ---
-watch(currentLyricIndex, (newIndex) => {
-  if (newIndex === -1) return
-  if (isUserScrolling.value) return
+const scrollActiveLyricToCenter = (behavior: ScrollBehavior = 'smooth'): void => {
+  const activeIndex = currentLyricIndex.value
+  if (activeIndex === -1) return
+
   nextTick(() => {
-    const activeEl = lineRefs.value[newIndex]
+    const activeEl = lineRefs.value[activeIndex]
     if (activeEl) {
       activeEl.scrollIntoView({
-        behavior: 'smooth',
+        behavior,
         block: 'center'
       })
     }
   })
+}
+
+watch(currentLyricIndex, () => {
+  if (isUserScrolling.value) return
+  scrollActiveLyricToCenter()
+})
+
+watch([showPronunciation, showTranslation], () => {
+  scrollActiveLyricToCenter('auto')
 })
 </script>
 

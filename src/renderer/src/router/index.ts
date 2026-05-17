@@ -5,6 +5,7 @@ import SearchView from '@renderer/views/SearchView.vue'
 import PlaylistView from '@renderer/views/PlaylistView.vue'
 import ArtistView from '@renderer/views/ArtistView.vue'
 import AlbumView from '@renderer/views/AlbumView.vue'
+import FavoriteView from '@renderer/views/FavoriteView.vue'
 import SettingsModal from '@renderer/components/settings/SettingsModal.vue'
 
 const router = createRouter({
@@ -37,6 +38,11 @@ const router = createRouter({
           path: 'search',
           name: 'search',
           component: SearchView
+        },
+        {
+          path: 'favorites',
+          name: 'favorites',
+          component: FavoriteView
         },
         {
           path: 'new',
