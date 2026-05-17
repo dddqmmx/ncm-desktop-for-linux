@@ -62,6 +62,7 @@ const api = {
   cache_clear: invoke('cache:clear'),
   resolve_cached_media_url: invoke('cache:resolveCachedMediaUrl'),
   prepare_cached_song_source: invoke('cache:prepareSongSource'),
+  get_cached_song_progress: invoke('cache:getSongCacheProgress'),
 
   //ui相关工具方法
   open_settings_window: invoke('ui:openSettingsWindow'),

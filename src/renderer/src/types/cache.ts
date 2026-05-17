@@ -18,3 +18,10 @@ export interface CachedSongSource {
   metadataPath?: string
   cacheAheadSecs?: number
 }
+
+export interface SongCacheProgress {
+  downloadedBytes: number
+  totalBytes: number
+  percent: number
+  isComplete: boolean
+}

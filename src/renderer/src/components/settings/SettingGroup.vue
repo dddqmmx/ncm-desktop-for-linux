@@ -20,21 +20,21 @@ defineProps<{ title: string; tip?: string; noCard?: boolean }>()
   display: block;
   font-size: 12px;
   font-weight: 700;
-  color: rgba(0, 0, 0, 0.3);
+  color: var(--sys-text-tertiary);
   margin-bottom: 12px;
   margin-left: 4px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 .control-card {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--sys-surface);
   border-radius: 20px;
   padding: 8px 20px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--sys-border);
 }
 .tip-text {
   font-size: 11px;
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--sys-text-tertiary);
   margin-top: 10px;
   padding-left: 4px;
 }

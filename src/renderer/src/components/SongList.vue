@@ -128,8 +128,8 @@ const handlePlaySong = (song: Song): void => {
 .list-header-content {
   display: flex;
   padding: 14px 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  color: #aaa;
+  border-bottom: 1px solid var(--sys-border);
+  color: var(--sys-text-tertiary);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -146,21 +146,21 @@ const handlePlaySong = (song: Song): void => {
 }
 
 .track-row:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--sys-control);
 }
 
 .track-row.is-active {
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--sys-control-active);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .track-row.is-active .song-name {
-  color: #111;
+  color: var(--theme-color-strong);
 }
 
 .col-index {
   width: 40px;
-  color: #ccc;
+  color: var(--sys-text-disabled);
 }
 .col-title {
   flex: 3;
@@ -172,7 +172,7 @@ const handlePlaySong = (song: Song): void => {
 .col-album {
   flex: 2;
   font-size: 13px;
-  color: #888;
+  color: var(--sys-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -182,7 +182,7 @@ const handlePlaySong = (song: Song): void => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  color: #aaa;
+  color: var(--sys-text-tertiary);
   font-size: 12px;
 }
 
@@ -190,7 +190,7 @@ const handlePlaySong = (song: Song): void => {
   display: none;
   width: 14px;
   height: 14px;
-  color: #111;
+  color: var(--theme-color-strong);
 }
 .track-row:hover .index-num {
   display: none;
@@ -204,7 +204,7 @@ const handlePlaySong = (song: Song): void => {
   height: 40px;
   border-radius: 6px;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--sys-control);
   flex-shrink: 0;
 }
 
@@ -216,19 +216,19 @@ const handlePlaySong = (song: Song): void => {
 .song-name {
   font-size: 14px;
   font-weight: 500;
-  color: #222;
+  color: var(--sys-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .song-artist {
   font-size: 12px;
-  color: #999;
+  color: var(--sys-text-tertiary);
 }
 .album-name {
   flex: 2;
   font-size: 13px;
-  color: #888;
+  color: var(--sys-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -237,7 +237,7 @@ const handlePlaySong = (song: Song): void => {
   display: none;
   background: none;
   border: none;
-  color: #ccc;
+  color: var(--sys-text-disabled);
   cursor: pointer;
 }
 .track-row:hover .row-more {
@@ -247,7 +247,7 @@ const handlePlaySong = (song: Song): void => {
 .no-results {
   padding: 40px;
   text-align: center;
-  color: #999;
+  color: var(--sys-text-tertiary);
   font-size: 14px;
 }
 

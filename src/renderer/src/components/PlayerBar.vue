@@ -103,8 +103,14 @@ onMounted(() => {
               </svg>
             </button>
 
-            <button class="play-main-btn" @click="playerStore.togglePlay()">
+            <button
+              class="play-main-btn"
+              :class="{ loading: playerStore.isLoading }"
+              :disabled="playerStore.isLoading"
+              @click="playerStore.togglePlay()"
+            >
               <div class="inner-glow" :class="{ active: playerStore.isPlaying }"></div>
+              <div v-if="playerStore.isLoading" class="loading-spinner"></div>
               <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
                 <path v-if="playerStore.isPlaying" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
                 <path v-else d="M8 5v14l11-7z" />
@@ -156,6 +162,12 @@ onMounted(() => {
 
           <div class="progress-area">
             <div class="progress-track">
+              <div
+                class="buffered-bar"
+                :style="{
+                  width: Math.max(playerStore.bufferedPercent, playerStore.progressPercent) + '%'
+                }"
+              ></div>
               <div class="progress-bar" :style="{ width: playerStore.progressPercent + '%' }"></div>
               <input
                 type="range"
@@ -244,12 +256,12 @@ onMounted(() => {
   width: calc(100% - 40px);
   max-width: 820px;
   height: 96px;
-  background: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(50px) saturate(200%);
-  -webkit-backdrop-filter: blur(50px) saturate(200%);
+  background: var(--sys-surface);
+  backdrop-filter: var(--sys-glass-blur);
+  -webkit-backdrop-filter: var(--sys-glass-blur);
   border-radius: 36px;
-  border: 0.5px solid rgba(255, 255, 255, 0.4);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  border: 0.5px solid var(--sys-border);
+  box-shadow: var(--sys-shadow-elevated);
   padding: 0 24px;
   display: flex;
   align-items: center;
@@ -316,7 +328,7 @@ onMounted(() => {
 .track-title {
   font-size: 14px;
   font-weight: 700;
-  color: #111;
+  color: var(--sys-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -324,7 +336,7 @@ onMounted(() => {
 
 .track-artist {
   font-size: 11px;
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--sys-text-tertiary);
 }
 
 .section-center {
@@ -346,7 +358,8 @@ onMounted(() => {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: white;
+  background: var(--theme-color);
+  color: #fff;
   border: none;
   display: flex;
   align-items: center;
@@ -355,6 +368,24 @@ onMounted(() => {
   position: relative;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
   -webkit-app-region: no-drag;
+}
+
+.play-main-btn:disabled {
+  cursor: wait;
+}
+
+.play-main-btn.loading svg {
+  opacity: 0;
+}
+
+.loading-spinner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.34);
+  border-top-color: var(--sys-on-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
 .inner-glow {
@@ -379,15 +410,26 @@ onMounted(() => {
 .progress-track {
   width: 100%;
   height: 4px;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--sys-control);
   border-radius: 2px;
   position: relative;
 }
 
 .progress-bar {
+  position: relative;
   height: 100%;
-  background: #111;
+  background: var(--theme-color);
   border-radius: 2px;
+  z-index: 1;
+}
+
+.buffered-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  background: var(--theme-color-muted);
+  border-radius: 2px;
+  transition: width 0.25s ease;
 }
 
 .hidden-range {
@@ -398,6 +440,13 @@ onMounted(() => {
   height: 24px;
   opacity: 0;
   cursor: pointer;
+  z-index: 3;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .section-right {
@@ -409,7 +458,7 @@ onMounted(() => {
 .icon-btn {
   background: none;
   border: none;
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--sys-text-secondary);
   cursor: pointer;
   padding: 8px;
   border-radius: 50%;
@@ -418,13 +467,13 @@ onMounted(() => {
 }
 
 .icon-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: #000;
+  background: var(--sys-control-hover);
+  color: var(--sys-text);
 }
 
 .icon-btn.active {
-  background: rgba(0, 0, 0, 0.1);
-  color: #000;
+  background: var(--sys-control-active);
+  color: var(--theme-color-strong);
 }
 
 .icon-btn.sm {

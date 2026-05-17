@@ -432,7 +432,7 @@ const handleLogin = async (): Promise<void> => {
             <h2>扫码登录</h2>
             <div class="qr-box">
               <img v-if="qrImg" :src="qrImg" alt="二维码" />
-              <div v-else class="spinner" style="border-top-color: #000"></div>
+              <div v-else class="spinner qr-spinner"></div>
             </div>
             <p class="qr-status-text">{{ qrStatus }}</p>
             <p class="qr-desc">请打开 <b>移动端 App</b> 扫码即可快速登录。</p>
@@ -450,14 +450,14 @@ const handleLogin = async (): Promise<void> => {
 
 /* 基础变量 */
 .login-overlay {
-  --bg-overlay: rgba(220, 220, 225, 0.4);
-  --card-bg: rgba(255, 255, 255, 0.9);
-  --text-main: #000000;
-  --text-sub: #666666;
-  --accent: #000000;
-  --border: #e0e0e0;
-  --input-bg: #f4f4f5;
-  --input-focus-bg: #ffffff;
+  --bg-overlay: rgba(0, 0, 0, 0.28);
+  --card-bg: var(--sys-surface-strong);
+  --text-main: var(--sys-text);
+  --text-sub: var(--sys-text-secondary);
+  --accent: var(--theme-color);
+  --border: var(--sys-border);
+  --input-bg: var(--sys-control);
+  --input-focus-bg: var(--sys-surface-strong);
 
   position: fixed;
   inset: 0;
@@ -492,7 +492,7 @@ const handleLogin = async (): Promise<void> => {
   transform-style: preserve-3d;
   transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 24px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--sys-shadow-elevated);
 }
 
 .login-card.is-flipped {
@@ -506,7 +506,7 @@ const handleLogin = async (): Promise<void> => {
   background: var(--card-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--border);
   border-radius: 24px;
   padding: 32px;
   display: flex;
@@ -531,7 +531,7 @@ const handleLogin = async (): Promise<void> => {
   border-radius: 12px;
   border: none;
   background: transparent;
-  color: #888;
+  color: var(--sys-text-tertiary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -540,8 +540,8 @@ const handleLogin = async (): Promise<void> => {
 }
 
 .icon-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: #000;
+  background: var(--sys-control-hover);
+  color: var(--sys-text);
   transform: scale(1.05);
 }
 
@@ -554,7 +554,7 @@ h1 {
   font-size: 24px;
   font-weight: 700;
   margin: 0 0 6px;
-  letter-spacing: -0.5px;
+  letter-spacing: 0;
 }
 .subtitle {
   font-size: 14px;
@@ -566,7 +566,7 @@ h1 {
 .segmented-control {
   position: relative;
   display: flex;
-  background: #f0f0f2;
+  background: var(--sys-control);
   border-radius: 14px;
   padding: 4px;
 }
@@ -576,7 +576,7 @@ h1 {
   left: 4px;
   bottom: 4px;
   width: calc(50% - 4px);
-  background: #fff;
+  background: var(--sys-control-selected);
   border-radius: 10px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -590,13 +590,13 @@ h1 {
   background: transparent;
   font-size: 14px;
   font-weight: 600;
-  color: #888;
+  color: var(--sys-text-tertiary);
   padding: 10px;
   cursor: pointer;
   transition: color 0.3s;
 }
 .segmented-control button.active {
-  color: #000;
+  color: var(--sys-text);
 }
 
 /* === 输入框核心系统 === */
@@ -620,7 +620,7 @@ h1 {
 .input-field:focus-within,
 .phone-input-container:focus-within {
   background: var(--input-focus-bg);
-  border-color: #000;
+  border-color: var(--theme-color);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
@@ -634,7 +634,7 @@ h1 {
   padding: 22px 16px 6px; /* 顶部留白给悬浮Label */
   font-size: 15px;
   font-weight: 600;
-  color: #000;
+  color: var(--sys-text);
   outline: none;
 }
 
@@ -653,7 +653,7 @@ input.has-btn {
   left: 16px;
   top: 17px;
   font-size: 14px;
-  color: #888;
+  color: var(--sys-text-tertiary);
   font-weight: 500;
   pointer-events: none;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -665,7 +665,7 @@ input.has-btn {
 .main-input input:not(:placeholder-shown) ~ label {
   top: 8px;
   font-size: 11px;
-  color: #000;
+  color: var(--theme-color-strong);
   font-weight: 700;
 }
 
@@ -677,7 +677,7 @@ input.has-btn {
   display: flex;
   align-items: center;
   padding-left: 16px;
-  color: #888;
+  color: var(--sys-text-tertiary);
   font-weight: 600;
   font-size: 15px;
 }
@@ -690,7 +690,7 @@ input.has-btn {
   border: none;
   padding: 0;
   font-size: 15px;
-  color: #000;
+  color: var(--sys-text);
   font-weight: 600;
   outline: none;
   text-align: left;
@@ -700,7 +700,7 @@ input.has-btn {
   display: block;
   width: 1px;
   height: 20px;
-  background: #ddd;
+  background: var(--sys-border-strong);
   margin-left: 10px;
 }
 .main-input {
@@ -714,7 +714,7 @@ input.has-btn {
   right: 16px;
   top: 50%;
   transform: translateY(-50%);
-  color: #aaa;
+  color: var(--sys-text-disabled);
   pointer-events: none;
   transition: color 0.2s;
   display: flex;
@@ -722,7 +722,7 @@ input.has-btn {
 }
 .input-field:focus-within .icon-suffix,
 .phone-input-container:focus-within .icon-suffix {
-  color: #000;
+  color: var(--theme-color-strong);
 }
 
 /* 获取验证码按钮 */
@@ -731,7 +731,7 @@ input.has-btn {
   right: 8px;
   top: 8px;
   bottom: 8px;
-  background: #000;
+  background: var(--theme-color);
   color: #fff;
   border: none;
   border-radius: 10px;
@@ -742,12 +742,12 @@ input.has-btn {
   transition: all 0.2s;
 }
 .verify-btn:disabled {
-  background: #e0e0e0;
-  color: #999;
+  background: var(--sys-control-hover);
+  color: var(--sys-text-disabled);
   cursor: not-allowed;
 }
 .verify-btn:hover:not(:disabled) {
-  background: #333;
+  background: var(--theme-color-strong);
 }
 
 /* 错误消息容器（占位防跳动） */
@@ -757,10 +757,10 @@ input.has-btn {
   margin-bottom: 6px;
 }
 .error-msg {
-  color: #d32f2f;
+  color: var(--sys-danger);
   font-size: 13px;
   font-weight: 600;
-  background: rgba(211, 47, 47, 0.08);
+  background: var(--sys-danger-soft);
   padding: 10px;
   border-radius: 10px;
   text-align: center;
@@ -775,13 +775,13 @@ input.has-btn {
   font-size: 13px;
 }
 .forgot-link {
-  color: #555;
+  color: var(--sys-text-secondary);
   text-decoration: none;
   font-weight: 600;
   transition: color 0.2s;
 }
 .forgot-link:hover {
-  color: #000;
+  color: var(--sys-text);
 }
 
 /* 自定义 Checkbox */
@@ -790,7 +790,7 @@ input.has-btn {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  color: #555;
+  color: var(--sys-text-secondary);
   font-weight: 500;
 }
 .custom-checkbox input {
@@ -799,15 +799,15 @@ input.has-btn {
 .checkmark {
   width: 18px;
   height: 18px;
-  border: 2px solid #ccc;
+  border: 2px solid var(--sys-border-strong);
   border-radius: 6px;
   position: relative;
   transition: all 0.2s;
-  background: #fff;
+  background: var(--sys-surface-strong);
 }
 .custom-checkbox input:checked ~ .checkmark {
-  background: #000;
-  border-color: #000;
+  background: var(--theme-color);
+  border-color: var(--theme-color);
 }
 .checkmark::after {
   content: '';
@@ -816,7 +816,7 @@ input.has-btn {
   top: 2px;
   width: 4px;
   height: 9px;
-  border: solid white;
+  border: solid var(--sys-on-accent);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
   opacity: 0;
@@ -829,7 +829,7 @@ input.has-btn {
 .submit-btn {
   width: 100%;
   height: 54px;
-  background: #000;
+  background: var(--theme-color);
   color: #fff;
   border: none;
   border-radius: 14px;
@@ -845,7 +845,7 @@ input.has-btn {
   justify-content: center;
 }
 .submit-btn:hover:not(:disabled) {
-  background: #222;
+  background: var(--theme-color-strong);
   transform: translateY(-1px);
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
 }
@@ -853,7 +853,8 @@ input.has-btn {
   transform: translateY(1px);
 }
 .submit-btn:disabled {
-  background: #ccc;
+  background: var(--sys-control-hover);
+  color: var(--sys-text-disabled);
   cursor: not-allowed;
 }
 
@@ -873,15 +874,15 @@ input.has-btn {
 .qr-box {
   width: 220px;
   height: 220px;
-  background: #fff;
+  background: var(--sys-bg-elevated);
   border-radius: 20px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--sys-shadow-soft);
   margin-bottom: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border: 1px solid #eee;
+  border: 1px solid var(--sys-border);
 }
 .qr-box img {
   width: 190px;
@@ -890,12 +891,12 @@ input.has-btn {
 }
 .qr-status-text {
   font-weight: 600;
-  color: #000;
+  color: var(--sys-text);
   margin-bottom: 8px;
   font-size: 15px;
 }
 .qr-desc {
-  color: #666;
+  color: var(--sys-text-secondary);
   font-size: 13px;
 }
 
@@ -927,9 +928,14 @@ input.has-btn {
   width: 22px;
   height: 22px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #fff;
+  border-top-color: var(--sys-on-accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+.qr-spinner {
+  border-color: var(--sys-control-hover);
+  border-top-color: var(--theme-color);
 }
 @keyframes spin {
   to {

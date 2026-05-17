@@ -4,8 +4,9 @@ import { useAudioConfigStore } from './config/audio'
 import { useAppearanceConfigStore } from './config/appearance'
 import { useCacheConfigStore } from './config/cache'
 import { useGeneralConfigStore } from './config/general'
-import { persistSettings } from './config/utils'
-import { PersistedSettings, SoundQualityType } from './config/types'
+import { loadSettings, persistSettings } from './config/utils'
+import { PersistedSettings, SoundQualityType, STORAGE_KEY } from './config/types'
+import { applySystemTheme } from '@renderer/utils/theme'
 
 export * from './config/types'
 
@@ -31,6 +32,17 @@ export const useConfigStore = defineStore('config', () => {
     songCacheAheadSecs: cache.songCacheAheadSecs
   })
 
+  const applyExternalAppearanceSettings = (settings: PersistedSettings): void => {
+    appearance.theme = settings.theme
+    appearance.acrylic = settings.acrylic
+    appearance.accentColor = settings.accentColor
+  }
+
+  const settingsChannel =
+    typeof window !== 'undefined' && 'BroadcastChannel' in window
+      ? new BroadcastChannel('app-settings')
+      : null
+
   watch(
     [
       () => audio.soundQuality,
@@ -48,10 +60,48 @@ export const useConfigStore = defineStore('config', () => {
       () => cache.songCacheAheadSecs
     ],
     () => {
-      persistSettings(snapshotSettings())
+      const nextSettings = snapshotSettings()
+      persistSettings(nextSettings)
+      settingsChannel?.postMessage({
+        type: 'settings-updated',
+        settings: nextSettings
+      })
     },
     { deep: true }
   )
+
+  watch(
+    [() => appearance.theme, () => appearance.accentColor],
+    ([theme, accentColor]) => {
+      applySystemTheme(theme, accentColor)
+    },
+    { immediate: true }
+  )
+
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    const systemColorScheme = window.matchMedia('(prefers-color-scheme: dark)')
+    systemColorScheme.addEventListener('change', () => {
+      if (appearance.theme === 'adaptive') {
+        applySystemTheme(appearance.theme, appearance.accentColor)
+      }
+    })
+  }
+
+  settingsChannel?.addEventListener('message', (event) => {
+    if (event.data?.type !== 'settings-updated') {
+      return
+    }
+
+    applyExternalAppearanceSettings(loadSettings())
+  })
+
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('storage', (event) => {
+      if (event.key === STORAGE_KEY) {
+        applyExternalAppearanceSettings(loadSettings())
+      }
+    })
+  }
 
   let initializePromise: Promise<void> | null = null
 

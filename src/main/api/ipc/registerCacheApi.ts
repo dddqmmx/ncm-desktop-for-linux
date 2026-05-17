@@ -44,5 +44,10 @@ export function registerCacheApi(): void {
     }
   )
 
+  ipcMain.handle('cache:getSongCacheProgress', (_event, metadataPath: string) => {
+    void _event
+    return CacheService.getSongCacheProgress(metadataPath)
+  })
+
   console.log('Cache API registered successfully.')
 }

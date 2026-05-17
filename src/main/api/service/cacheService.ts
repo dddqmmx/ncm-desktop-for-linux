@@ -31,6 +31,13 @@ export interface CachedSongSource {
   cacheAheadSecs?: number
 }
 
+export interface SongCacheProgress {
+  downloadedBytes: number
+  totalBytes: number
+  percent: number
+  isComplete: boolean
+}
+
 type CacheableJsonValue = unknown
 
 let nativeCache: NativeCacheBinding | null = null
@@ -109,6 +116,57 @@ function normalizeCachedSongSource(
 
 function isExistingCachedPath(filePath: string): boolean {
   return fs.existsSync(filePath)
+}
+
+function isInsideCacheRoot(filePath: string): boolean {
+  const resolvedPath = path.resolve(filePath)
+  const resolvedRoot = path.resolve(getCacheRootDir())
+  return resolvedPath === resolvedRoot || resolvedPath.startsWith(`${resolvedRoot}${path.sep}`)
+}
+
+function normalizeByteRanges(value: unknown): Array<{ start: number; end: number }> {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .map((range) => {
+      if (!range || typeof range !== 'object') {
+        return null
+      }
+
+      const start = toNumber((range as Record<string, unknown>).start)
+      const end = toNumber((range as Record<string, unknown>).end)
+      return end > start ? { start, end } : null
+    })
+    .filter((range): range is { start: number; end: number } => range !== null)
+}
+
+function normalizeSongCacheProgress(raw: unknown): SongCacheProgress {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      downloadedBytes: 0,
+      totalBytes: 0,
+      percent: 0,
+      isComplete: false
+    }
+  }
+
+  const payload = raw as Record<string, unknown>
+  const ranges = normalizeByteRanges(payload.downloaded_ranges)
+  const downloadedBytes = ranges.reduce(
+    (sum, range) => sum + Math.max(0, range.end - range.start),
+    0
+  )
+  const totalBytes = toNumber(payload.content_length)
+  const percent = totalBytes > 0 ? Math.min(100, (downloadedBytes / totalBytes) * 100) : 0
+
+  return {
+    downloadedBytes,
+    totalBytes,
+    percent,
+    isComplete: payload.is_complete === true || (totalBytes > 0 && downloadedBytes >= totalBytes)
+  }
 }
 
 function stableStringify(value: unknown): string {
@@ -269,6 +327,22 @@ export const CacheService = {
     return {
       type: 'url',
       value: normalizedUrl
+    }
+  },
+
+  async getSongCacheProgress(metadataPath: string): Promise<SongCacheProgress> {
+    const normalizedPath = normalizeCachedPath(metadataPath)
+    if (!normalizedPath || !isInsideCacheRoot(normalizedPath) || !fs.existsSync(normalizedPath)) {
+      return normalizeSongCacheProgress(null)
+    }
+
+    try {
+      return normalizeSongCacheProgress(
+        JSON.parse(await fs.promises.readFile(normalizedPath, 'utf8'))
+      )
+    } catch (error) {
+      console.warn('[cache] failed to read song cache progress', error)
+      return normalizeSongCacheProgress(null)
     }
   }
 }

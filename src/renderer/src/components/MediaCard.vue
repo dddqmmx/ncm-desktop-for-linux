@@ -45,10 +45,10 @@ defineProps<{
   aspect-ratio: 1 / 1.25;
   border-radius: 18px;
   position: relative;
-  background-color: #e0e0e6;
+  background-color: var(--sys-bg-muted);
   background-size: cover;
   background-position: center;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--sys-shadow-soft);
   overflow: visible; /* 改为 visible，或者删除这一行 */
   transition:
     transform 0.25s,
@@ -60,7 +60,7 @@ defineProps<{
 }
 .large-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--sys-shadow-elevated);
 }
 .card-overlay {
   position: absolute;
@@ -68,10 +68,10 @@ defineProps<{
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, 0.7));
 }
 .bg-gradient-orange {
-  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+  background: linear-gradient(135deg, var(--theme-color) 0%, var(--theme-color-tint) 100%);
 }
 .bg-gradient-pink {
-  background: linear-gradient(45deg, #85ffbd 0%, #fffb7d 100%);
+  background: linear-gradient(45deg, var(--theme-color-strong) 0%, var(--theme-color-tint) 100%);
 }
 .card-content {
   position: absolute;

@@ -164,17 +164,18 @@ const filteredTracks = computed(() => {
 
 .creator-name {
   font-weight: 700;
-  color: #333;
+  color: var(--sys-text);
 }
 
 .create-time {
-  color: #888;
+  color: var(--sys-text-tertiary);
   font-weight: 500;
 }
 
 .secondary-btn {
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  background: var(--sys-control);
+  border: 1px solid var(--sys-border);
+  color: var(--sys-text-secondary);
   padding: 0 16px;
   height: 38px;
   border-radius: 100px;

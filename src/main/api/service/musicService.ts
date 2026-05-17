@@ -140,15 +140,7 @@ export const MusicService = {
   ),
   song_url: createMethod(song_url_v1),
   playlist_catlist: createMethod(playlist_catlist),
-  user_playlist: createCachedMethod(
-    'entity',
-    (params: { uid: number }) =>
-      CacheService.buildKey({
-        scope: 'user_playlist',
-        uid: params.uid
-      }),
-    createMethod(user_playlist)
-  ),
+  user_playlist: createMethod(user_playlist),
   playlist_detail: createMethod(playlist_detail),
   lyric: createCachedMethod(
     'lyric',

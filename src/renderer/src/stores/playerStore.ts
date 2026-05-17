@@ -34,6 +34,9 @@ export const usePlayerStore = defineStore('player', () => {
       get: () => playbackStore.isSeeking,
       set: (val) => (playbackStore.isSeeking = val)
     }),
+    isLoading: computed(() => playbackStore.isLoading),
+    playbackError: computed(() => playbackStore.playbackError),
+    bufferedPercent: computed(() => playbackStore.bufferedPercent),
     duration: computed(() => playbackStore.duration),
     progressPercent: computed(() => playbackStore.progressPercent),
 

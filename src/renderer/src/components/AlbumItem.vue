@@ -38,10 +38,10 @@ defineProps<{
   border-radius: 28px;
   overflow: hidden;
   margin-bottom: 14px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.8), rgba(214, 225, 255, 0.46));
-  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: linear-gradient(145deg, var(--sys-surface-strong), var(--theme-color-soft));
+  border: 1px solid var(--sys-border);
   box-shadow:
-    0 20px 44px rgba(38, 53, 84, 0.12),
+    var(--sys-shadow-soft),
     inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
@@ -133,8 +133,8 @@ defineProps<{
   font-size: 15px;
   font-weight: 700;
   line-height: 1.35;
-  color: #152033;
-  letter-spacing: -0.02em;
+  color: var(--sys-text);
+  letter-spacing: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -145,7 +145,7 @@ defineProps<{
   margin-top: 6px;
   font-size: 13px;
   line-height: 1.45;
-  color: rgba(21, 32, 51, 0.62);
+  color: var(--sys-text-secondary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;

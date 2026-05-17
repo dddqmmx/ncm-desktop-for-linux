@@ -24,6 +24,10 @@ const props = defineProps<{
   modelValue: string
 }>()
 
+defineEmits<{
+  (e: 'update:modelValue', value: string): void
+}>()
+
 const bgStyle = computed(() => {
   const index = props.options.findIndex((o) => o.value === props.modelValue)
   const width = 100 / props.options.length
@@ -39,7 +43,7 @@ const bgStyle = computed(() => {
 .segmented-slider {
   display: flex;
   position: relative;
-  background: rgba(0, 0, 0, 0.06); /* 稍微加深一点点对比度 */
+  background: var(--sys-control);
   padding: 4px; /* 外部统一间距 */
   border-radius: 14px;
   height: 40px; /* 固定高度使视觉更统一 */
@@ -51,7 +55,7 @@ const bgStyle = computed(() => {
   position: absolute;
   top: 4px;
   bottom: 4px;
-  background: white;
+  background: var(--sys-control-selected);
   border-radius: 10px;
   /* 更精致的层级阴影 */
   box-shadow:
@@ -69,7 +73,7 @@ const bgStyle = computed(() => {
   padding: 0 12px;
   font-size: 13px;
   font-weight: 600; /* 600比700在小字号下更显精致 */
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--sys-text-tertiary);
   cursor: pointer;
   z-index: 1;
   transition: all 0.3s ease;
@@ -81,11 +85,11 @@ const bgStyle = computed(() => {
 
 /* 鼠标悬停在非激活项上的反馈 */
 .segmented-slider button:not(.active):hover {
-  color: rgba(0, 0, 0, 0.7);
+  color: var(--sys-text-secondary);
 }
 
 .segmented-slider button.active {
-  color: #111;
+  color: var(--sys-text);
 }
 
 /* 简单的点击缩放反馈 */

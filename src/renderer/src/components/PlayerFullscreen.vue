@@ -16,9 +16,9 @@ const resolvedCover = useResolvedMediaUrl(() => playerStore.currentSong?.cover)
 
 // 响应式主题变量
 const theme = ref({
-  primary: '#4a3f81',
-  secondary: '#1d1b31',
-  text: '#ffffff',
+  primary: 'var(--theme-color)',
+  secondary: 'var(--theme-color-strong)',
+  text: 'var(--sys-on-accent)',
   isDark: true // 是否是深色背景
 })
 
@@ -110,9 +110,9 @@ const updateTheme = async (): Promise<void> => {
     console.error('提取颜色失败', err)
     // 失败时回退到默认主题
     theme.value = {
-      primary: '#4a3f81',
-      secondary: '#1d1b31',
-      text: '#ffffff',
+      primary: 'var(--theme-color)',
+      secondary: 'var(--theme-color-strong)',
+      text: 'var(--sys-on-accent)',
       isDark: true
     }
   }
@@ -215,6 +215,12 @@ const onImageLoad = (): void => {
                   @input="handleInput"
                   @change="handleSeek"
                 />
+                <div
+                  class="progress-buffer-fill"
+                  :style="{
+                    width: Math.max(playerStore.bufferedPercent, playerStore.progressPercent) + '%'
+                  }"
+                />
                 <div class="progress-bar-fill" :style="{ width: progressPercent + '%' }" />
               </div>
               <span class="time-text">{{ formatTime(playerStore.duration) }}</span>
@@ -228,7 +234,13 @@ const onImageLoad = (): void => {
                 </svg>
               </button>
 
-              <button class="play-main-btn" @click="playerStore.togglePlay">
+              <button
+                class="play-main-btn"
+                :class="{ loading: playerStore.isLoading }"
+                :disabled="playerStore.isLoading"
+                @click="playerStore.togglePlay"
+              >
+                <div v-if="playerStore.isLoading" class="loading-spinner"></div>
                 <svg
                   v-if="playerStore.isPlaying"
                   width="32"
@@ -485,6 +497,16 @@ const onImageLoad = (): void => {
   background: var(--text-color);
   border-radius: 3px;
   box-shadow: 0 0 10px var(--contrast-color);
+  z-index: 1;
+}
+
+.progress-buffer-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  background: var(--contrast-color);
+  border-radius: 3px;
+  transition: width 0.25s ease;
 }
 
 .btns-row {
@@ -511,6 +533,30 @@ const onImageLoad = (): void => {
   transition:
     transform 0.2s,
     background 0.5s;
+}
+
+.play-main-btn:disabled {
+  cursor: wait;
+}
+
+.play-main-btn.loading svg {
+  opacity: 0;
+}
+
+.loading-spinner {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--contrast-color);
+  border-top-color: var(--btn-text);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .play-main-btn:hover {
   transform: scale(1.1);

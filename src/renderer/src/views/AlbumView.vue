@@ -117,11 +117,11 @@ const filteredTracks = computed(() => {
 <style scoped>
 .creator-name {
   font-weight: 700;
-  color: #333;
+  color: var(--sys-text);
 }
 
 .create-time {
-  color: #888;
+  color: var(--sys-text-tertiary);
   font-weight: 500;
   margin-left: 10px;
 }

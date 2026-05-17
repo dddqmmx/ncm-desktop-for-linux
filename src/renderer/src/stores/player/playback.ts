@@ -3,6 +3,7 @@ import { ref, watch, computed } from 'vue'
 import { CurrentSong, Privilege } from '@renderer/types/player'
 import { Song } from '@renderer/types/songDetail'
 import { SongUrl, SoundQualityType } from '@renderer/types/song'
+import type { SongCacheProgress } from '@renderer/types/cache'
 import { useUserStore } from '../userStore'
 import { useConfigStore } from '../configStore'
 import { usePlaylistStore } from './playlist'
@@ -20,6 +21,9 @@ export const usePlaybackStore = defineStore('playback', () => {
   const isHistorySong = ref(true)
   const isSeeking = ref(false)
   const isSwitching = ref(false)
+  const isLoading = ref(false)
+  const playbackError = ref('')
+  const bufferedPercent = ref(0)
 
   const userStore = useUserStore()
   const configStore = useConfigStore()
@@ -27,6 +31,13 @@ export const usePlaybackStore = defineStore('playback', () => {
 
   let progressTimer: ReturnType<typeof setInterval> | null = null
   let playToken = 0
+  let activeCacheMetadataPath = ''
+  let loadingStartedAt = 0
+  let loadingExpectedStartTime = 0
+
+  const PLAYBACK_OPERATION_TIMEOUT_MS = 20_000
+  const STARTUP_STALL_TIMEOUT_MS = 30_000
+  const NATURAL_END_TOLERANCE_MS = 2_500
 
   const duration = computed(() => currentSong.value?.duration || 0)
   const progressPercent = computed(() => {
@@ -35,6 +46,69 @@ export const usePlaybackStore = defineStore('playback', () => {
   })
 
   // --- 内部逻辑 (辅助函数) ---
+
+  const withTimeout = async <T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    message: string
+  ): Promise<T> => {
+    let timeout: ReturnType<typeof setTimeout> | null = null
+
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error(message)), timeoutMs)
+        })
+      ])
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout)
+      }
+    }
+  }
+
+  const resetPlaybackLoadState = (): void => {
+    isLoading.value = false
+    loadingStartedAt = 0
+    loadingExpectedStartTime = 0
+  }
+
+  const beginPlaybackLoadState = (expectedStartTime = 0): void => {
+    playbackError.value = ''
+    isLoading.value = true
+    loadingStartedAt = Date.now()
+    loadingExpectedStartTime = expectedStartTime
+  }
+
+  const updateCacheProgress = async (): Promise<void> => {
+    if (!activeCacheMetadataPath) return
+
+    try {
+      const progress = (await window.api.get_cached_song_progress(
+        activeCacheMetadataPath
+      )) as SongCacheProgress
+      if (progress && typeof progress.percent === 'number' && Number.isFinite(progress.percent)) {
+        bufferedPercent.value = Math.max(bufferedPercent.value, Math.min(100, progress.percent))
+      }
+    } catch (error) {
+      console.warn('读取歌曲预缓存进度失败:', error)
+    }
+  }
+
+  const stopAfterPlaybackFailure = async (message: string): Promise<void> => {
+    playbackError.value = message
+    resetPlaybackLoadState()
+    isPlaying.value = false
+    isHistorySong.value = true
+    stopTimer()
+
+    try {
+      await window.api.stop()
+    } catch {
+      // ignore
+    }
+  }
 
   /**
    * 定时同步播放进度
@@ -46,6 +120,19 @@ export const usePlaybackStore = defineStore('playback', () => {
       const progressMs = await window.api.get_progress()
       if (progressMs !== undefined && progressMs !== null) {
         currentTime.value = progressMs
+      }
+      await updateCacheProgress()
+
+      if (isLoading.value) {
+        const hasStarted =
+          progressMs > loadingExpectedStartTime + 300 ||
+          (loadingExpectedStartTime === 0 && progressMs > 0)
+
+        if (hasStarted) {
+          resetPlaybackLoadState()
+        } else if (loadingStartedAt && Date.now() - loadingStartedAt > STARTUP_STALL_TIMEOUT_MS) {
+          await stopAfterPlaybackFailure('网络较慢，音乐加载超时。')
+        }
       }
     } catch (error) {
       console.error('同步进度失败:', error)
@@ -140,11 +227,23 @@ export const usePlaybackStore = defineStore('playback', () => {
       if (isSwitching.value) return
       if (currentSongId.value !== songId) return
 
+      const latestProgress = await window.api.get_progress().catch(() => currentTime.value)
+      const finishedNearEnd =
+        duration.value <= 0 ||
+        latestProgress >= Math.max(0, duration.value - NATURAL_END_TOLERANCE_MS)
+
+      if (!finishedNearEnd) {
+        await stopAfterPlaybackFailure('播放中断，可能是网络连接不稳定。')
+        return
+      }
+
       // 播放结束后的状态清理
       isPlaying.value = false
       isHistorySong.value = true
+      resetPlaybackLoadState()
       stopTimer()
       currentTime.value = duration.value
+      bufferedPercent.value = 100
 
       // 自动播放下一首
       await playNext(true)
@@ -176,6 +275,9 @@ export const usePlaybackStore = defineStore('playback', () => {
     playToken++
     const currentToken = playToken
     isSwitching.value = true
+    beginPlaybackLoadState(startTime)
+    bufferedPercent.value = 0
+    activeCacheMetadataPath = ''
 
     try {
       // 3. 继续播放逻辑：如果是同一首歌但处于暂停状态，且非历史回放，直接恢复播放
@@ -185,16 +287,25 @@ export const usePlaybackStore = defineStore('playback', () => {
         !isPlaying.value &&
         !isHistorySong.value
       ) {
-        await configStore.ensureConfiguredOutputDevice()
-        await window.api.resume()
+        await withTimeout(
+          configStore.ensureConfiguredOutputDevice(),
+          PLAYBACK_OPERATION_TIMEOUT_MS,
+          '音频设备准备超时'
+        )
+        await withTimeout(window.api.resume(), PLAYBACK_OPERATION_TIMEOUT_MS, '恢复播放超时')
         if (currentToken === playToken) {
           isPlaying.value = true
+          resetPlaybackLoadState()
         }
         return
       }
 
       // 4. 获取歌曲详情：包含歌曲信息和播放权限
-      const detailData = await getSongDetailData(song_id)
+      const detailData = await withTimeout(
+        getSongDetailData(song_id),
+        PLAYBACK_OPERATION_TIMEOUT_MS,
+        '获取歌曲详情超时'
+      )
       // 在每一个异步步长后，都要检查任务是否已过期
       if (currentToken !== playToken) return
 
@@ -203,13 +314,18 @@ export const usePlaybackStore = defineStore('playback', () => {
       }
 
       const { song, privilege } = detailData
+      setPlayerData(song, false)
 
       // 5. 确定最佳播放音质：结合可用音质和用户设置
       const availableQualities = getAvailableQualities(song, privilege)
       const targetLevel = computePlayableLevel(availableQualities, configStore.soundQuality)
 
       // 6. 获取歌曲播放地址 (URL)
-      const url = await fetchSongUrl(song_id, targetLevel)
+      const url = await withTimeout(
+        fetchSongUrl(song_id, targetLevel),
+        PLAYBACK_OPERATION_TIMEOUT_MS,
+        '获取播放 URL 超时'
+      )
       if (currentToken !== playToken) return
       if (!url) {
         throw new Error('获取播放 URL 失败')
@@ -224,31 +340,54 @@ export const usePlaybackStore = defineStore('playback', () => {
       if (currentToken !== playToken) return
 
       // 8. 确保输出设备已就绪
-      await configStore.ensureConfiguredOutputDevice()
+      await withTimeout(
+        configStore.ensureConfiguredOutputDevice(),
+        PLAYBACK_OPERATION_TIMEOUT_MS,
+        '音频设备准备超时'
+      )
       if (currentToken !== playToken) return
 
       // 9. 准备播放源：处理缓存逻辑 (可能是本地文件，也可能是带缓存的 URL)
-      const playbackSource = await prepareCachedSongSource(song_id, targetLevel, url)
+      const playbackSource = await withTimeout(
+        prepareCachedSongSource(song_id, targetLevel, url),
+        PLAYBACK_OPERATION_TIMEOUT_MS,
+        '准备播放缓存超时'
+      )
       if (currentToken !== playToken) return
+      activeCacheMetadataPath = playbackSource.metadataPath ?? ''
+      bufferedPercent.value = playbackSource.type === 'file' ? 100 : 0
+      await updateCacheProgress()
 
       // 10. 执行底层播放指令
       const startTimeInSeconds = startTime / 1000
       if (playbackSource.type === 'file') {
         // 情况 A: 命中本地文件缓存，直接播放文件
-        await window.api.play_file(playbackSource.value, startTimeInSeconds)
+        await withTimeout(
+          window.api.play_file(playbackSource.value, startTimeInSeconds),
+          PLAYBACK_OPERATION_TIMEOUT_MS,
+          '播放本地缓存超时'
+        )
       } else if (playbackSource.cachePath && playbackSource.metadataPath) {
         // 情况 B: 支持边播边存，调用带缓存功能的播放接口
-        await window.api.play_url_cached(
-          playbackSource.value,
-          playbackSource.cachePath,
-          playbackSource.metadataPath,
-          song.dt,
-          playbackSource.cacheAheadSecs ?? configStore.songCacheAheadSecs,
-          startTimeInSeconds
+        await withTimeout(
+          window.api.play_url_cached(
+            playbackSource.value,
+            playbackSource.cachePath,
+            playbackSource.metadataPath,
+            song.dt,
+            playbackSource.cacheAheadSecs ?? configStore.songCacheAheadSecs,
+            startTimeInSeconds
+          ),
+          PLAYBACK_OPERATION_TIMEOUT_MS,
+          '网络播放启动超时'
         )
       } else {
         // 情况 C: 普通网络 URL 播放
-        await window.api.play_url(playbackSource.value, startTimeInSeconds)
+        await withTimeout(
+          window.api.play_url(playbackSource.value, startTimeInSeconds),
+          PLAYBACK_OPERATION_TIMEOUT_MS,
+          '网络播放启动超时'
+        )
       }
 
       // 再次检查 token，确保在调用播放 API 期间没有新请求进入
@@ -277,7 +416,9 @@ export const usePlaybackStore = defineStore('playback', () => {
       // 只有当前任务未过期时才更新错误状态
       if (currentToken === playToken) {
         console.error('播放全流程失败:', error)
+        playbackError.value = error instanceof Error ? error.message : '音乐播放失败。'
         isPlaying.value = false
+        resetPlaybackLoadState()
       }
     } finally {
       // 14. 仅当当前任务是最新任务时，才重置切换标记
@@ -302,7 +443,7 @@ export const usePlaybackStore = defineStore('playback', () => {
    */
   const togglePlay = async (): Promise<void> => {
     // 正在切换中不响应
-    if (isSwitching.value) return
+    if (isSwitching.value || isLoading.value) return
 
     // 如果当前正在播放，则暂停
     if (isPlaying.value) {
@@ -329,6 +470,7 @@ export const usePlaybackStore = defineStore('playback', () => {
    */
   const seek = async (timeInMs: number): Promise<void> => {
     currentTime.value = timeInMs
+    beginPlaybackLoadState(timeInMs)
     await window.api.seek(timeInMs / 1000)
   }
 
@@ -367,6 +509,10 @@ export const usePlaybackStore = defineStore('playback', () => {
     isPlaying.value = false
     currentTime.value = 0
     isHistorySong.value = true
+    playbackError.value = ''
+    bufferedPercent.value = 0
+    activeCacheMetadataPath = ''
+    resetPlaybackLoadState()
     stopTimer()
   }
 
@@ -436,6 +582,9 @@ export const usePlaybackStore = defineStore('playback', () => {
     currentTime,
     isPlaying,
     isSeeking,
+    isLoading,
+    playbackError,
+    bufferedPercent,
     duration,
     progressPercent,
     playMusic,

@@ -55,6 +55,7 @@ interface CustomApi {
     quality: string
     url: string
   }) => Promise<CachedSongSource>
+  get_cached_song_progress: (metadataPath: string) => Promise<SongCacheProgress>
   //ui相关工具方法
   open_settings_window: () => Promise<unknown>
   close_settings_window: () => Promise<unknown>
@@ -92,6 +93,13 @@ interface CachedSongSource {
   cachePath?: string
   metadataPath?: string
   cacheAheadSecs?: number
+}
+
+interface SongCacheProgress {
+  downloadedBytes: number
+  totalBytes: number
+  percent: number
+  isComplete: boolean
 }
 
 declare global {

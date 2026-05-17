@@ -241,7 +241,7 @@ const clearCache = async (): Promise<void> => {
   gap: 18px;
   padding: 20px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--sys-surface-muted);
 }
 
 .cache-header {
@@ -254,7 +254,7 @@ const clearCache = async (): Promise<void> => {
 .cache-label {
   margin: 0 0 6px;
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--sys-text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -263,12 +263,12 @@ const clearCache = async (): Promise<void> => {
   margin: 0;
   font-size: 24px;
   font-weight: 800;
-  color: #111;
+  color: var(--sys-text);
 }
 
 .cache-progress {
   height: 10px;
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--sys-control);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -276,7 +276,7 @@ const clearCache = async (): Promise<void> => {
 .cache-progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #111, #4b5563);
+  background: linear-gradient(90deg, var(--theme-color), var(--theme-color-strong));
   transition: width 0.25s ease;
 }
 
@@ -289,7 +289,7 @@ const clearCache = async (): Promise<void> => {
 .cache-limit-label {
   font-size: 13px;
   font-weight: 700;
-  color: rgba(0, 0, 0, 0.65);
+  color: var(--sys-text-secondary);
 }
 
 .cache-limit-controls {
@@ -311,7 +311,7 @@ const clearCache = async (): Promise<void> => {
 .custom-slider-track {
   width: 100%;
   height: 6px; /* 轨道改细为 6px */
-  background: rgba(0, 0, 0, 0.1); /* 灰色背景 */
+  background: var(--sys-control);
   border-radius: 999px;
   overflow: hidden;
   pointer-events: none; /* 让鼠标事件穿透给底下的 input */
@@ -319,7 +319,7 @@ const clearCache = async (): Promise<void> => {
 
 .custom-slider-fill {
   height: 100%;
-  background: #111; /* 黑色进度条 */
+  background: var(--theme-color);
   border-radius: inherit;
   /* 不加过渡效果，保证拖拽时极致跟手 */
 }
@@ -339,9 +339,10 @@ const clearCache = async (): Promise<void> => {
 .cache-number-input {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--sys-border-strong);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--sys-surface-strong);
+  color: var(--sys-text);
   font-size: 13px;
   font-weight: 600;
 }
@@ -349,7 +350,7 @@ const clearCache = async (): Promise<void> => {
 .cache-unit {
   font-size: 12px;
   font-weight: 700;
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--sys-text-tertiary);
 }
 
 .cache-breakdown-grid {
@@ -364,24 +365,24 @@ const clearCache = async (): Promise<void> => {
   gap: 4px;
   padding: 14px 16px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--sys-surface-muted);
 }
 
 .cache-breakdown-item strong {
   font-size: 16px;
-  color: #111;
+  color: var(--sys-text);
   display: block;
 }
 
 .cache-breakdown-item span {
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--sys-text-tertiary);
   display: block;
 }
 
 .cache-breakdown-label {
   font-weight: 700;
-  color: rgba(0, 0, 0, 0.75) !important;
+  color: var(--sys-text-secondary) !important;
 }
 
 @media (max-width: 900px) {

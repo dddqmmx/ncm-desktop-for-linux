@@ -22,7 +22,7 @@ defineProps<{ title: string; description?: string }>()
   padding: 16px 0;
 }
 .control-row:not(:last-child) {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  border-bottom: 1px solid var(--sys-border);
 }
 .info {
   display: flex;
@@ -32,10 +32,10 @@ defineProps<{ title: string; description?: string }>()
 .primary {
   font-size: 15px;
   font-weight: 600;
-  color: #111;
+  color: var(--sys-text);
 }
 .secondary {
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--sys-text-tertiary);
 }
 </style>

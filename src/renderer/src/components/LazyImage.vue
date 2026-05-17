@@ -176,7 +176,7 @@ const onImgError = (): void => {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background-color: rgba(0, 0, 0, 0.04);
+  background-color: var(--sys-control);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -206,7 +206,7 @@ const onImgError = (): void => {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: linear-gradient(135deg, rgba(235, 237, 240, 0.8), rgba(220, 225, 235, 0.6));
+  background: linear-gradient(135deg, var(--sys-bg-muted), var(--sys-control));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -227,8 +227,8 @@ const onImgError = (): void => {
   position: absolute;
   inset: 0;
   z-index: 2;
-  background-color: #f0f1f3;
-  color: #c0c4cc;
+  background-color: var(--sys-bg-muted);
+  color: var(--sys-text-disabled);
   display: flex;
   align-items: center;
   justify-content: center;
