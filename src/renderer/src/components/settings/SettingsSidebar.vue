@@ -170,5 +170,4 @@ const indicatorStyle = computed((): { transform: string } => {
   transform: scale(1.15);
   stroke-width: 2.2; /* 可选：让图标变粗一点点 */
 }
-
 </style>

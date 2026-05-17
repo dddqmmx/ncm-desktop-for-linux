@@ -129,7 +129,7 @@ const currentLyricIndex = computed(() => {
 })
 
 // --- 滚动逻辑 ---
-const scrollActiveLyricToCenter = (behavior: ScrollBehavior = 'smooth'): void => {
+const scrollActiveLyricToCenter = (behavior: 'auto' | 'smooth' = 'smooth'): void => {
   const activeIndex = currentLyricIndex.value
   if (activeIndex === -1) return
 
