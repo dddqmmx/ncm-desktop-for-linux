@@ -130,15 +130,6 @@ defineEmits<{
 .main-content-scroll-wrapper {
   height: 100%;
   overflow-y: auto;
-  scrollbar-width: thin;
-}
-
-.main-content-scroll-wrapper::-webkit-scrollbar {
-  width: 4px;
-}
-.main-content-scroll-wrapper::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 10px;
 }
 
 .playlist-container {
@@ -162,10 +153,10 @@ defineEmits<{
   height: 280px;
   flex-shrink: 0;
   border-radius: 12px; /* 稍微硬一点的圆角更显质感 */
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--sys-control);
   /* 增强弥散阴影，营造悬浮感 */
   box-shadow:
-    0 24px 48px rgba(0, 0, 0, 0.15),
+    var(--sys-shadow-elevated),
     0 8px 16px rgba(0, 0, 0, 0.08);
   overflow: hidden;
   position: relative;
@@ -198,8 +189,8 @@ defineEmits<{
   font-size: 42px; /* 稍微调整字号以适应两行显示 */
   font-weight: 800;
   margin: 0;
-  color: #111;
-  letter-spacing: -1px;
+  color: var(--sys-text);
+  letter-spacing: 0;
   line-height: 1.2;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -213,23 +204,23 @@ defineEmits<{
   flex-wrap: wrap;
   gap: 8px;
   font-size: 14px;
-  color: #555;
+  color: var(--sys-text-secondary);
   font-weight: 500;
 }
 .meta-text {
-  color: #666;
+  color: var(--sys-text-secondary);
 }
 
 .dot {
   width: 4px;
   height: 4px;
-  background: #bbb;
+  background: var(--sys-text-disabled);
   border-radius: 50%;
 }
 
 .playlist-description {
   font-size: 14px;
-  color: #777;
+  color: var(--sys-text-secondary);
   line-height: 1.6;
   margin: 8px 0 0 0;
   max-width: 90%;
@@ -249,7 +240,7 @@ defineEmits<{
 }
 
 .play-main-btn {
-  background: #111;
+  background: var(--theme-color);
   color: #fff;
   border: none;
   height: 44px; /* 设定固定高度 */
@@ -268,7 +259,7 @@ defineEmits<{
 
 .play-main-btn:hover {
   transform: scale(1.04);
-  background: #000;
+  background: var(--theme-color-strong);
 }
 
 /* 搜索框风格与播放按钮统一 */
@@ -276,7 +267,7 @@ defineEmits<{
   position: relative;
   display: flex;
   align-items: center;
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--sys-control);
   border-radius: 100px; /* 改为药丸形 */
   padding: 0 16px;
   height: 44px;
@@ -285,12 +276,12 @@ defineEmits<{
 }
 
 .search-box-container:focus-within {
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--sys-control-hover);
   width: 260px; /* 聚焦时微微变长 */
 }
 
 .search-icon {
-  color: #888;
+  color: var(--sys-text-tertiary);
   margin-right: 8px;
 }
 
@@ -301,17 +292,17 @@ defineEmits<{
   height: 100%;
   width: 100%;
   font-size: 13px;
-  color: #333;
+  color: var(--sys-text);
 }
 
 .search-input::placeholder {
-  color: #999;
+  color: var(--sys-text-tertiary);
 }
 
 .clear-btn {
   background: none;
   border: none;
-  color: #999;
+  color: var(--sys-text-tertiary);
   cursor: pointer;
   padding: 4px;
   display: flex;
@@ -319,7 +310,7 @@ defineEmits<{
 }
 
 .clear-btn:hover {
-  color: #333;
+  color: var(--sys-text);
 }
 
 /* 更多按钮去掉了边框，改为悬浮背景色 */
@@ -333,13 +324,13 @@ defineEmits<{
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #666;
+  color: var(--sys-text-secondary);
   transition: background 0.2s;
 }
 
 .icon-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: #111;
+  background: var(--sys-control-hover);
+  color: var(--sys-text);
 }
 
 .loading-state {
@@ -351,8 +342,8 @@ defineEmits<{
 .spinner {
   width: 30px;
   height: 30px;
-  border: 3px solid rgba(0, 0, 0, 0.1);
-  border-top-color: #111;
+  border: 3px solid var(--sys-control-hover);
+  border-top-color: var(--theme-color);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }

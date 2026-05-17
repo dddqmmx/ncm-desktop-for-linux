@@ -3,7 +3,6 @@ import { computed, ref, watch } from 'vue'
 import LoginModal from './LoginModal.vue'
 import { useUserStore } from '@renderer/stores/userStore'
 import { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist'
-import { resolveCachedMediaUrl } from '@renderer/utils/cache'
 import SongCover from './SongCover.vue'
 import UserAvatar from './UserAvatar.vue'
 
@@ -43,12 +42,7 @@ const fetchPlaylists = async (): Promise<void> => {
     })) as { body?: PlaylistResponse }
 
     if (res.body && res.body.playlist) {
-      createdPlaylists.value = await Promise.all(
-        res.body.playlist.map(async (playlist) => ({
-          ...playlist,
-          coverImgUrl: await resolveCachedMediaUrl(playlist.coverImgUrl)
-        }))
-      )
+      createdPlaylists.value = res.body.playlist
     }
   } catch (error) {
     console.error('获取歌单失败:', error)
@@ -203,25 +197,23 @@ const openSettingsWindow = (): void => {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  margin-right: 16px;
-  border-radius: 0 24px 24px 0;
-  height: 100%;
-  background: rgba(245, 245, 245, 0.65);
-  backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.04);
+  margin: 8px;
+  border-radius: 16px;
+  height: calc(100% - 16px);
+  min-height: 0;
+  background: var(--sys-surface);
+  backdrop-filter: var(--sys-glass-blur);
+  border: 1px solid var(--sys-border);
+  box-shadow: var(--sys-shadow-soft);
   overflow: hidden;
   -webkit-app-region: drag;
 }
 
 .sidebar-content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 30px 20px 10px 20px;
-  scrollbar-width: none;
-}
-.sidebar-content::-webkit-scrollbar {
-  display: none;
 }
 
 .nav-section {
@@ -233,7 +225,7 @@ const openSettingsWindow = (): void => {
 }
 .nav-group-title {
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--sys-text-tertiary);
   font-weight: 600;
   margin-bottom: 8px;
   padding-left: 12px;
@@ -246,7 +238,7 @@ const openSettingsWindow = (): void => {
   gap: 12px;
   padding: 10px 12px;
   border-radius: 12px;
-  color: #444;
+  color: var(--sys-text-secondary);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -254,12 +246,12 @@ const openSettingsWindow = (): void => {
   text-decoration: none;
 }
 .nav-item:hover {
-  background-color: rgba(255, 255, 255, 0.6);
+  background-color: var(--sys-control-hover);
 }
 .nav-item.active {
-  background-color: #fff;
-  color: #000;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  background-color: var(--sys-control-selected);
+  color: var(--theme-color-strong);
+  box-shadow: var(--sys-shadow-soft);
 }
 
 .nav-icon {
@@ -294,7 +286,7 @@ const openSettingsWindow = (): void => {
 
 .profile-bubble {
   position: relative;
-  background: #e8e8e8; /* 气泡背景色 */
+  background: var(--sys-control);
   border-radius: 30px; /* 两侧圆润 */
   padding: 6px;
   transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
@@ -331,7 +323,7 @@ const openSettingsWindow = (): void => {
 .username {
   font-weight: 600;
   font-size: 13px;
-  color: #555;
+  color: var(--sys-text-secondary);
 }
 
 /* 隐藏的菜单 */
@@ -346,7 +338,7 @@ const openSettingsWindow = (): void => {
 
 /* 登录后悬浮效果 */
 .profile-bubble:hover {
-  background: #e0e0e0;
+  background: var(--sys-control-hover);
   transform: translateY(-5px);
   box-shadow:
     inset 4px 4px 8px rgba(0, 0, 0, 0.12),
@@ -365,18 +357,18 @@ const openSettingsWindow = (): void => {
   text-align: center;
   padding: 12px 0;
   font-size: 13px;
-  color: #666;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.03); /* 自然分割线 */
+  color: var(--sys-text-secondary);
+  border-bottom: 1px solid var(--sys-border);
   transition: background 0.2s;
 }
 
 .menu-item:hover {
-  background: rgba(0, 0, 0, 0.02);
-  color: #000;
+  background: var(--sys-control);
+  color: var(--sys-text);
 }
 
 .menu-item.logout {
-  color: #d93025;
+  color: var(--sys-danger);
   border-bottom: none;
 }
 

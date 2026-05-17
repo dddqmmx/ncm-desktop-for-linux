@@ -41,6 +41,10 @@ type SettingsTab = {
 
 const props = defineProps<{ tabs: SettingsTab[]; activeTab: string }>()
 
+defineEmits<{
+  (e: 'update:activeTab', value: string): void
+}>()
+
 const indicatorStyle = computed((): { transform: string } => {
   const index = props.tabs.findIndex((t) => t.id === props.activeTab)
   return { transform: `translateY(${index * 52}px)` }
@@ -50,8 +54,8 @@ const indicatorStyle = computed((): { transform: string } => {
 <style scoped>
 .settings-sidebar {
   width: 240px;
-  background-color: #fbfbfb; /* 侧边栏给一个极浅的灰底，更能衬托出指示器的白色卡片 */
-  border-right: 1px solid rgba(0, 0, 0, 0.06);
+  background-color: var(--sys-surface-muted);
+  border-right: 1px solid var(--sys-border);
   display: flex;
   flex-direction: column;
   padding: 32px 16px;
@@ -66,13 +70,13 @@ const indicatorStyle = computed((): { transform: string } => {
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 1.5px;
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--sys-text-tertiary);
 }
 
 .brand-dot {
   width: 8px;
   height: 8px;
-  background: #111;
+  background: var(--theme-color);
   border-radius: 2px;
 }
 
@@ -93,10 +97,10 @@ const indicatorStyle = computed((): { transform: string } => {
   top: 0;
   width: 100%;
   height: 44px; /* 必须设置高度，与 nav-item 保持一致 */
-  background: #ffffff; /* 纯白背景 */
+  background: var(--sys-control-selected);
   border-radius: 10px;
   /* 添加细腻的弥散阴影和微小边框，营造悬浮感 */
-  border: 1px solid rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--sys-border);
   transition: transform 0.4s cubic-bezier(0.2, 1, 0.3, 1);
   z-index: 0;
 }
@@ -111,6 +115,7 @@ const indicatorStyle = computed((): { transform: string } => {
   width: 4px;
   height: 20px;
   border-radius: 4px;
+  background: var(--theme-color);
 }
 
 /* =========================================
@@ -129,7 +134,7 @@ const indicatorStyle = computed((): { transform: string } => {
   gap: 12px;
   font-size: 14px;
   font-weight: 600;
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--sys-text-tertiary);
   cursor: pointer;
   z-index: 1; /* 确保文字在指示器上方 */
   -webkit-app-region: no-drag;
@@ -142,13 +147,13 @@ const indicatorStyle = computed((): { transform: string } => {
 
 /* 未选中状态下的 Hover 效果 */
 .nav-item:hover:not(.active) {
-  color: rgba(0, 0, 0, 0.7);
-  background: rgba(0, 0, 0, 0.03); /* 轻轻的背景色 */
+  color: var(--sys-text-secondary);
+  background: var(--sys-control);
 }
 
 /* 选中状态 */
 .nav-item.active {
-  color: #111;
+  color: var(--theme-color-strong);
   /* 选中时不需要 hover 背景，因为底部已经有指示器了 */
   background: transparent;
 }
@@ -166,20 +171,4 @@ const indicatorStyle = computed((): { transform: string } => {
   stroke-width: 2.2; /* 可选：让图标变粗一点点 */
 }
 
-/* =========================================
-   滚动条美化
-   ========================================= */
-.sidebar-nav::-webkit-scrollbar {
-  width: 6px;
-}
-.sidebar-nav::-webkit-scrollbar-track {
-  background: transparent;
-}
-.sidebar-nav::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 10px;
-}
-.sidebar-nav::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
-}
 </style>

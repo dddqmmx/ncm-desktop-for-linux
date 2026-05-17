@@ -141,7 +141,8 @@ const playSong = (song: Song): void => {
   font-size: 32px;
   font-weight: 800;
   margin-bottom: 24px;
-  letter-spacing: -0.5px;
+  letter-spacing: 0;
+  color: var(--sys-text);
 }
 
 .section {
@@ -160,6 +161,7 @@ const playSong = (song: Song): void => {
 .section-header h2 {
   font-size: 22px;
   font-weight: 700;
+  color: var(--sys-text);
 }
 
 .nav-btns {
@@ -172,8 +174,8 @@ const playSong = (song: Song): void => {
   height: 32px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
+  background: var(--sys-control);
+  color: var(--sys-text);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -183,7 +185,7 @@ const playSong = (song: Song): void => {
 }
 
 .nav-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--sys-control-hover);
   transform: scale(1.05);
 }
 
@@ -202,7 +204,6 @@ const playSong = (song: Song): void => {
 
 .horizontal-scroll-container::-webkit-scrollbar {
   display: none;
-  /* Chrome/Safari */
 }
 
 /* 内部内容布局 */
@@ -226,7 +227,7 @@ const playSong = (song: Song): void => {
 }
 
 .loading-text {
-  color: #888;
+  color: var(--sys-text-tertiary);
   padding: 40px 0;
 }
 

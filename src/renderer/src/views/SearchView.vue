@@ -77,13 +77,18 @@ onMounted(() => {
 
   observer = new IntersectionObserver(
     (entries) => {
-      if (entries[0].isIntersecting && hasMore.value && !isLoadingMore.value && !isSearching.value) {
+      if (
+        entries[0].isIntersecting &&
+        hasMore.value &&
+        !isLoadingMore.value &&
+        !isSearching.value
+      ) {
         loadMore()
       }
     },
-    { 
+    {
       root: scrollContainer.value,
-      threshold: 0.1 
+      threshold: 0.1
     }
   )
 })
@@ -171,7 +176,8 @@ const loadMore = async (): Promise<void> => {
         hasMore.value = totalLoaded < totalAvailable
       } else {
         searchResults.value = res.body.result
-        hasMore.value = res.body.result.songs.length + offset.value < (res.body.result.songCount || 0)
+        hasMore.value =
+          res.body.result.songs.length + offset.value < (res.body.result.songCount || 0)
       }
       res.body.result.songs.forEach((song) => loadCover(song.id))
     } else {
@@ -300,9 +306,7 @@ const playSong = (song: SearchSong): void => {
             <div class="spinner"></div>
             <span>正在加载更多...</span>
           </div>
-          <div v-else-if="!hasMore && searchResults?.songs.length" class="no-more">
-            没有更多了
-          </div>
+          <div v-else-if="!hasMore && searchResults?.songs.length" class="no-more">没有更多了</div>
         </div>
       </section>
 
@@ -322,12 +326,8 @@ const playSong = (song: SearchSong): void => {
   height: 100%;
   overflow-y: auto;
   padding: 0 24px;
-  scrollbar-width: none;
   scroll-behavior: smooth;
   position: relative;
-}
-.search-container::-webkit-scrollbar {
-  display: none;
 }
 
 /* === 核心：Search Header 样式 === */
@@ -344,7 +344,7 @@ const playSong = (song: SearchSong): void => {
   font-size: 34px;
   font-weight: 800;
   margin-bottom: 20px;
-  color: #111;
+  color: var(--sys-text);
   transition: all 0.3s ease;
   opacity: 1;
   transform: translateY(0);
@@ -366,10 +366,10 @@ const playSong = (song: SearchSong): void => {
   height: 48px;
   padding: 0 44px;
   border-radius: 14px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  background-color: #fff;
+  border: 1px solid var(--sys-border);
+  background-color: var(--sys-surface-strong);
   font-size: 16px;
-  color: #111;
+  color: var(--sys-text);
   outline: none;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
   transition: all 0.3s ease;
@@ -395,11 +395,11 @@ const playSong = (song: SearchSong): void => {
 
 .search-header.is-floating .search-input {
   /* 液态玻璃效果 */
-  background: rgba(255, 255, 255, 0.65);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  background: var(--sys-surface);
+  backdrop-filter: var(--sys-glass-blur);
+  -webkit-backdrop-filter: var(--sys-glass-blur);
+  border: 1px solid var(--sys-border);
+  box-shadow: var(--sys-shadow-soft);
   border-radius: 24px; /* 更加圆润 */
 }
 
@@ -414,7 +414,7 @@ const playSong = (song: SearchSong): void => {
   left: 16px;
   width: 18px;
   height: 18px;
-  color: #888;
+  color: var(--sys-text-tertiary);
   z-index: 1;
 }
 
@@ -423,7 +423,7 @@ const playSong = (song: SearchSong): void => {
   right: 12px;
   background: none;
   border: none;
-  color: #999;
+  color: var(--sys-text-tertiary);
   cursor: pointer;
   padding: 4px;
 }
@@ -439,7 +439,7 @@ const playSong = (song: SearchSong): void => {
 .section-header h2 {
   font-size: 20px;
   font-weight: 700;
-  color: #111;
+  color: var(--sys-text);
 }
 
 .categories-grid {
@@ -463,7 +463,7 @@ const playSong = (song: SearchSong): void => {
 .category-name {
   font-size: 18px;
   font-weight: 700;
-  color: white;
+  color: var(--sys-on-accent);
   position: relative;
   z-index: 2;
 }
@@ -480,32 +480,32 @@ const playSong = (song: SearchSong): void => {
 
 /* 渐变色 */
 .bg-gradient-purple {
-  background: linear-gradient(135deg, #8e2de2, #4a00e0);
+  background: linear-gradient(135deg, var(--theme-color), var(--theme-color-strong));
 }
 .bg-gradient-orange {
-  background: linear-gradient(135deg, #f12711, #f5af19);
+  background: linear-gradient(135deg, var(--sys-category-warm), var(--sys-category-sun));
 }
 .bg-gradient-red {
-  background: linear-gradient(135deg, #cb2d3e, #ef473a);
+  background: linear-gradient(135deg, var(--sys-danger), var(--sys-category-red));
 }
 .bg-gradient-blue {
-  background: linear-gradient(135deg, #2193b0, #6dd5ed);
+  background: linear-gradient(135deg, var(--sys-category-cyan), var(--sys-category-sky));
 }
 .bg-gradient-green {
-  background: linear-gradient(135deg, #11998e, #38ef7d);
+  background: linear-gradient(135deg, var(--sys-success), var(--sys-category-mint));
 }
 .bg-gradient-dark {
-  background: linear-gradient(135deg, #232526, #414345);
+  background: linear-gradient(135deg, var(--sys-bg-muted), var(--sys-text-secondary));
 }
 .bg-gradient-pink {
-  background: linear-gradient(135deg, #ec008c, #fc6767);
+  background: linear-gradient(135deg, var(--theme-color-strong), var(--sys-category-rose));
 }
 .bg-gradient-indigo {
-  background: linear-gradient(135deg, #4b6cb7, #182848);
+  background: linear-gradient(135deg, var(--theme-color), var(--sys-category-ink));
 }
 
 .songs-list {
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--sys-surface-muted);
   border-radius: 16px;
 }
 .song-row {
@@ -517,7 +517,7 @@ const playSong = (song: SearchSong): void => {
   cursor: pointer;
 }
 .song-row:hover {
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--sys-control-hover);
 }
 .song-left {
   display: flex;
@@ -533,20 +533,20 @@ const playSong = (song: SearchSong): void => {
 .song-title {
   font-size: 14px;
   font-weight: 600;
-  color: #111;
+  color: var(--sys-text);
 }
 .song-artist {
   font-size: 12px;
-  color: #666;
+  color: var(--sys-text-secondary);
 }
 .song-duration {
   font-size: 13px;
-  color: #888;
+  color: var(--sys-text-tertiary);
 }
 .more-btn {
   border: none;
   background: none;
-  color: #999;
+  color: var(--sys-text-tertiary);
   cursor: pointer;
 }
 
@@ -568,7 +568,7 @@ const playSong = (song: SearchSong): void => {
 .empty-tips {
   text-align: center;
   padding: 40px;
-  color: #999;
+  color: var(--sys-text-tertiary);
 }
 
 .bottom-observer {
@@ -583,15 +583,15 @@ const playSong = (song: SearchSong): void => {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #888;
+  color: var(--sys-text-tertiary);
   font-size: 14px;
 }
 
 .spinner {
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(0, 0, 0, 0.1);
-  border-top-color: #888;
+  border: 2px solid var(--sys-control-hover);
+  border-top-color: var(--theme-color);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -603,7 +603,7 @@ const playSong = (song: SearchSong): void => {
 }
 
 .no-more {
-  color: #bbb;
+  color: var(--sys-text-disabled);
   font-size: 13px;
   letter-spacing: 1px;
 }

@@ -127,7 +127,7 @@ const closeSettingsWindow = (): void => {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  color: #000;
+  color: var(--sys-text);
   font-family:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
 }
@@ -139,9 +139,9 @@ const closeSettingsWindow = (): void => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.28);
   z-index: 9999;
-  border-radius: 20px;
+  border-radius: 8px;
   animation: appleScaleUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -160,11 +160,11 @@ const closeSettingsWindow = (): void => {
   /* 优化2：提高基础白色的不透明度(0.85/0.75)；加入极其微弱的噪点纹理增加物理质感 */
   background:
     url('data:image/svg+xml;utf8,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="noiseFilter"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23noiseFilter)" opacity="0.04"/%3E%3C/svg%3E'),
-    linear-gradient(135deg, rgba(250, 250, 252, 0.85) 0%, rgba(242, 242, 247, 0.75) 100%);
+    linear-gradient(135deg, var(--sys-surface-strong) 0%, var(--sys-surface) 100%);
 
   backdrop-filter: blur(60px) saturate(200%);
   -webkit-backdrop-filter: blur(60px) saturate(200%);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--sys-border);
 
   /* 优化3：强制硬件加速，防止在某些浏览器/Electron中毛玻璃退化变全透 */
   transform: translateZ(0);
@@ -172,9 +172,9 @@ const closeSettingsWindow = (): void => {
 
 /* 侧边栏区域隔离线 */
 .sidebar-area {
-  border-right: 1px solid rgba(0, 0, 0, 0.06);
+  border-right: 1px solid var(--sys-border);
   /* 稍微提高一点白底，与整体匹配 */
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--sys-surface-muted);
 }
 
 /* 右侧主内容区 */
@@ -184,7 +184,7 @@ const closeSettingsWindow = (): void => {
   flex-direction: column;
   position: relative;
   /* 优化4：右侧内容区提高白底比例(0.6)，保证文字、表单清晰度不受底层背景干扰 */
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--sys-surface-muted);
   min-width: 0;
 }
 
@@ -202,8 +202,8 @@ const closeSettingsWindow = (): void => {
 .main-header h2 {
   font-size: 28px;
   font-weight: 700;
-  letter-spacing: -0.5px;
-  color: #1d1d1f; /* 苹果标志性的深灰而非死黑 */
+  letter-spacing: 0;
+  color: var(--sys-text);
   margin: 0;
   text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8); /* 文字雕刻感 */
 }
@@ -213,9 +213,9 @@ const closeSettingsWindow = (): void => {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.02);
-  color: #555;
+  background: var(--sys-control);
+  border: 1px solid var(--sys-border);
+  color: var(--sys-text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -225,8 +225,8 @@ const closeSettingsWindow = (): void => {
 }
 
 .close-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
-  color: #000;
+  background: var(--sys-control-hover);
+  color: var(--sys-text);
   transform: scale(1.05);
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.05),
@@ -235,7 +235,7 @@ const closeSettingsWindow = (): void => {
 
 .close-btn:active {
   transform: scale(0.95);
-  background: rgba(0, 0, 0, 0.12);
+  background: var(--sys-control-active);
 }
 
 /* 内容滚动区 */
@@ -244,27 +244,6 @@ const closeSettingsWindow = (): void => {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 16px 40px 48px;
-}
-
-/* 流体隐藏式滚动条 (macOS style) */
-.content-scroll::-webkit-scrollbar {
-  width: 14px; /* 留出可点击范围 */
-  background: transparent;
-}
-
-.content-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.content-scroll::-webkit-scrollbar-thumb {
-  background-clip: padding-box;
-  background-color: rgba(0, 0, 0, 0.15);
-  border: 4px solid transparent; /* 使用透明边框把滚动条挤细，实现悬浮效果 */
-  border-radius: 10px;
-}
-
-.content-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.3);
 }
 
 /* 切换 Tab 时的平滑过渡动画 */

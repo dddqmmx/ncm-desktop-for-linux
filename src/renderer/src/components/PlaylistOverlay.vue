@@ -184,11 +184,11 @@ const onDragEnd = (): void => {
 /* --- 样式美化 --- */
 /* --- 基础卡片样式 --- */
 .glass-morphism-heavy {
-  background: rgba(255, 255, 255, 0.4);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 0.5px solid rgba(255, 255, 255, 0.5);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  background: var(--sys-surface);
+  backdrop-filter: var(--sys-glass-blur);
+  -webkit-backdrop-filter: var(--sys-glass-blur);
+  border: 0.5px solid var(--sys-border);
+  box-shadow: var(--sys-shadow-elevated);
   border-radius: 28px;
 }
 
@@ -200,17 +200,17 @@ const onDragEnd = (): void => {
 .title {
   font-size: 18px;
   font-weight: 800;
-  color: #111;
+  color: var(--sys-text);
 }
 .count {
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--sys-text-tertiary);
   font-weight: 600;
   margin-left: 8px;
 }
 
 .clear-btn {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--sys-control);
   border: none;
   padding: 6px 14px;
   border-radius: 10px;
@@ -221,20 +221,8 @@ const onDragEnd = (): void => {
 }
 
 .clear-btn:hover {
-  background: rgba(255, 59, 48, 0.1);
-  color: #ff3b30;
-}
-
-/* --- 滚动条样式 --- */
-.playlist-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-.playlist-scroll::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 10px;
-}
-.playlist-scroll::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--sys-danger-soft);
+  color: var(--sys-danger);
 }
 
 /* --- 列表项 --- */
@@ -251,18 +239,18 @@ const onDragEnd = (): void => {
 }
 
 .playlist-item:hover {
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--sys-control);
 }
 .playlist-item.active {
   /* 背景：更通透的白色，降低不透明度 */
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--sys-control-active);
 
   /* 核心：背板模糊，数值 12px-20px 比较高级 */
   backdrop-filter: blur(12px) saturate(180%);
   -webkit-backdrop-filter: blur(12px) saturate(180%);
 
   /* 边框：模拟玻璃边缘受光的效果，上边框稍亮 */
-  border: 1px solid rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--sys-border);
 
   /* 阴影：一层深色投影增加悬浮感，一层白色内阴影增加厚度感 */
   box-shadow:
@@ -278,11 +266,11 @@ const onDragEnd = (): void => {
 
 /* 选中项的文字颜色微调 */
 .playlist-item.active .item-name {
-  color: #000; /* 让标题更深 */
+  color: var(--theme-color-strong);
 }
 
 .playlist-item.active .item-artist {
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--sys-text-secondary);
 }
 
 .item-status {
@@ -293,7 +281,7 @@ const onDragEnd = (): void => {
 .item-index {
   font-size: 11px;
   font-weight: 700;
-  color: rgba(0, 0, 0, 0.2);
+  color: var(--sys-text-disabled);
 }
 .item-cover {
   width: 40px;
@@ -309,14 +297,14 @@ const onDragEnd = (): void => {
 .item-name {
   font-size: 13px;
   font-weight: 600;
-  color: #111;
+  color: var(--sys-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .item-artist {
   font-size: 11px;
-  color: rgba(0, 0, 0, 0.5);
+  color: var(--sys-text-tertiary);
 }
 
 .item-actions {
@@ -329,10 +317,10 @@ const onDragEnd = (): void => {
   background: none;
   border: none;
   cursor: pointer;
-  color: #999;
+  color: var(--sys-text-tertiary);
 }
 .action-btn:hover {
-  color: #ff3b30;
+  color: var(--sys-danger);
 }
 
 /* --- 动画 --- */
@@ -356,7 +344,7 @@ const onDragEnd = (): void => {
 
 .drag-ghost {
   opacity: 0.3;
-  background: #eee !important;
+  background: var(--sys-control-hover) !important;
 }
 .drag-active {
   transform: scale(1.02);
@@ -372,7 +360,7 @@ const onDragEnd = (): void => {
 }
 .playing-icon .bar {
   width: 3px;
-  background: #111;
+  background: var(--theme-color);
   border-radius: 1px;
   animation: bounce 0.6s infinite alternate;
 }
@@ -397,6 +385,6 @@ const onDragEnd = (): void => {
   left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
-  color: #ccc;
+  color: var(--sys-text-disabled);
 }
 </style>

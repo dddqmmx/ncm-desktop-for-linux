@@ -489,18 +489,18 @@ watch(
 <style scoped>
 .artist-page {
   /* 现代亮色背景与毛玻璃 */
-  --glass: rgba(255, 255, 255, 0.65);
-  --glass-border: rgba(255, 255, 255, 1);
-  --glass-hover: rgba(255, 255, 255, 0.85);
+  --glass: var(--sys-surface);
+  --glass-border: var(--sys-border);
+  --glass-hover: var(--sys-control-hover);
 
   /* 字体颜色栈 */
-  --text-1: #1d1d1f;
-  --text-2: #86868b;
-  --text-3: #a1a1a6;
+  --text-1: var(--sys-text);
+  --text-2: var(--sys-text-secondary);
+  --text-3: var(--sys-text-tertiary);
 
   /* 雅致的阴影 */
-  --shadow-card: 0 10px 40px -10px rgba(0, 0, 0, 0.05);
-  --shadow-inset: inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+  --shadow-card: var(--sys-shadow-soft);
+  --shadow-inset: inset 0 0 0 1px var(--sys-border);
 
   /* 圆角 */
   --radius-card: 24px;
@@ -523,24 +523,7 @@ watch(
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(29, 29, 31, 0.18) transparent;
   scrollbar-gutter: stable;
-}
-.scroll-container::-webkit-scrollbar {
-  width: 8px;
-}
-
-.scroll-container::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.scroll-container::-webkit-scrollbar-thumb {
-  background: rgba(29, 29, 31, 0.18);
-  border-radius: 999px;
-}
-.scroll-container::-webkit-scrollbar {
-  display: none;
 }
 
 /* ─── Main layout ────────────────────────────────────────── */
@@ -582,8 +565,8 @@ watch(
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  border: 3px solid rgba(0, 0, 0, 0.08);
-  border-top-color: rgba(0, 0, 0, 0.6);
+  border: 3px solid var(--sys-control-hover);
+  border-top-color: var(--theme-color);
   animation: spin 0.8s linear infinite;
 }
 
@@ -626,7 +609,7 @@ watch(
   position: absolute;
   inset: -20px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(29, 29, 31, 0.12) 0%, transparent 72%);
+  background: radial-gradient(circle, var(--theme-color-soft) 0%, transparent 72%);
   pointer-events: none;
 }
 
@@ -659,7 +642,7 @@ watch(
   margin: 0;
   font-size: clamp(2.5rem, 4.5vw, 4.2rem);
   line-height: 1.05;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
   font-weight: 800;
   color: var(--text-1);
 }
@@ -673,7 +656,7 @@ watch(
 .pill {
   padding: 6px 16px;
   border-radius: 999px;
-  border: 1px solid rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--sys-border);
   background: var(--glass);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
   font-size: 13px;
@@ -730,14 +713,14 @@ watch(
 }
 
 .btn-play {
-  background: #000; /* 修改为黑色 */
+  background: var(--theme-color);
   color: #fff;
-  box-shadow: 0 8px 20px -6px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--sys-shadow-soft);
 }
 .btn-shuffle {
   background: var(--glass);
-  border: 1px solid rgba(0, 0, 0, 0.03);
-  color: #000;
+  border: 1px solid var(--sys-border);
+  color: var(--sys-text);
   backdrop-filter: blur(20px) saturate(180%);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
 }
@@ -763,13 +746,13 @@ watch(
   margin: 6px 0 0;
   font-size: 24px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 .count-badge {
   padding: 6px 14px;
   border-radius: 999px;
   background: var(--glass);
-  border: 1px solid rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--sys-border);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
   font-size: 13px;
   font-weight: 600;
@@ -816,7 +799,7 @@ watch(
   height: 56px;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--sys-border);
 }
 .song-info {
   min-width: 0;
@@ -845,11 +828,11 @@ watch(
   letter-spacing: 0.04em;
 }
 .badge-hot {
-  background: #000;
+  background: var(--theme-color);
   color: #fff;
 }
 .badge-rec {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--sys-control);
   color: var(--text-2);
 }
 .song-album {
@@ -925,8 +908,8 @@ watch(
   border-radius: var(--radius-img);
   overflow: hidden;
   margin-bottom: 14px;
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--sys-border);
+  box-shadow: var(--sys-shadow-soft);
   position: relative;
   transition:
     transform 0.3s cubic-bezier(0.25, 1, 0.5, 1),
@@ -935,7 +918,7 @@ watch(
 
 .media-tile:hover .tile-img-wrap-wrapper {
   transform: translateY(-4px);
-  box-shadow: 0 16px 32px -10px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--sys-shadow-elevated);
 }
 
 .tile-type {
@@ -974,9 +957,9 @@ watch(
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--sys-surface-strong);
   backdrop-filter: blur(8px);
-  color: #1d1d1f;
+  color: var(--sys-text);
   display: flex;
   align-items: center;
   justify-content: center;

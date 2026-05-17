@@ -39,7 +39,8 @@ onMounted(async () => {
 .app-background {
   width: 100vw;
   height: 100vh;
-  background-color: #eff1f5;
+  background:
+    radial-gradient(circle at top left, var(--theme-color-soft), transparent 32%), var(--sys-bg);
   position: relative;
   overflow: hidden;
   font-family:
@@ -49,7 +50,7 @@ onMounted(async () => {
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
-  color: #1a1a1a;
+  color: var(--sys-text);
 }
 
 .app-layout {
@@ -74,18 +75,6 @@ onMounted(async () => {
   overflow-y: auto;
   padding: 20px 16px 0 10px;
   padding-bottom: 0;
-}
-
-/* 滚动条美化 */
-.scrollable-content::-webkit-scrollbar {
-  width: 8px;
-}
-.scrollable-content::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 4px;
-}
-.scrollable-content::-webkit-scrollbar-track {
-  background: transparent;
 }
 
 .player-fade-enter-active,
