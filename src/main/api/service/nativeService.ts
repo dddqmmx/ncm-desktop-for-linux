@@ -59,6 +59,10 @@ export const NativeService = {
     return player.progressMs
   },
 
+  isBuffering() {
+    return player.isBuffering
+  },
+
   /**
    * 获取播放状态
    */

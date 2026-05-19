@@ -42,6 +42,7 @@ interface CustomApi {
   resume: () => Promise<unknown>
   stop: () => Promise<unknown>
   get_progress: () => Promise<number>
+  is_buffering: () => Promise<boolean>
   seek: (time: number) => Promise<unknown>
   switch_output_device: (deviceId?: string) => Promise<unknown>
   get_output_devices: () => Promise<AudioDeviceInfo[]>

@@ -46,6 +46,9 @@ export function registerNativeApi(): void {
   ipcMain.handle('player:getProgress', () => {
     return NativeService.getProgress()
   })
+  ipcMain.handle('player:isBuffering', () => {
+    return NativeService.isBuffering()
+  })
   ipcMain.handle('player:seek', (_event, time: number) => {
     void _event
     return NativeService.seek(time)

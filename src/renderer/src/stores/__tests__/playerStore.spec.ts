@@ -64,6 +64,8 @@ describe('playerStore device switch sequencing', () => {
     const callOrder: string[] = []
 
     vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
       api: {
         song_detail: vi.fn(async ({ ids }: { ids: number[] }) => ({
           body: {
@@ -129,6 +131,7 @@ describe('playerStore device switch sequencing', () => {
         }),
         resume: vi.fn(async () => undefined),
         get_progress: vi.fn(async () => 0),
+        is_buffering: vi.fn(async () => false),
         seek: vi.fn(async () => undefined),
         wait_finished: vi.fn(() => new Promise(() => undefined))
       }
@@ -152,5 +155,42 @@ describe('playerStore device switch sequencing', () => {
     expect(callOrder).toEqual(['stop', 'switch:headphones', 'play_url'])
     expect(configStore.outputDeviceId).toBe('headphones')
     expect(currentDeviceId).toBe('headphones')
+  })
+
+  it('does not advance local progress while a seek is still loading', async () => {
+    let now = 1_000
+    let animationFrameCallback: FrameRequestCallback | undefined
+
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
+        animationFrameCallback = callback
+        return 1
+      }),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        get_progress: vi.fn(async () => 60_000),
+        is_buffering: vi.fn(async () => true),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 0 })),
+        seek: vi.fn(async () => undefined)
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+    playerStore.currentSong = {
+      id: 1,
+      name: 'Current Song',
+      artists: [{ id: 1, name: 'Artist' }],
+      cover: 'cover',
+      duration: 180000
+    }
+    playerStore.isPlaying = true
+
+    await playerStore.seek(60_000)
+
+    now = 3_500
+    animationFrameCallback?.(now)
+
+    expect(playerStore.currentTime).toBe(60_000)
   })
 })

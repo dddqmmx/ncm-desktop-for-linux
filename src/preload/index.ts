@@ -50,6 +50,7 @@ const api = {
   resume: invoke('player:resume'),
   stop: invoke('player:stop'),
   get_progress: invoke('player:getProgress'),
+  is_buffering: invoke('player:isBuffering'),
   seek: invoke('player:seek'),
   switch_output_device: invokeArgs('player:switchOutputDevice'),
   get_output_devices: invoke('player:getOutputDevices'),

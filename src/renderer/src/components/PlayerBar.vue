@@ -32,14 +32,13 @@ const endSeek = (): void => {
 
 const handleInput = (e: Event): void => {
   beginSeek()
-  const val = Number((e.target as HTMLInputElement).value)
-  playerStore.currentTime = (val / 100) * playerStore.duration
+  const targetTime = Number((e.target as HTMLInputElement).value)
+  playerStore.currentTime = targetTime
 }
 
 const handleSeek = async (e: Event): Promise<void> => {
   beginSeek()
-  const val = Number((e.target as HTMLInputElement).value)
-  const targetTime = (val / 100) * playerStore.duration
+  const targetTime = Number((e.target as HTMLInputElement).value)
   try {
     await playerStore.seek(targetTime)
   } finally {
@@ -185,9 +184,9 @@ onMounted(() => {
               <input
                 type="range"
                 min="0"
-                max="100"
-                step="0.1"
-                :value="playerStore.progressPercent"
+                :max="playerStore.duration"
+                step="1"
+                :value="playerStore.currentTime"
                 class="hidden-range"
                 @input="handleInput"
                 @change="handleSeek"

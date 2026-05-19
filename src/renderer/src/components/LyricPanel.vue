@@ -23,10 +23,12 @@ interface LyricLine {
 const loading = ref(false)
 const lyrics = ref<LyricLine[]>([])
 const lineRefs = ref<HTMLElement[]>([])
+const scrollContainerRef = ref<HTMLElement | null>(null)
 const showPronunciation = ref(localStorage.getItem(LYRIC_PRONUNCIATION_VISIBLE_KEY) !== 'false')
 const showTranslation = ref(localStorage.getItem(LYRIC_TRANSLATION_VISIBLE_KEY) !== 'false')
 const isUserScrolling = ref(false)
 let userScrollTimer: number | undefined
+let lyricRequestId = 0
 
 const hasPronunciation = computed(() => lyrics.value.some((line) => !!line.pronunciation))
 const hasTranslation = computed(() => lyrics.value.some((line) => !!line.translation))
@@ -79,19 +81,25 @@ const parseLyric = (body: Lyric): LyricLine[] => {
 }
 
 const fetchLyrics = async (id: number): Promise<void> => {
+  const requestId = ++lyricRequestId
   try {
     loading.value = true
     lineRefs.value = []
     const res = (await window.api.lyric({ id })) as { body?: Lyric }
+    if (requestId !== lyricRequestId) return
     if (res.body?.lrc?.lyric) {
       lyrics.value = parseLyric(res.body)
     } else {
       lyrics.value = [{ time: 0, text: '暂无歌词' }]
     }
   } catch {
+    if (requestId !== lyricRequestId) return
     lyrics.value = [{ time: 0, text: '歌词加载失败' }]
   } finally {
-    loading.value = false
+    if (requestId === lyricRequestId) {
+      loading.value = false
+      scrollActiveLyricToCenter('auto')
+    }
   }
 }
 
@@ -108,6 +116,10 @@ const handleUserScroll = (): void => {
 watch(
   () => props.songId,
   (newId) => {
+    lyricRequestId++
+    lyrics.value = []
+    lineRefs.value = []
+    scrollContainerRef.value?.scrollTo({ top: 0, behavior: 'auto' })
     if (newId) fetchLyrics(newId)
   },
   { immediate: true }
@@ -196,6 +208,7 @@ watch([showPronunciation, showTranslation], () => {
     <div v-if="loading" class="lyric-status">加载中...</div>
     <div
       v-else
+      ref="scrollContainerRef"
       class="lyrics-scroll-container"
       @wheel.passive="handleUserScroll"
       @touchstart.passive="handleUserScroll"

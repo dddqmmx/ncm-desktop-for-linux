@@ -30,6 +30,10 @@ export const usePlaybackStore = defineStore('playback', () => {
   const playlistStore = usePlaylistStore()
 
   let progressTimer: ReturnType<typeof setInterval> | null = null
+  let progressAnimationFrame: number | null = null
+  let lastSyncedProgressMs = currentTime.value
+  let lastSyncedAt = performance.now()
+  let lastPersistedCurrentTime = Math.floor(currentTime.value)
   let playToken = 0
   let activeCacheMetadataPath = ''
   let loadingStartedAt = 0
@@ -42,7 +46,8 @@ export const usePlaybackStore = defineStore('playback', () => {
   const duration = computed(() => currentSong.value?.duration || 0)
   const progressPercent = computed(() => {
     if (duration.value <= 0) return 0
-    return ((currentTime.value % duration.value) / duration.value) * 100
+    const clampedTime = Math.min(Math.max(currentTime.value, 0), duration.value)
+    return (clampedTime / duration.value) * 100
   })
 
   // --- 内部逻辑 (辅助函数) ---
@@ -117,16 +122,23 @@ export const usePlaybackStore = defineStore('playback', () => {
   const syncProgress = async (): Promise<void> => {
     if (isSeeking.value) return // 拖动中不同步，避免进度条跳动
     try {
-      const progressMs = await window.api.get_progress()
+      const [progressMs, isBuffering] = await Promise.all([
+        window.api.get_progress(),
+        window.api.is_buffering()
+      ])
       if (progressMs !== undefined && progressMs !== null) {
         currentTime.value = progressMs
+        lastSyncedProgressMs = progressMs
+        lastSyncedAt = performance.now()
       }
       await updateCacheProgress()
 
       if (isLoading.value) {
         const hasStarted =
-          progressMs > loadingExpectedStartTime + 300 ||
-          (loadingExpectedStartTime === 0 && progressMs > 0)
+          !isBuffering &&
+          (progressMs >= loadingExpectedStartTime ||
+            progressMs > loadingExpectedStartTime + 300 ||
+            (loadingExpectedStartTime === 0 && progressMs > 0))
 
         if (hasStarted) {
           resetPlaybackLoadState()
@@ -139,12 +151,29 @@ export const usePlaybackStore = defineStore('playback', () => {
     }
   }
 
+  const syncLocalProgress = (): void => {
+    if (isPlaying.value && !isSeeking.value && !isLoading.value) {
+      const elapsedMs = performance.now() - lastSyncedAt
+      const estimatedTime = Math.round(lastSyncedProgressMs + elapsedMs)
+      currentTime.value =
+        duration.value > 0 ? Math.min(estimatedTime, duration.value) : estimatedTime
+    }
+
+    progressAnimationFrame = window.requestAnimationFrame(syncLocalProgress)
+  }
+
   /**
    * 启动进度同步计时器
    */
   const startTimer = (): void => {
+    lastSyncedProgressMs = currentTime.value
+    lastSyncedAt = performance.now()
+    if (!progressAnimationFrame) {
+      progressAnimationFrame = window.requestAnimationFrame(syncLocalProgress)
+    }
     if (progressTimer) return
     progressTimer = setInterval(syncProgress, 200) // 每 200ms 同步一次
+    void syncProgress()
   }
 
   /**
@@ -154,6 +183,10 @@ export const usePlaybackStore = defineStore('playback', () => {
     if (progressTimer) {
       clearInterval(progressTimer)
       progressTimer = null
+    }
+    if (progressAnimationFrame) {
+      window.cancelAnimationFrame(progressAnimationFrame)
+      progressAnimationFrame = null
     }
   }
 
@@ -314,6 +347,9 @@ export const usePlaybackStore = defineStore('playback', () => {
       }
 
       const { song, privilege } = detailData
+      currentTime.value = startTime
+      lastSyncedProgressMs = startTime
+      lastSyncedAt = performance.now()
       setPlayerData(song, false)
 
       // 5. 确定最佳播放音质：结合可用音质和用户设置
@@ -470,9 +506,14 @@ export const usePlaybackStore = defineStore('playback', () => {
    * @param timeInMs 目标时间 (毫秒)
    */
   const seek = async (timeInMs: number): Promise<void> => {
-    currentTime.value = timeInMs
-    beginPlaybackLoadState(timeInMs)
-    await window.api.seek(timeInMs / 1000)
+    const finiteTime = Number.isFinite(timeInMs) ? timeInMs : 0
+    const roundedTime = Math.max(Math.round(finiteTime), 0)
+    const clampedTime = duration.value > 0 ? Math.min(roundedTime, duration.value) : roundedTime
+    currentTime.value = clampedTime
+    lastSyncedProgressMs = clampedTime
+    lastSyncedAt = performance.now()
+    beginPlaybackLoadState(clampedTime)
+    await window.api.seek(clampedTime / 1000)
   }
 
   /**
@@ -565,7 +606,16 @@ export const usePlaybackStore = defineStore('playback', () => {
   })
 
   watch(currentTime, (time) => {
-    localStorage.setItem('currentTime', Math.floor(time).toString())
+    const currentTimeMs = Math.floor(time)
+    const shouldPersist =
+      currentTimeMs === 0 ||
+      currentTimeMs === duration.value ||
+      Math.abs(currentTimeMs - lastPersistedCurrentTime) >= 1000
+
+    if (!shouldPersist) return
+
+    lastPersistedCurrentTime = currentTimeMs
+    localStorage.setItem('currentTime', currentTimeMs.toString())
   })
 
   watch(

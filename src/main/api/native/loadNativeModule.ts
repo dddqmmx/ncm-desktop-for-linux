@@ -42,6 +42,7 @@ export interface NativePlayerBinding {
   stop(): void
   readonly progressMs: number
   readonly isPlaying: boolean
+  readonly isBuffering: boolean
   seek(time: number): void
   switchOutputDevice(deviceId?: string): Promise<void>
   getOutputDevices(): Promise<unknown[]>

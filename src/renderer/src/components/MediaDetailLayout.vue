@@ -132,6 +132,14 @@ defineEmits<{
   overflow-y: auto;
 }
 
+.main-content-scroll-wrapper::-webkit-scrollbar-button {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+  background: transparent !important;
+  background-image: none !important;
+}
+
 .playlist-container {
   padding: 40px; /* 增加一点内边距让呼吸感更好 */
   max-width: 1200px;

@@ -23,12 +23,15 @@ const theme = ref({
 })
 
 // 格式化时间
-const formatTime = (ms: number): string => {
-  if (!ms) return '0:00'
-  const s = Math.floor(ms / 1000)
-  const min = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  return `${min}:${sec < 10 ? '0' : ''}${sec}`
+const formatTime = (ms: number, showMillis = false): string => {
+  if (!Number.isFinite(ms) || ms <= 0) return showMillis ? '0:00.000' : '0:00'
+  const totalMs = Math.round(ms)
+  const min = Math.floor(totalMs / 60_000)
+  const sec = Math.floor((totalMs % 60_000) / 1000)
+  const baseTime = `${min}:${sec.toString().padStart(2, '0')}`
+  if (!showMillis) return baseTime
+  const millis = totalMs % 1000
+  return `${baseTime}.${millis.toString().padStart(3, '0')}`
 }
 
 const progressPercent = computed(() => playerStore.progressPercent)
@@ -49,8 +52,7 @@ const endSeek = (): void => {
 // 处理进度跳转
 const handleSeek = async (e: Event): Promise<void> => {
   beginSeek()
-  const val = Number((e.target as HTMLInputElement).value)
-  const targetTime = (val / 100) * (playerStore.currentSong?.duration ?? 0)
+  const targetTime = Number((e.target as HTMLInputElement).value)
   try {
     await playerStore.seek(targetTime)
   } finally {
@@ -60,8 +62,8 @@ const handleSeek = async (e: Event): Promise<void> => {
 
 const handleInput = (e: Event): void => {
   beginSeek()
-  const val = Number((e.target as HTMLInputElement).value)
-  playerStore.currentTime = (val / 100) * (playerStore.currentSong?.duration ?? 0)
+  const targetTime = Number((e.target as HTMLInputElement).value)
+  playerStore.currentTime = targetTime
 }
 
 const goToArtist = async (artistId: number): Promise<void> => {
@@ -210,8 +212,9 @@ const onImageLoad = (): void => {
                   class="progress-input"
                   type="range"
                   min="0"
-                  max="100"
-                  :value="progressPercent"
+                  :max="playerStore.duration"
+                  step="1"
+                  :value="playerStore.currentTime"
                   @input="handleInput"
                   @change="handleSeek"
                 />
@@ -466,7 +469,8 @@ const onImageLoad = (): void => {
   font-size: 12px;
   font-weight: 600;
   opacity: 0.6;
-  min-width: 45px;
+  min-width: 72px;
+  font-variant-numeric: tabular-nums;
 }
 
 .progress-container,

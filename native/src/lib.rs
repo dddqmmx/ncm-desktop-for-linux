@@ -111,6 +111,7 @@ enum PlayerCommand {
 struct SharedState {
     progress_ms: AtomicU32,
     is_playing: AtomicU32, // 0: Stopped, 1: Playing, 2: Paused
+    is_buffering: AtomicU32,
 }
 
 trait PlayerBackend: Send {
@@ -134,6 +135,7 @@ trait PlayerBackend: Send {
     fn stop(&mut self);
     fn seek(&self, target: Duration);
     fn progress(&self) -> Duration;
+    fn is_buffering(&self) -> bool;
     fn is_finished(&self) -> bool;
     fn wait_finished_signal(&self) -> SignalFuture;
     fn output_devices(&self) -> BackendResult<Vec<OutputDeviceInfo>>;
@@ -216,6 +218,13 @@ impl PlayerBackend for NativePlayer {
 
     fn progress(&self) -> Duration {
         self.0.progress()
+    }
+
+    fn is_buffering(&self) -> bool {
+        self.0
+            .get_state()
+            .waiting_for_seek
+            .load(Ordering::Relaxed)
     }
 
     fn is_finished(&self) -> bool {
@@ -335,9 +344,11 @@ where
                     .is_playing
                     .store(PlaybackStatus::Stopped.as_u32(), Ordering::SeqCst);
                 self.shared_state.progress_ms.store(0, Ordering::SeqCst);
+                self.shared_state.is_buffering.store(0, Ordering::SeqCst);
             }
             PlayerCommand::Seek(time_secs) => {
                 self.player.seek(seconds_to_duration(time_secs));
+                self.shared_state.is_buffering.store(1, Ordering::SeqCst);
             }
             PlayerCommand::SwitchOutputDevice(device_name, reply_tx) => {
                 let result = self
@@ -371,6 +382,7 @@ where
             duration_to_millis(start_at.unwrap_or(Duration::ZERO)),
             Ordering::SeqCst,
         );
+        self.shared_state.is_buffering.store(1, Ordering::SeqCst);
 
         match Self::play_source_on(&mut self.player, &source, start_at).await {
             Ok(()) => {
@@ -387,6 +399,7 @@ where
                     .is_playing
                     .store(PlaybackStatus::Stopped.as_u32(), Ordering::SeqCst);
                 self.shared_state.progress_ms.store(0, Ordering::SeqCst);
+                self.shared_state.is_buffering.store(0, Ordering::SeqCst);
                 Err(err)
             }
         }
@@ -450,6 +463,9 @@ where
                 .store(duration_to_millis(position), Ordering::SeqCst);
         }
         self.shared_state
+            .is_buffering
+            .store(if self.player.is_buffering() { 1 } else { 0 }, Ordering::SeqCst);
+        self.shared_state
             .is_playing
             .store(playback_status.as_u32(), Ordering::SeqCst);
 
@@ -466,12 +482,16 @@ where
         self.shared_state
             .progress_ms
             .store(duration_to_millis(progress), Ordering::Relaxed);
+        self.shared_state
+            .is_buffering
+            .store(if self.player.is_buffering() { 1 } else { 0 }, Ordering::Relaxed);
 
         if playback_status == PlaybackStatus::Playing && self.player.is_finished() {
             self.current_source = None;
             self.shared_state
                 .is_playing
                 .store(PlaybackStatus::Stopped.as_u32(), Ordering::SeqCst);
+            self.shared_state.is_buffering.store(0, Ordering::SeqCst);
         }
     }
 
@@ -521,6 +541,7 @@ impl PlayerService {
         let shared_state = Arc::new(SharedState {
             progress_ms: AtomicU32::new(0),
             is_playing: AtomicU32::new(PlaybackStatus::Stopped.as_u32()),
+            is_buffering: AtomicU32::new(0),
         });
 
         let factory = AudioPlayerFactory;
@@ -633,6 +654,11 @@ impl PlayerService {
     #[napi(getter)]
     pub fn is_playing(&self) -> bool {
         self.shared_state.is_playing.load(Ordering::Relaxed) == PlaybackStatus::Playing.as_u32()
+    }
+
+    #[napi(getter)]
+    pub fn is_buffering(&self) -> bool {
+        self.shared_state.is_buffering.load(Ordering::Relaxed) != 0
     }
 
     #[napi(getter)]
@@ -1018,6 +1044,10 @@ mod tests {
             *self.progress.lock().unwrap()
         }
 
+        fn is_buffering(&self) -> bool {
+            false
+        }
+
         fn is_finished(&self) -> bool {
             self.finished.load(Ordering::SeqCst)
         }
@@ -1243,6 +1273,10 @@ mod tests {
             *self.progress.lock().unwrap()
         }
 
+        fn is_buffering(&self) -> bool {
+            false
+        }
+
         fn is_finished(&self) -> bool {
             self.finished.load(Ordering::SeqCst)
         }
@@ -1275,6 +1309,7 @@ mod tests {
         Arc::new(SharedState {
             progress_ms: AtomicU32::new(0),
             is_playing: AtomicU32::new(PlaybackStatus::Stopped.as_u32()),
+            is_buffering: AtomicU32::new(0),
         })
     }
 
