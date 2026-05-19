@@ -1,9 +1,9 @@
+use crate::audio::state::SharedState;
 use cpal::traits::DeviceTrait;
 use ringbuf::traits::{Consumer, Observer};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use symphonia::core::sample::SampleFormat as SymphoniaSampleFormat;
-use crate::audio::state::SharedState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputDeviceInfo {
@@ -296,7 +296,9 @@ pub(crate) fn device_id(device: &cpal::Device) -> String {
         use alsa::device_name::HintIter;
         use std::ffi::CStr;
 
-        if let Ok(iter) = HintIter::new(None, unsafe { CStr::from_bytes_with_nul_unchecked(b"pcm\0") }) {
+        if let Ok(iter) = HintIter::new(None, unsafe {
+            CStr::from_bytes_with_nul_unchecked(b"pcm\0")
+        }) {
             for hint in iter {
                 if let Some(hint_name) = hint.name {
                     if hint_name == alsa_name {
@@ -320,7 +322,9 @@ pub(crate) fn device_display_name(device: &cpal::Device) -> String {
         use alsa::device_name::HintIter;
         use std::ffi::CStr;
 
-        if let Ok(iter) = HintIter::new(None, unsafe { CStr::from_bytes_with_nul_unchecked(b"pcm\0") }) {
+        if let Ok(iter) = HintIter::new(None, unsafe {
+            CStr::from_bytes_with_nul_unchecked(b"pcm\0")
+        }) {
             for hint in iter {
                 if let Some(hint_name) = hint.name {
                     if hint_name == alsa_name {
@@ -362,7 +366,8 @@ pub(crate) fn should_list_linux_output_device(
     current_id: Option<&str>,
 ) -> bool {
     if id == "default" {
-        return default_id.map_or(true, |d| d == "default") || current_id.map_or(false, |c| c == "default");
+        return default_id.map_or(true, |d| d == "default")
+            || current_id.map_or(false, |c| c == "default");
     }
 
     let is_virtual = id.starts_with("null")
@@ -432,10 +437,7 @@ mod tests {
             linux_plughw_locator("hw:CARD=Device,DEV=1").as_deref(),
             Some("plughw:CARD=Device,DEV=1")
         );
-        assert_eq!(
-            linux_plughw_locator("plughw:CARD=Device,DEV=0"),
-            None
-        );
+        assert_eq!(linux_plughw_locator("plughw:CARD=Device,DEV=0"), None);
         assert_eq!(linux_plughw_locator("default"), None);
     }
 

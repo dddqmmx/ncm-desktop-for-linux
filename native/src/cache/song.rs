@@ -92,7 +92,11 @@ impl SongStreamCacheMeta {
     pub fn mark_complete(&mut self) {
         if let Some(content_length) = self.content_length {
             if self.downloaded_bytes() < content_length {
-                println!("[cache] 警告：尝试标记完成，但下载字节数（{}）小于内容长度（{}）", self.downloaded_bytes(), content_length);
+                println!(
+                    "[cache] 警告：尝试标记完成，但下载字节数（{}）小于内容长度（{}）",
+                    self.downloaded_bytes(),
+                    content_length
+                );
                 return;
             }
         }
@@ -119,18 +123,24 @@ mod tests {
     fn test_is_fully_downloaded_logic() {
         let mut meta = SongStreamCacheMeta::new(1, "lossless", "http://example.com/1.flac");
         meta.set_content_length(Some(1000));
-        
+
         // Simulate incomplete download
         meta.add_range(0..500);
-        meta.mark_complete(); 
-        
+        meta.mark_complete();
+
         assert!(!meta.is_complete, "Should not mark complete if incomplete");
-        assert!(!meta.is_fully_downloaded(), "Should not be fully downloaded if ranges are incomplete");
-        
+        assert!(
+            !meta.is_fully_downloaded(),
+            "Should not be fully downloaded if ranges are incomplete"
+        );
+
         // Simulate complete download but mark_complete NOT called yet
         meta.add_range(500..1000);
-        assert!(meta.is_fully_downloaded(), "Should be fully downloaded now even if is_complete is false");
-        
+        assert!(
+            meta.is_fully_downloaded(),
+            "Should be fully downloaded now even if is_complete is false"
+        );
+
         meta.mark_complete();
         assert!(meta.is_complete);
     }
@@ -138,7 +148,7 @@ mod tests {
     #[test]
     fn test_persistent_cache_resumption_and_no_truncation() {
         use std::fs;
-        use std::io::{Read, Write, Seek};
+        use std::io::{Read, Seek, Write};
         let temp_dir = std::env::temp_dir().join("music_cache_resumption_test");
         if temp_dir.exists() {
             let _ = fs::remove_dir_all(&temp_dir);
@@ -156,31 +166,45 @@ mod tests {
 
         // 2. Interruption: New session starts (simulating switch_output_device)
         // Ensure NO truncation!
-        fs::OpenOptions::new().write(true).truncate(false).create(true).open(&data_path).unwrap();
-        
+        fs::OpenOptions::new()
+            .write(true)
+            .truncate(false)
+            .create(true)
+            .open(&data_path)
+            .unwrap();
+
         // New tracker loads existing meta
-        let mut new_meta: SongStreamCacheMeta = serde_json::from_str(&fs::read_to_string(&meta_path).unwrap()).unwrap();
+        let mut new_meta: SongStreamCacheMeta =
+            serde_json::from_str(&fs::read_to_string(&meta_path).unwrap()).unwrap();
         assert_eq!(new_meta.downloaded_bytes(), 50);
 
         // New tracker downloads the rest (50..100)
         new_meta.add_range(50..100);
-        
+
         // Simulating writing the rest at offset 50
-        let mut f = fs::OpenOptions::new().write(true).read(true).open(&data_path).unwrap();
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .read(true)
+            .open(&data_path)
+            .unwrap();
         f.seek(std::io::SeekFrom::Start(50)).unwrap();
         f.write_all(&[0x5Au8; 50]).unwrap();
-        
+
         new_meta.mark_complete();
         assert!(new_meta.is_complete);
 
         let file_size = fs::metadata(&data_path).unwrap().len();
         assert_eq!(file_size, 100);
-        
+
         // VERIFY: First 50 bytes are PRESERVED!
         let mut first_50 = vec![0u8; 50];
         f.seek(std::io::SeekFrom::Start(0)).unwrap();
         f.read_exact(&mut first_50).unwrap();
-        assert_eq!(first_50, vec![0xA5u8; 50], "Data from first session must be preserved");
+        assert_eq!(
+            first_50,
+            vec![0xA5u8; 50],
+            "Data from first session must be preserved"
+        );
 
         let _ = fs::remove_dir_all(temp_dir);
     }

@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
 use std::time::Duration;
 use tokio::sync::Notify;
 

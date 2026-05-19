@@ -1,6 +1,7 @@
+use crate::audio::state::SharedState;
+use ringbuf::traits::Producer;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use ringbuf::traits::Producer;
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{CODEC_TYPE_NULL, Decoder, DecoderOptions};
 use symphonia::core::conv::ConvertibleSample;
@@ -9,7 +10,6 @@ use symphonia::core::io::{MediaSource, MediaSourceStream};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::sample::{Sample, SampleFormat as SymphoniaSampleFormat};
-use crate::audio::state::SharedState;
 
 pub(crate) struct AudioMetadata {
     pub(crate) sample_rate: u32,
@@ -58,8 +58,8 @@ fn probe_source(
     let channels = track.codec_params.channels.unwrap().count() as u16;
     let bits_per_sample = track.codec_params.bits_per_sample;
     let sample_format = track.codec_params.sample_format;
-    let decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())?;
+    let decoder =
+        symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default())?;
 
     Ok(AudioMetadata {
         sample_rate: sr,
@@ -90,7 +90,10 @@ pub(crate) fn handle_seek_if_needed(
     };
 
     if let Some(target) = seek_req {
-        println!("[Seek-Check] >>> 收到 Seek 请求，目标时间: {:?} <<<", target);
+        println!(
+            "[Seek-Check] >>> 收到 Seek 请求，目标时间: {:?} <<<",
+            target
+        );
 
         state.discard_buffer.store(true, Ordering::SeqCst);
         state.waiting_for_seek.store(true, Ordering::SeqCst);

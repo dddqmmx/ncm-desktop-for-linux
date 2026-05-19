@@ -1,9 +1,9 @@
+use crate::cache::song::SongStreamCacheMeta;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use stream_download::{StreamPhase, StreamState};
-use crate::cache::song::SongStreamCacheMeta;
 
 #[derive(Clone)]
 pub struct SongCacheTracker {
