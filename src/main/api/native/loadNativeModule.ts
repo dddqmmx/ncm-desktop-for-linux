@@ -63,7 +63,8 @@ export interface NativeCacheBinding {
   prepareSongSource(
     songId: number,
     quality: string,
-    url: string
+    url: string,
+    expectedBytes?: number
   ): Promise<{
     type?: string
     value?: string

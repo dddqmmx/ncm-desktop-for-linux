@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, watch, computed } from 'vue'
-import { CurrentSong, Privilege } from '@renderer/types/player'
+import { CurrentSong } from '@renderer/types/player'
 import { Song } from '@renderer/types/songDetail'
 import { SongUrl, SoundQualityType } from '@renderer/types/song'
 import type { SongCacheProgress } from '@renderer/types/cache'
@@ -9,7 +9,7 @@ import { useConfigStore } from '../configStore'
 import { usePlaylistStore } from './playlist'
 import { prepareCachedSongSource } from '@renderer/utils/cache'
 import { createCurrentSongArtists } from './utils'
-import { getAvailableQualities, computePlayableLevel } from './quality'
+import { isSoundQualityLevel } from './quality'
 
 export const usePlaybackStore = defineStore('playback', () => {
   const currentSong = ref<CurrentSong | null>(
@@ -42,6 +42,7 @@ export const usePlaybackStore = defineStore('playback', () => {
   const PLAYBACK_OPERATION_TIMEOUT_MS = 20_000
   const STARTUP_STALL_TIMEOUT_MS = 30_000
   const NATURAL_END_TOLERANCE_MS = 2_500
+  const PLAYBACK_STARTED_PROGRESS_THRESHOLD_MS = 150
 
   const duration = computed(() => currentSong.value?.duration || 0)
   const progressPercent = computed(() => {
@@ -134,11 +135,7 @@ export const usePlaybackStore = defineStore('playback', () => {
       await updateCacheProgress()
 
       if (isLoading.value) {
-        const hasStarted =
-          !isBuffering &&
-          (progressMs >= loadingExpectedStartTime ||
-            progressMs > loadingExpectedStartTime + 300 ||
-            (loadingExpectedStartTime === 0 && progressMs > 0))
+        const hasStarted = !isBuffering && hasPlaybackReachedExpectedStart(progressMs)
 
         if (hasStarted) {
           resetPlaybackLoadState()
@@ -149,6 +146,14 @@ export const usePlaybackStore = defineStore('playback', () => {
     } catch (error) {
       console.error('同步进度失败:', error)
     }
+  }
+
+  const hasPlaybackReachedExpectedStart = (progressMs: number): boolean => {
+    if (loadingExpectedStartTime <= 0) {
+      return progressMs >= PLAYBACK_STARTED_PROGRESS_THRESHOLD_MS
+    }
+
+    return progressMs >= loadingExpectedStartTime
   }
 
   const syncLocalProgress = (): void => {
@@ -193,17 +198,14 @@ export const usePlaybackStore = defineStore('playback', () => {
   /**
    * 获取歌曲详情及其权限
    */
-  const getSongDetailData = async (
-    id: number
-  ): Promise<{ song: Song; privilege: Privilege } | undefined> => {
+  const getSongDetailData = async (id: number): Promise<{ song: Song } | undefined> => {
     try {
       const res = (await window.api.song_detail({ ids: [id] })) as {
-        body?: { songs: Song[]; privileges: Privilege[] }
+        body?: { songs: Song[] }
       }
-      if (res.body?.songs?.[0] && res.body?.privileges?.[0]) {
+      if (res.body?.songs?.[0]) {
         return {
-          song: res.body.songs[0],
-          privilege: res.body.privileges[0]
+          song: res.body.songs[0]
         }
       }
     } catch (e) {
@@ -215,17 +217,30 @@ export const usePlaybackStore = defineStore('playback', () => {
   /**
    * 请求指定音质的播放 URL
    */
-  const fetchSongUrl = async (song_id: number, level: SoundQualityType): Promise<string> => {
+  const fetchSongUrl = async (
+    song_id: number,
+    level: SoundQualityType
+  ): Promise<{ url: string; level: SoundQualityType; size?: number; sampleRate?: number }> => {
     try {
       const res = (await window.api.song_url({
         id: song_id,
         level: level,
         cookie: userStore.cookie
       })) as { body?: { data?: SongUrl[] } }
-      return res.body?.data?.[0].url ?? ''
+      const data = res.body?.data?.[0]
+      return {
+        url: data?.url ?? '',
+        level: isSoundQualityLevel(data?.level) ? data.level : level,
+        ...(typeof data?.size === 'number' && Number.isFinite(data.size)
+          ? { size: data.size }
+          : {}),
+        ...(typeof data?.sr === 'number' && Number.isFinite(data.sr)
+          ? { sampleRate: data.sr }
+          : {})
+      }
     } catch (e) {
       console.error('获取歌曲 URL 失败', e)
-      return ''
+      return { url: '', level }
     }
   }
 
@@ -303,6 +318,8 @@ export const usePlaybackStore = defineStore('playback', () => {
       return
     }
 
+    console.log(`开始播放歌曲 ID ${song_id}，起始时间 ${startTime}ms，强制重启: ${forceRestart}`)
+
     // 2. 准备开始切换流程
     // 允许新任务中断正在进行的旧任务。我们通过 playToken 来标识每个任务的唯一性。
     playToken++
@@ -346,24 +363,23 @@ export const usePlaybackStore = defineStore('playback', () => {
         throw new Error('无法获取歌曲详情')
       }
 
-      const { song, privilege } = detailData
+      const { song } = detailData
       currentTime.value = startTime
       lastSyncedProgressMs = startTime
       lastSyncedAt = performance.now()
       setPlayerData(song, false)
 
-      // 5. 确定最佳播放音质：结合可用音质和用户设置
-      const availableQualities = getAvailableQualities(song, privilege)
-      const targetLevel = computePlayableLevel(availableQualities, configStore.soundQuality)
+      // 5. 按用户设置请求音质。真实可播放音质以 song_url_v1 返回的 data[0].level 为准。
+      const targetLevel = configStore.soundQuality
 
       // 6. 获取歌曲播放地址 (URL)
-      const url = await withTimeout(
+      const songUrl = await withTimeout(
         fetchSongUrl(song_id, targetLevel),
         PLAYBACK_OPERATION_TIMEOUT_MS,
         '获取播放 URL 超时'
       )
       if (currentToken !== playToken) return
-      if (!url) {
+      if (!songUrl.url) {
         throw new Error('获取播放 URL 失败')
       }
 
@@ -385,7 +401,7 @@ export const usePlaybackStore = defineStore('playback', () => {
 
       // 9. 准备播放源：处理缓存逻辑 (可能是本地文件，也可能是带缓存的 URL)
       const playbackSource = await withTimeout(
-        prepareCachedSongSource(song_id, targetLevel, url),
+        prepareCachedSongSource(song_id, songUrl.level, songUrl.url, songUrl.size),
         PLAYBACK_OPERATION_TIMEOUT_MS,
         '准备播放缓存超时'
       )

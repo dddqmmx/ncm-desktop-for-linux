@@ -156,12 +156,18 @@ impl CacheService {
         song_id: i64,
         quality: String,
         url: String,
+        expected_bytes: Option<i64>,
     ) -> Result<CachedSongSource> {
         let service = Arc::clone(&self.service);
         native_runtime()
             .spawn_blocking(move || {
                 service
-                    .prepare_song_source(song_id, &quality, &url)
+                    .prepare_song_source(
+                        song_id,
+                        &quality,
+                        &url,
+                        expected_bytes.map(|value| value.max(0) as u64),
+                    )
                     .map_err(|err| Error::from_reason(err.to_string()))
             })
             .await

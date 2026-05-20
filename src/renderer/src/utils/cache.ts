@@ -35,7 +35,8 @@ export async function resolveCachedMediaUrl(url: string | null | undefined): Pro
 export async function prepareCachedSongSource(
   songId: number,
   quality: string,
-  url: string
+  url: string,
+  expectedBytes?: number
 ): Promise<CachedSongSource> {
   const normalizedUrl = normalizeUrl(url)
   if (!normalizedUrl) {
@@ -49,7 +50,8 @@ export async function prepareCachedSongSource(
     const payload = await window.api.prepare_cached_song_source({
       songId,
       quality,
-      url: normalizedUrl
+      url: normalizedUrl,
+      expectedBytes
     })
 
     if (

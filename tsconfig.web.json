@@ -8,6 +8,7 @@
 , "src/main/api/api", "src/main/api/encrypt.ts"  ],
   "compilerOptions": {
     "composite": true,
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "@renderer/*": [

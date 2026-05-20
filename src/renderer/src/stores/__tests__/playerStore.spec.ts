@@ -193,4 +193,159 @@ describe('playerStore device switch sequencing', () => {
 
     expect(playerStore.currentTime).toBe(60_000)
   })
+
+  it('requests configured quality and uses the API returned actual level for cache identity', async () => {
+    storage.setItem(
+      SETTINGS_KEY,
+      JSON.stringify({
+        soundQuality: 'hires'
+      })
+    )
+
+    const songUrl = vi.fn(async () => ({
+      body: {
+        data: [{ url: 'https://example.com/lossless.flac', level: 'lossless' }]
+      }
+    }))
+    const prepareCachedSongSource = vi.fn(async () => ({
+      type: 'url',
+      value: 'https://example.com/lossless.flac'
+    }))
+
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        song_detail: vi.fn(async ({ ids }: { ids: number[] }) => ({
+          body: {
+            songs: [
+              {
+                id: ids[0],
+                name: `Song ${ids[0]}`,
+                dt: 180000,
+                ar: [{ id: 1, name: 'Artist' }],
+                al: { id: 1, name: 'Album', picUrl: 'cover' },
+                h: null,
+                sq: null,
+                hr: null
+              }
+            ],
+            privileges: [
+              {
+                id: ids[0],
+                playMaxBrLevel: 'standard',
+                maxBrLevel: 'standard',
+                plLevel: 'standard',
+                chargeInfoList: []
+              }
+            ]
+          }
+        })),
+        song_url: songUrl,
+        get_output_devices: vi.fn(async () => [
+          {
+            id: 'default',
+            name: 'System Default',
+            isDefault: true,
+            isCurrent: true
+          }
+        ]),
+        switch_output_device: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        play_url: vi.fn(async () => undefined),
+        prepare_cached_song_source: prepareCachedSongSource,
+        resume: vi.fn(async () => undefined),
+        get_progress: vi.fn(async () => 0),
+        is_buffering: vi.fn(async () => false),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 0 })),
+        seek: vi.fn(async () => undefined),
+        wait_finished: vi.fn(() => new Promise(() => undefined))
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+
+    await playerStore.playMusic(1)
+
+    expect(songUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 1,
+        level: 'hires'
+      })
+    )
+    expect(prepareCachedSongSource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        songId: 1,
+        quality: 'lossless',
+        url: 'https://example.com/lossless.flac'
+      })
+    )
+  })
+
+  it('keeps startup loading until native progress has actually advanced', async () => {
+    let now = 1_000
+    let animationFrameCallback: FrameRequestCallback | undefined
+
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
+        animationFrameCallback = callback
+        return 1
+      }),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        song_detail: vi.fn(async ({ ids }: { ids: number[] }) => ({
+          body: {
+            songs: [
+              {
+                id: ids[0],
+                name: `Song ${ids[0]}`,
+                dt: 180000,
+                ar: [{ id: 1, name: 'Artist' }],
+                al: { id: 1, name: 'Album', picUrl: 'cover' },
+                h: null,
+                sq: null,
+                hr: null
+              }
+            ]
+          }
+        })),
+        song_url: vi.fn(async () => ({
+          body: {
+            data: [{ url: 'https://example.com/test.mp3', level: 'standard' }]
+          }
+        })),
+        get_output_devices: vi.fn(async () => [
+          {
+            id: 'default',
+            name: 'System Default',
+            isDefault: true,
+            isCurrent: true
+          }
+        ]),
+        switch_output_device: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        play_url: vi.fn(async () => undefined),
+        resume: vi.fn(async () => undefined),
+        get_progress: vi.fn(async () => 0),
+        is_buffering: vi.fn(async () => false),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 0 })),
+        seek: vi.fn(async () => undefined),
+        wait_finished: vi.fn(() => new Promise(() => undefined))
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+
+    await playerStore.playMusic(1)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(playerStore.isLoading).toBe(true)
+
+    now = 2_000
+    animationFrameCallback?.(now)
+
+    expect(playerStore.currentTime).toBe(0)
+  })
 })

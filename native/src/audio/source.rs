@@ -1,7 +1,8 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 use stream_download::storage::StorageProvider;
 use symphonia::core::io::MediaSource;
 
@@ -75,7 +76,18 @@ impl StorageProvider for PersistentFileStorageProvider {
             .write(true)
             .open(&self.path)?;
         let reader = BufReader::new(OpenOptions::new().read(true).open(&self.path)?);
-        let shared = Arc::new(Mutex::new(StorageReadState { position: 0 }));
+        let writer_position = writer
+            .metadata()
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        let shared = Arc::new((
+            Mutex::new(StorageReadState {
+                reader_position: 0,
+                writer_position,
+                content_length: _content_length,
+            }),
+            Condvar::new(),
+        ));
 
         Ok((reader, writer)).map(|(reader, writer)| {
             (
@@ -95,28 +107,64 @@ impl StorageProvider for PersistentFileStorageProvider {
 
 #[derive(Debug)]
 struct StorageReadState {
-    position: u64,
+    reader_position: u64,
+    writer_position: u64,
+    content_length: Option<u64>,
 }
 
 pub struct ThrottledStorageReader {
     inner: BufReader<File>,
-    shared: Arc<Mutex<StorageReadState>>,
+    shared: Arc<(Mutex<StorageReadState>, Condvar)>,
 }
 
 impl ThrottledStorageReader {
     fn update_position(&self, position: u64) {
-        if let Ok(mut state) = self.shared.lock() {
-            state.position = position;
+        let (lock, condvar) = &*self.shared;
+        if let Ok(mut state) = lock.lock() {
+            state.reader_position = position;
+            condvar.notify_all();
         }
     }
 }
 
 impl Read for ThrottledStorageReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let read = self.inner.read(buf)?;
-        let position = self.inner.stream_position()?;
-        self.update_position(position);
-        Ok(read)
+        let mut eof_wait_started: Option<Instant> = None;
+
+        loop {
+            let read = self.inner.read(buf)?;
+            let position = self.inner.stream_position()?;
+            self.update_position(position);
+
+            if read > 0 {
+                return Ok(read);
+            }
+
+            let (lock, condvar) = &*self.shared;
+            let state = lock.lock().unwrap();
+            let is_complete = state
+                .content_length
+                .map_or(false, |content_length| position >= content_length);
+            if is_complete {
+                return Ok(0);
+            }
+
+            if state.writer_position > position {
+                drop(state);
+                continue;
+            }
+
+            if state.content_length.is_none() {
+                let started = eof_wait_started.get_or_insert_with(Instant::now);
+                if started.elapsed() >= Duration::from_secs(5) {
+                    return Ok(0);
+                }
+            }
+
+            let _ = condvar
+                .wait_timeout(state, Duration::from_millis(50))
+                .unwrap();
+        }
     }
 }
 
@@ -130,35 +178,56 @@ impl Seek for ThrottledStorageReader {
 
 pub struct ThrottledStorageWriter {
     inner: File,
-    shared: Arc<Mutex<StorageReadState>>,
+    shared: Arc<(Mutex<StorageReadState>, Condvar)>,
     max_write_ahead_bytes: Option<u64>,
 }
 
 impl ThrottledStorageWriter {
     fn read_position(&self) -> u64 {
         self.shared
+            .0
             .lock()
-            .map(|state| state.position)
+            .map(|state| state.reader_position)
             .unwrap_or_default()
+    }
+
+    fn update_position(&self, position: u64) {
+        let (lock, condvar) = &*self.shared;
+        if let Ok(mut state) = lock.lock() {
+            state.writer_position = position;
+            condvar.notify_all();
+        }
     }
 }
 
 impl Write for ThrottledStorageWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let Some(max_write_ahead_bytes) = self.max_write_ahead_bytes else {
-            return self.inner.write(buf);
+            let written = self.inner.write(buf)?;
+            let position = self.inner.stream_position()?;
+            self.update_position(position);
+            return Ok(written);
         };
 
-        let writer_position = self.inner.stream_position()?;
-        let read_position = self.read_position();
-        let allowed_until = read_position.saturating_add(max_write_ahead_bytes);
+        loop {
+            let writer_position = self.inner.stream_position()?;
+            let read_position = self.read_position();
+            let allowed_until = read_position.saturating_add(max_write_ahead_bytes);
 
-        if writer_position >= allowed_until {
-            return Ok(0);
+            if writer_position < allowed_until {
+                let remaining = (allowed_until - writer_position) as usize;
+                let written = self.inner.write(&buf[..buf.len().min(remaining)])?;
+                let position = self.inner.stream_position()?;
+                self.update_position(position);
+                return Ok(written);
+            }
+
+            let (lock, condvar) = &*self.shared;
+            let state = lock.lock().unwrap();
+            let _ = condvar
+                .wait_timeout(state, Duration::from_millis(50))
+                .unwrap();
         }
-
-        let remaining = (allowed_until - writer_position) as usize;
-        self.inner.write(&buf[..buf.len().min(remaining)])
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -168,7 +237,9 @@ impl Write for ThrottledStorageWriter {
 
 impl Seek for ThrottledStorageWriter {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        self.inner.seek(pos)
+        let position = self.inner.seek(pos)?;
+        self.update_position(position);
+        Ok(position)
     }
 }
 
@@ -176,6 +247,8 @@ impl Seek for ThrottledStorageWriter {
 mod tests {
     use super::*;
     use std::io::{Read, Seek, SeekFrom, Write};
+    use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn persistent_file_storage_provider_keeps_reader_and_writer_offsets_independent() {
@@ -196,6 +269,38 @@ mod tests {
         reader.read_exact(&mut header).unwrap();
 
         assert_eq!(&header, b"ID3");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn persistent_file_reader_waits_for_more_cached_bytes_before_eof() {
+        let path = std::env::temp_dir().join(format!(
+            "stream-cache-wait-{}-{}.bin",
+            std::process::id(),
+            crate::cache::types::now_unix_secs()
+        ));
+        let (mut reader, mut writer) = PersistentFileStorageProvider::new(&path)
+            .into_reader_writer(Some(6))
+            .unwrap();
+
+        writer.write_all(b"abc").unwrap();
+        writer.flush().unwrap();
+
+        let mut first = [0u8; 3];
+        reader.read_exact(&mut first).unwrap();
+        assert_eq!(&first, b"abc");
+
+        let reader_thread = thread::spawn(move || {
+            let mut second = [0u8; 3];
+            reader.read_exact(&mut second).unwrap();
+            second
+        });
+
+        thread::sleep(Duration::from_millis(100));
+        writer.write_all(b"def").unwrap();
+        writer.flush().unwrap();
+
+        assert_eq!(&reader_thread.join().unwrap(), b"def");
         let _ = std::fs::remove_file(path);
     }
 }

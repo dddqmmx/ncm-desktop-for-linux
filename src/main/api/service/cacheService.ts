@@ -330,8 +330,9 @@ export const CacheService = {
     songId: number
     quality: string
     url: string
+    expectedBytes?: number
   }): Promise<CachedSongSource> {
-    const { songId, quality, url } = payload
+    const { songId, quality, url, expectedBytes } = payload
     const normalizedUrl = url.trim()
 
     if (!normalizedUrl) {
@@ -340,7 +341,12 @@ export const CacheService = {
 
     try {
       const source = normalizeCachedSongSource(
-        await getNativeCache().prepareSongSource(songId, quality, normalizedUrl)
+        await getNativeCache().prepareSongSource(
+          songId,
+          quality,
+          normalizedUrl,
+          Number.isFinite(expectedBytes) ? expectedBytes : undefined
+        )
       )
       if (source) {
         return source

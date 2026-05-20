@@ -116,6 +116,11 @@ pub(crate) fn handle_seek_if_needed(
             res
         );
 
+        if let Err(err) = res {
+            fail_playback_after_stream_error(state, "seek", &err);
+            return;
+        }
+
         state.buffered_frames.store(0, Ordering::SeqCst);
         let target_frame = (target.as_secs_f64() * sr as f64) as u64;
         state.current_frame.store(target_frame, Ordering::SeqCst);
@@ -160,6 +165,10 @@ where
                 println!("[Decoder] 到达文件末尾 (EOF)");
                 return false;
             }
+            if is_stream_download_failure(&e) {
+                fail_playback_after_stream_error(state, "read", &e);
+                return false;
+            }
             std::thread::sleep(Duration::from_millis(100));
             true
         }
@@ -167,6 +176,28 @@ where
             println!("[Decoder] 停止解码: {:?}", e);
             false
         }
+    }
+}
+
+fn is_stream_download_failure(err: &std::io::Error) -> bool {
+    err.kind() == std::io::ErrorKind::Other && err.to_string().contains("stream failed to download")
+}
+
+fn fail_playback_after_stream_error(
+    state: &SharedState,
+    operation: &str,
+    err: &dyn std::fmt::Display,
+) {
+    eprintln!("[Decoder] stream {operation} failed, stopping playback: {err}");
+    state.discard_buffer.store(true, Ordering::SeqCst);
+    state.waiting_for_seek.store(false, Ordering::SeqCst);
+    state.has_seek_request.store(false, Ordering::SeqCst);
+    state.buffered_frames.store(0, Ordering::SeqCst);
+    state.current_frame.store(0, Ordering::SeqCst);
+    state.decoder_done.store(true, Ordering::SeqCst);
+    state.is_terminating.store(true, Ordering::SeqCst);
+    if !state.is_finished.swap(true, Ordering::SeqCst) {
+        state.finish_notify.notify_waiters();
     }
 }
 
@@ -202,5 +233,53 @@ where
             }
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
+    use tokio::sync::Notify;
+
+    fn create_state() -> SharedState {
+        SharedState {
+            is_paused: AtomicBool::new(false),
+            current_frame: AtomicU64::new(48_000),
+            sample_rate: AtomicU32::new(48_000),
+            has_seek_request: AtomicBool::new(true),
+            seek_request: Mutex::new(Some(Duration::from_secs(1))),
+            is_terminating: AtomicBool::new(false),
+            discard_buffer: AtomicBool::new(false),
+            decoder_done: AtomicBool::new(false),
+            is_finished: AtomicBool::new(false),
+            finish_notify: Notify::new(),
+            buffered_frames: AtomicU64::new(12_000),
+            waiting_for_seek: AtomicBool::new(true),
+        }
+    }
+
+    #[test]
+    fn stream_download_failure_is_fatal() {
+        let err = std::io::Error::new(std::io::ErrorKind::Other, "stream failed to download");
+
+        assert!(is_stream_download_failure(&err));
+    }
+
+    #[test]
+    fn stream_error_stops_playback_state() {
+        let state = create_state();
+
+        fail_playback_after_stream_error(&state, "seek", &"stream failed to download");
+
+        assert!(state.discard_buffer.load(Ordering::SeqCst));
+        assert!(!state.waiting_for_seek.load(Ordering::SeqCst));
+        assert!(!state.has_seek_request.load(Ordering::SeqCst));
+        assert_eq!(state.buffered_frames.load(Ordering::SeqCst), 0);
+        assert_eq!(state.current_frame.load(Ordering::SeqCst), 0);
+        assert!(state.decoder_done.load(Ordering::SeqCst));
+        assert!(state.is_terminating.load(Ordering::SeqCst));
+        assert!(state.is_finished.load(Ordering::SeqCst));
     }
 }

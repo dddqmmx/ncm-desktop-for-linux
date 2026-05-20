@@ -46,6 +46,7 @@ export function registerCacheApi(): void {
         songId: number
         quality: string
         url: string
+        expectedBytes?: number
       }
     ) => {
       void _event

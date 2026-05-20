@@ -196,6 +196,7 @@ impl NativeCacheService {
         song_id: i64,
         quality: &str,
         url: &str,
+        expected_bytes: Option<u64>,
     ) -> CacheResult<CachedSongSource> {
         let normalized_url = url.trim();
         if normalized_url.is_empty() {
@@ -267,68 +268,44 @@ impl NativeCacheService {
         }
 
         if let Some(entry) = same_quality_entry {
-            if entry.song_id.is_none() && self.files.exists(&entry.relative_path) {
-                let file_size = self.files.file_size(&entry.relative_path)?.unwrap_or(0);
-                let mut meta =
-                    SongStreamCacheMeta::new(song_id, &normalized_quality, normalized_url);
-                meta.set_content_length(Some(file_size));
-                meta.add_range(0..file_size);
-                meta.mark_complete();
-                self.files.write_song_meta(&entry.relative_path, &meta)?;
+            if let Some(expected_bytes) = expected_bytes {
+                let cached_bytes = entry
+                    .content_length
+                    .or_else(|| self.files.file_size(&entry.relative_path).ok().flatten())
+                    .unwrap_or(entry.size_bytes);
 
-                let mut state = self.lock_state()?;
-                let _ = state.catalog.remove(CacheBucket::Song, &entry.key)?;
-                state.catalog.upsert(CacheEntryUpsert {
-                    bucket: CacheBucket::Song,
-                    key: &cache_key,
-                    relative_path: entry.relative_path.clone(),
-                    size_bytes: file_size,
-                    source_url: Some(normalized_url.to_string()),
-                    mime_type: entry.mime_type.clone(),
-                    song_id: Some(song_id),
-                    quality: Some(normalized_quality.clone()),
-                    content_length: Some(file_size),
-                    is_complete: true,
-                })?;
-                state.catalog.persist()?;
-
-                return Ok(CachedSongSource {
-                    r#type: "file".to_string(),
-                    value: self
-                        .files
-                        .absolute_path(&entry.relative_path)
-                        .to_string_lossy()
-                        .into_owned(),
-                    cache_path: None,
-                    metadata_path: None,
-                    cache_ahead_secs: Some(cache_ahead_secs),
-                    max_cache_ahead_bytes: Some(max_cache_ahead_bytes.min(i64::MAX as u64) as i64),
-                });
+                if cached_bytes != expected_bytes {
+                    let mut state = self.lock_state()?;
+                    if let Some(entry) = state.catalog.remove(entry.bucket, &entry.key)? {
+                        self.remove_entry_files(&entry)?;
+                    }
+                    state.catalog.persist()?;
+                } else {
+                    if let Some(source) = self.prepare_existing_song_source(
+                        entry,
+                        song_id,
+                        &normalized_quality,
+                        normalized_url,
+                        &cache_key,
+                        cache_ahead_secs,
+                        max_cache_ahead_bytes,
+                    )? {
+                        return Ok(source);
+                    }
+                }
+            } else {
+                if let Some(source) = self.prepare_existing_song_source(
+                    entry,
+                    song_id,
+                    &normalized_quality,
+                    normalized_url,
+                    &cache_key,
+                    cache_ahead_secs,
+                    max_cache_ahead_bytes,
+                )? {
+                    return Ok(source);
+                }
             }
-
-            if entry.is_complete && self.files.exists(&entry.relative_path) {
-                let mut state = self.lock_state()?;
-                let _ = state.catalog.touch(CacheBucket::Song, &cache_key)?;
-                state.catalog.persist()?;
-                return Ok(CachedSongSource {
-                    r#type: "file".to_string(),
-                    value: self
-                        .files
-                        .absolute_path(&entry.relative_path)
-                        .to_string_lossy()
-                        .into_owned(),
-                    cache_path: None,
-                    metadata_path: None,
-                    cache_ahead_secs: Some(cache_ahead_secs),
-                    max_cache_ahead_bytes: Some(max_cache_ahead_bytes.min(i64::MAX as u64) as i64),
-                });
-            }
-
-            let mut state = self.lock_state()?;
-            if let Some(entry) = state.catalog.remove(CacheBucket::Song, &cache_key)? {
-                self.remove_entry_files(&entry)?;
-            }
-            state.catalog.persist()?;
         }
 
         let extension = infer_extension(CacheBucket::Song, normalized_url, None);
@@ -336,7 +313,8 @@ impl NativeCacheService {
             self.files
                 .build_relative_path(CacheBucket::Song, &cache_key, &extension);
         let absolute_path = self.files.ensure_song_file(&relative_path)?;
-        let meta = SongStreamCacheMeta::new(song_id, &normalized_quality, normalized_url);
+        let mut meta = SongStreamCacheMeta::new(song_id, &normalized_quality, normalized_url);
+        meta.set_content_length(expected_bytes);
         let metadata_path = self.files.write_song_meta(&relative_path, &meta)?;
 
         {
@@ -350,7 +328,7 @@ impl NativeCacheService {
                 mime_type: None,
                 song_id: Some(song_id),
                 quality: Some(normalized_quality),
-                content_length: None,
+                content_length: expected_bytes,
                 is_complete: false,
             })?;
             state.catalog.persist()?;
@@ -364,6 +342,81 @@ impl NativeCacheService {
             cache_ahead_secs: Some(cache_ahead_secs),
             max_cache_ahead_bytes: Some(max_cache_ahead_bytes.min(i64::MAX as u64) as i64),
         })
+    }
+
+    fn prepare_existing_song_source(
+        &self,
+        entry: crate::cache::types::CacheEntry,
+        song_id: i64,
+        normalized_quality: &str,
+        normalized_url: &str,
+        cache_key: &str,
+        cache_ahead_secs: u32,
+        max_cache_ahead_bytes: u64,
+    ) -> CacheResult<Option<CachedSongSource>> {
+        if entry.song_id.is_none() && self.files.exists(&entry.relative_path) {
+            let file_size = self.files.file_size(&entry.relative_path)?.unwrap_or(0);
+            let mut meta = SongStreamCacheMeta::new(song_id, normalized_quality, normalized_url);
+            meta.set_content_length(Some(file_size));
+            meta.add_range(0..file_size);
+            meta.mark_complete();
+            self.files.write_song_meta(&entry.relative_path, &meta)?;
+
+            let mut state = self.lock_state()?;
+            let _ = state.catalog.remove(CacheBucket::Song, &entry.key)?;
+            state.catalog.upsert(CacheEntryUpsert {
+                bucket: CacheBucket::Song,
+                key: cache_key,
+                relative_path: entry.relative_path.clone(),
+                size_bytes: file_size,
+                source_url: Some(normalized_url.to_string()),
+                mime_type: entry.mime_type.clone(),
+                song_id: Some(song_id),
+                quality: Some(normalized_quality.to_string()),
+                content_length: Some(file_size),
+                is_complete: true,
+            })?;
+            state.catalog.persist()?;
+
+            return Ok(Some(CachedSongSource {
+                r#type: "file".to_string(),
+                value: self
+                    .files
+                    .absolute_path(&entry.relative_path)
+                    .to_string_lossy()
+                    .into_owned(),
+                cache_path: None,
+                metadata_path: None,
+                cache_ahead_secs: Some(cache_ahead_secs),
+                max_cache_ahead_bytes: Some(max_cache_ahead_bytes.min(i64::MAX as u64) as i64),
+            }));
+        }
+
+        if entry.is_complete && self.files.exists(&entry.relative_path) {
+            let mut state = self.lock_state()?;
+            let _ = state.catalog.touch(CacheBucket::Song, cache_key)?;
+            state.catalog.persist()?;
+            return Ok(Some(CachedSongSource {
+                r#type: "file".to_string(),
+                value: self
+                    .files
+                    .absolute_path(&entry.relative_path)
+                    .to_string_lossy()
+                    .into_owned(),
+                cache_path: None,
+                metadata_path: None,
+                cache_ahead_secs: Some(cache_ahead_secs),
+                max_cache_ahead_bytes: Some(max_cache_ahead_bytes.min(i64::MAX as u64) as i64),
+            }));
+        }
+
+        let mut state = self.lock_state()?;
+        if let Some(entry) = state.catalog.remove(entry.bucket, &entry.key)? {
+            self.remove_entry_files(&entry)?;
+        }
+        state.catalog.persist()?;
+
+        Ok(None)
     }
 
     fn get_existing_path(&self, bucket: CacheBucket, key: &str) -> CacheResult<Option<PathBuf>> {
@@ -576,6 +629,143 @@ impl NativeCacheService {
 
     fn lock_state(&self) -> CacheResult<std::sync::MutexGuard<'_, CacheState>> {
         self.state.lock().map_err(|_| CacheError::Poisoned)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(1);
+
+    struct TestCacheRoot {
+        path: PathBuf,
+    }
+
+    impl TestCacheRoot {
+        fn new(label: &str) -> Self {
+            let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "music_native_cache_service_{label}_{}_{}",
+                std::process::id(),
+                id
+            ));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).expect("create temp cache root");
+            Self { path }
+        }
+    }
+
+    impl Drop for TestCacheRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn complete_song_source(source: &CachedSongSource, song_id: i64, quality: &str, bytes: u64) {
+        let cache_path = PathBuf::from(source.cache_path.as_ref().expect("cache path"));
+        let metadata_path = PathBuf::from(source.metadata_path.as_ref().expect("metadata path"));
+        fs::write(&cache_path, vec![0xA5; bytes as usize]).expect("write cached song bytes");
+
+        let mut meta = SongStreamCacheMeta::new(song_id, quality, &source.value);
+        meta.set_content_length(Some(bytes));
+        meta.add_range(0..bytes);
+        meta.mark_complete();
+        fs::write(
+            metadata_path,
+            serde_json::to_vec_pretty(&meta).expect("serialize song meta"),
+        )
+        .expect("write song meta");
+    }
+
+    fn read_meta(path: &str) -> SongStreamCacheMeta {
+        serde_json::from_str(&fs::read_to_string(path).expect("read song meta"))
+            .expect("parse song meta")
+    }
+
+    #[test]
+    fn prepare_song_source_replaces_other_quality_for_same_song() {
+        let root = TestCacheRoot::new("replace_quality");
+        let service = NativeCacheService::new(&root.path, 1024 * 1024).expect("create service");
+
+        let lossless = service
+            .prepare_song_source(
+                2628631968,
+                "lossless",
+                "https://example.com/song-lossless.flac",
+                Some(100),
+            )
+            .expect("prepare lossless");
+        let old_cache_path = lossless.cache_path.clone().expect("lossless cache path");
+        let old_meta_path = lossless.metadata_path.clone().expect("lossless meta path");
+        complete_song_source(&lossless, 2628631968, "lossless", 100);
+
+        let jymaster = service
+            .prepare_song_source(
+                2628631968,
+                "jymaster",
+                "https://example.com/song-jymaster.flac",
+                Some(1000),
+            )
+            .expect("prepare jymaster");
+
+        assert_eq!(jymaster.r#type, "url");
+        assert!(!Path::new(&old_cache_path).exists());
+        assert!(!Path::new(&old_meta_path).exists());
+
+        let new_meta = read_meta(jymaster.metadata_path.as_ref().expect("jymaster meta path"));
+        assert_eq!(new_meta.song_id, 2628631968);
+        assert_eq!(new_meta.quality, "jymaster");
+        assert_eq!(new_meta.content_length, Some(1000));
+
+        let stats = service.get_stats().expect("get stats");
+        assert_eq!(stats.song_entries, 1);
+    }
+
+    #[test]
+    fn prepare_song_source_replaces_same_quality_when_expected_size_changes() {
+        let root = TestCacheRoot::new("replace_size");
+        let service = NativeCacheService::new(&root.path, 1024 * 1024).expect("create service");
+
+        let first = service
+            .prepare_song_source(
+                2628631968,
+                "jymaster",
+                "https://example.com/song-jymaster-v1.flac",
+                Some(100),
+            )
+            .expect("prepare first jymaster");
+        complete_song_source(&first, 2628631968, "jymaster", 100);
+
+        let second = service
+            .prepare_song_source(
+                2628631968,
+                "jymaster",
+                "https://example.com/song-jymaster-v2.flac",
+                Some(200),
+            )
+            .expect("prepare replacement jymaster");
+
+        assert_eq!(second.r#type, "url");
+        let cache_path = second.cache_path.as_ref().expect("replacement cache path");
+        assert_eq!(fs::metadata(cache_path).expect("replacement file").len(), 0);
+
+        let meta = read_meta(
+            second
+                .metadata_path
+                .as_ref()
+                .expect("replacement meta path"),
+        );
+        assert_eq!(meta.quality, "jymaster");
+        assert_eq!(meta.source_url, "https://example.com/song-jymaster-v2.flac");
+        assert_eq!(meta.content_length, Some(200));
+        assert!(!meta.is_complete);
+
+        let stats = service.get_stats().expect("get stats");
+        assert_eq!(stats.song_entries, 1);
+        assert_eq!(stats.song_bytes, 0);
     }
 }
 
