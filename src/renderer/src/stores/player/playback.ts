@@ -6,6 +6,7 @@ import { SongUrl, SoundQualityType } from '@renderer/types/song'
 import type { SongCacheProgress } from '@renderer/types/cache'
 import { useUserStore } from '../userStore'
 import { useConfigStore } from '../configStore'
+import { useDialogStore } from '../dialogStore'
 import { usePlaylistStore } from './playlist'
 import { prepareCachedSongSource } from '@renderer/utils/cache'
 import { createCurrentSongArtists } from './utils'
@@ -27,6 +28,7 @@ export const usePlaybackStore = defineStore('playback', () => {
 
   const userStore = useUserStore()
   const configStore = useConfigStore()
+  const dialogStore = useDialogStore()
   const playlistStore = usePlaylistStore()
 
   let progressTimer: ReturnType<typeof setInterval> | null = null
@@ -415,7 +417,11 @@ export const usePlaybackStore = defineStore('playback', () => {
       if (playbackSource.type === 'file') {
         // 情况 A: 命中本地文件缓存，直接播放文件
         await withTimeout(
-          window.api.play_file(playbackSource.value, startTimeInSeconds),
+          window.api.play_file(
+            playbackSource.value,
+            startTimeInSeconds,
+            configStore.strictBitPerfect
+          ),
           PLAYBACK_OPERATION_TIMEOUT_MS,
           '播放本地缓存超时'
         )
@@ -429,7 +435,8 @@ export const usePlaybackStore = defineStore('playback', () => {
             song.dt,
             playbackSource.cacheAheadSecs ?? configStore.songCacheAheadSecs,
             playbackSource.maxCacheAheadBytes ?? configStore.songMaxCacheAheadBytes,
-            startTimeInSeconds
+            startTimeInSeconds,
+            configStore.strictBitPerfect
           ),
           PLAYBACK_OPERATION_TIMEOUT_MS,
           '网络播放启动超时'
@@ -437,7 +444,11 @@ export const usePlaybackStore = defineStore('playback', () => {
       } else {
         // 情况 C: 普通网络 URL 播放
         await withTimeout(
-          window.api.play_url(playbackSource.value, startTimeInSeconds),
+          window.api.play_url(
+            playbackSource.value,
+            startTimeInSeconds,
+            configStore.strictBitPerfect
+          ),
           PLAYBACK_OPERATION_TIMEOUT_MS,
           '网络播放启动超时'
         )
@@ -469,9 +480,15 @@ export const usePlaybackStore = defineStore('playback', () => {
       // 只有当前任务未过期时才更新错误状态
       if (currentToken === playToken) {
         console.error('播放全流程失败:', error)
-        playbackError.value = error instanceof Error ? error.message : '音乐播放失败。'
-        isPlaying.value = false
-        resetPlaybackLoadState()
+        const message = error instanceof Error ? error.message : '音乐播放失败。'
+        await stopAfterPlaybackFailure(message)
+        if (message.includes('BitPerfect')) {
+          void dialogStore.open({
+            title: '无法满足 BitPerfect',
+            message,
+            confirmText: '确定'
+          })
+        }
       }
     } finally {
       // 14. 仅当当前任务是最新任务时，才重置切换标记

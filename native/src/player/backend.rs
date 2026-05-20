@@ -3,23 +3,28 @@ use std::time::Duration;
 
 use crate::audio::{AudioPlayer, OutputDeviceInfo};
 
-use super::types::{BackendFuture, BackendResult, CachedUrlPlaybackRequest, SignalFuture};
+use super::types::{
+    BackendFuture, BackendResult, CachedUrlPlaybackRequest, PlaybackOptions, SignalFuture,
+};
 
 pub(crate) trait PlayerBackend: Send {
     fn play_file<'a>(
         &'a mut self,
         path: &'a str,
         start_at: Option<Duration>,
+        options: PlaybackOptions,
     ) -> BackendFuture<'a, ()>;
     fn play_url<'a>(
         &'a mut self,
         url: &'a str,
         start_at: Option<Duration>,
+        options: PlaybackOptions,
     ) -> BackendFuture<'a, ()>;
     fn play_url_cached<'a>(
         &'a mut self,
         request: &'a CachedUrlPlaybackRequest,
         start_at: Option<Duration>,
+        options: PlaybackOptions,
     ) -> BackendFuture<'a, ()>;
     fn pause(&self);
     fn resume(&self);
@@ -48,10 +53,11 @@ impl PlayerBackend for NativePlayer {
         &'a mut self,
         path: &'a str,
         start_at: Option<Duration>,
+        options: PlaybackOptions,
     ) -> BackendFuture<'a, ()> {
         Box::pin(async move {
             self.0
-                .play_file(path, start_at)
+                .play_file(path, start_at, options.strict_bit_perfect)
                 .await
                 .map_err(|err| err.to_string())
         })
@@ -61,10 +67,11 @@ impl PlayerBackend for NativePlayer {
         &'a mut self,
         url: &'a str,
         start_at: Option<Duration>,
+        options: PlaybackOptions,
     ) -> BackendFuture<'a, ()> {
         Box::pin(async move {
             self.0
-                .play_url(url, start_at)
+                .play_url(url, start_at, options.strict_bit_perfect)
                 .await
                 .map_err(|err| err.to_string())
         })
@@ -74,6 +81,7 @@ impl PlayerBackend for NativePlayer {
         &'a mut self,
         request: &'a CachedUrlPlaybackRequest,
         start_at: Option<Duration>,
+        options: PlaybackOptions,
     ) -> BackendFuture<'a, ()> {
         Box::pin(async move {
             self.0
@@ -85,6 +93,7 @@ impl PlayerBackend for NativePlayer {
                     request.cache_ahead_secs,
                     request.max_cache_ahead_bytes,
                     start_at,
+                    options.strict_bit_perfect,
                 )
                 .await
                 .map_err(|err| err.to_string())

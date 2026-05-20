@@ -134,6 +134,10 @@ export function loadSettings(): PersistedSettings {
         typeof parsed.exclusiveMode === 'boolean'
           ? parsed.exclusiveMode
           : fallbackSettings.exclusiveMode,
+      strictBitPerfect:
+        typeof parsed.strictBitPerfect === 'boolean'
+          ? parsed.strictBitPerfect
+          : fallbackSettings.strictBitPerfect,
       theme: isThemeMode(parsed.theme) ? parsed.theme : fallbackSettings.theme,
       acrylic: typeof parsed.acrylic === 'boolean' ? parsed.acrylic : fallbackSettings.acrylic,
       accentColor:
@@ -256,6 +260,7 @@ export function findConfiguredOutputDevice(
     return (
       devices.find((device) => device.id === DEFAULT_OUTPUT_DEVICE_ID) ??
       devices.find((device) => device.isDefault) ??
+      devices.find((device) => device.isCurrent) ??
       null
     )
   }

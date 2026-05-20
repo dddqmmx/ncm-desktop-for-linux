@@ -11,6 +11,7 @@ export interface PersistedSettings {
   outputDeviceId: string
   outputDeviceName: string
   exclusiveMode: boolean
+  strictBitPerfect: boolean
   theme: ThemeMode
   acrylic: boolean
   accentColor: string
@@ -54,6 +55,7 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
   outputDeviceId: DEFAULT_OUTPUT_DEVICE_ID,
   outputDeviceName: DEFAULT_OUTPUT_DEVICE_NAME,
   exclusiveMode: false,
+  strictBitPerfect: false,
   theme: 'adaptive',
   acrylic: true,
   accentColor: '#6366f1',

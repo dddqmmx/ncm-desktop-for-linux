@@ -11,8 +11,8 @@ use super::backend::{PlayerBackend, PlayerFactory};
 use super::command::PlayerCommand;
 use super::state::SharedState;
 use super::types::{
-    AudioDeviceInfo, BackendFuture, BackendResult, CachedUrlPlaybackRequest, PlaybackSource,
-    PlaybackStatus, SignalFuture, duration_to_millis,
+    AudioDeviceInfo, BackendFuture, BackendResult, CachedUrlPlaybackRequest, PlaybackOptions,
+    PlaybackSource, PlaybackStatus, SignalFuture, duration_to_millis,
 };
 use super::worker::WorkerCore;
 
@@ -116,6 +116,7 @@ impl PlayerBackend for MockPlayer {
         &'a mut self,
         path: &'a str,
         start_at: Option<Duration>,
+        _options: PlaybackOptions,
     ) -> BackendFuture<'a, ()> {
         let label = self.label().to_string();
         let path = path.to_string();
@@ -134,6 +135,7 @@ impl PlayerBackend for MockPlayer {
         &'a mut self,
         url: &'a str,
         start_at: Option<Duration>,
+        _options: PlaybackOptions,
     ) -> BackendFuture<'a, ()> {
         let label = self.label().to_string();
         let url = url.to_string();
@@ -152,6 +154,7 @@ impl PlayerBackend for MockPlayer {
         &'a mut self,
         request: &'a CachedUrlPlaybackRequest,
         start_at: Option<Duration>,
+        _options: PlaybackOptions,
     ) -> BackendFuture<'a, ()> {
         let label = self.label().to_string();
         let url = request.url.clone();
@@ -335,6 +338,7 @@ impl PlayerBackend for BusyMockPlayer {
         &'a mut self,
         path: &'a str,
         start_at: Option<Duration>,
+        _options: PlaybackOptions,
     ) -> BackendFuture<'a, ()> {
         let path = path.to_string();
         let device_id = self.device_id.clone();
@@ -353,6 +357,7 @@ impl PlayerBackend for BusyMockPlayer {
         &'a mut self,
         url: &'a str,
         start_at: Option<Duration>,
+        _options: PlaybackOptions,
     ) -> BackendFuture<'a, ()> {
         let url = url.to_string();
         let device_id = self.device_id.clone();
@@ -371,6 +376,7 @@ impl PlayerBackend for BusyMockPlayer {
         &'a mut self,
         request: &'a CachedUrlPlaybackRequest,
         start_at: Option<Duration>,
+        _options: PlaybackOptions,
     ) -> BackendFuture<'a, ()> {
         let device_id = self.device_id.clone();
         let url = request.url.clone();
@@ -484,6 +490,8 @@ async fn play_url_uses_requested_start_time() {
         .handle_command(PlayerCommand::PlayUrl(
             "https://example.com/test.mp3".to_string(),
             Some(12.5),
+            PlaybackOptions::default(),
+            None,
         ))
         .await;
 
@@ -492,7 +500,8 @@ async fn play_url_uses_requested_start_time() {
     assert_eq!(
         worker.current_source,
         Some(PlaybackSource::Url(
-            "https://example.com/test.mp3".to_string()
+            "https://example.com/test.mp3".to_string(),
+            PlaybackOptions::default()
         ))
     );
     assert_eq!(
@@ -513,6 +522,8 @@ async fn switch_output_device_restarts_active_source_from_current_progress() {
         .handle_command(PlayerCommand::PlayFile(
             "/tmp/test.flac".to_string(),
             Some(0.0),
+            PlaybackOptions::default(),
+            None,
         ))
         .await;
     worker.player.set_progress(Duration::from_millis(4_200));
@@ -549,6 +560,8 @@ async fn switch_output_device_preserves_paused_state() {
         .handle_command(PlayerCommand::PlayUrl(
             "https://example.com/test.mp3".to_string(),
             Some(1.0),
+            PlaybackOptions::default(),
+            None,
         ))
         .await;
     worker.player.set_progress(Duration::from_millis(3_000));
@@ -618,6 +631,8 @@ async fn tick_marks_finished_playback_as_stopped() {
         .handle_command(PlayerCommand::PlayFile(
             "/tmp/test.flac".to_string(),
             Some(0.0),
+            PlaybackOptions::default(),
+            None,
         ))
         .await;
     worker.player.set_progress(Duration::from_millis(8_000));
@@ -639,6 +654,8 @@ async fn failed_device_switch_keeps_existing_playback_state() {
         .handle_command(PlayerCommand::PlayUrl(
             "https://example.com/test.mp3".to_string(),
             Some(2.0),
+            PlaybackOptions::default(),
+            None,
         ))
         .await;
     worker.player.set_progress(Duration::from_millis(2_500));
@@ -657,7 +674,8 @@ async fn failed_device_switch_keeps_existing_playback_state() {
     assert_eq!(
         worker.current_source,
         Some(PlaybackSource::Url(
-            "https://example.com/test.mp3".to_string()
+            "https://example.com/test.mp3".to_string(),
+            PlaybackOptions::default()
         ))
     );
     assert_eq!(
@@ -690,6 +708,8 @@ async fn switching_to_the_already_active_device_is_a_noop() {
         .handle_command(PlayerCommand::PlayFile(
             "/tmp/test.flac".to_string(),
             Some(0.0),
+            PlaybackOptions::default(),
+            None,
         ))
         .await;
 

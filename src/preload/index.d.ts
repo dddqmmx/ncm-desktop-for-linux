@@ -27,7 +27,7 @@ interface CustomApi {
   artist_mv: (p: unknown) => Promise<unknown>
   album: (p: unknown) => Promise<unknown>
   // rust后端播放器操作
-  play_url: (url: string, startSecs?: number) => Promise<unknown>
+  play_url: (url: string, startSecs?: number, strictBitPerfect?: boolean) => Promise<unknown>
   play_url_cached: (
     url: string,
     cachePath: string,
@@ -35,9 +35,10 @@ interface CustomApi {
     durationMs?: number,
     cacheAheadSecs?: number,
     maxCacheAheadBytes?: number,
-    startSecs?: number
+    startSecs?: number,
+    strictBitPerfect?: boolean
   ) => Promise<unknown>
-  play_file: (filePath: string, startSecs?: number) => Promise<unknown>
+  play_file: (filePath: string, startSecs?: number, strictBitPerfect?: boolean) => Promise<unknown>
   pause: () => Promise<unknown>
   resume: () => Promise<unknown>
   stop: () => Promise<unknown>
@@ -66,7 +67,16 @@ interface CustomApi {
   //ui相关工具方法
   open_settings_window: () => Promise<unknown>
   close_settings_window: () => Promise<unknown>
+  open_dialog_window: (options: DialogWindowOptions) => Promise<boolean>
   get_app_info: () => Promise<AppInfo>
+}
+
+interface DialogWindowOptions {
+  title: string
+  message: string
+  mode?: 'confirm' | 'confirm-cancel'
+  confirmText?: string
+  cancelText?: string
 }
 
 interface AppInfo {

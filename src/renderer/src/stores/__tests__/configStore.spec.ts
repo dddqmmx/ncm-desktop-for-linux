@@ -306,4 +306,33 @@ describe('configStore output device handling', () => {
     expect(readPersistedSettings(storage).outputDeviceName).toBe('System Default')
     expect(store.currentOutputDevice?.id).toBe('default')
   })
+
+  it('applies sound quality changes written by another window', async () => {
+    let storageListener: ((event: StorageEvent) => void) | undefined
+
+    vi.stubGlobal('window', {
+      api,
+      addEventListener: vi.fn((eventName: string, listener: EventListener) => {
+        if (eventName === 'storage') {
+          storageListener = listener as (event: StorageEvent) => void
+        }
+      })
+    } as unknown as Window & typeof globalThis)
+
+    writePersistedSettings(storage, {
+      soundQuality: 'standard'
+    })
+
+    const store = useConfigStore()
+    expect(store.soundQuality).toBe('standard')
+
+    writePersistedSettings(storage, {
+      soundQuality: 'jymaster'
+    })
+
+    storageListener?.({ key: STORAGE_KEY } as StorageEvent)
+    await nextTick()
+
+    expect(store.soundQuality).toBe('jymaster')
+  })
 })

@@ -26,7 +26,7 @@ export type NativeCacheStats = {
 }
 
 export interface NativePlayerBinding {
-  playUrl(url: string, startSecs?: number): void
+  playUrl(url: string, startSecs?: number, strictBitPerfect?: boolean): Promise<void>
   playUrlCached(
     url: string,
     cachePath: string,
@@ -34,9 +34,10 @@ export interface NativePlayerBinding {
     durationMs?: number,
     cacheAheadSecs?: number,
     maxCacheAheadBytes?: number,
-    startSecs?: number
-  ): void
-  playFile(filePath: string, startSecs?: number): void
+    startSecs?: number,
+    strictBitPerfect?: boolean
+  ): Promise<void>
+  playFile(filePath: string, startSecs?: number, strictBitPerfect?: boolean): Promise<void>
   pause(): void
   resume(): void
   stop(): void

@@ -51,34 +51,46 @@ where
 
     pub(crate) async fn handle_command(&mut self, cmd: PlayerCommand) {
         match cmd {
-            PlayerCommand::PlayFile(path, start_secs) => {
-                if let Err(err) = self
+            PlayerCommand::PlayFile(path, start_secs, options, reply_tx) => {
+                let result = self
                     .play_source(
-                        PlaybackSource::File(path),
+                        PlaybackSource::File(path, options),
                         start_secs_to_duration(start_secs),
                     )
-                    .await
-                {
+                    .await;
+                if let Err(err) = &result {
                     eprintln!("Play file failed: {}", err);
                 }
-            }
-            PlayerCommand::PlayUrl(url, start_secs) => {
-                if let Err(err) = self
-                    .play_source(PlaybackSource::Url(url), start_secs_to_duration(start_secs))
-                    .await
-                {
-                    eprintln!("Play URL failed: {}", err);
+                if let Some(reply_tx) = reply_tx {
+                    let _ = reply_tx.send(result);
                 }
             }
-            PlayerCommand::PlayUrlCached(request, start_secs) => {
-                if let Err(err) = self
+            PlayerCommand::PlayUrl(url, start_secs, options, reply_tx) => {
+                let result = self
                     .play_source(
-                        PlaybackSource::CachedUrl(request),
+                        PlaybackSource::Url(url, options),
                         start_secs_to_duration(start_secs),
                     )
-                    .await
-                {
+                    .await;
+                if let Err(err) = &result {
+                    eprintln!("Play URL failed: {}", err);
+                }
+                if let Some(reply_tx) = reply_tx {
+                    let _ = reply_tx.send(result);
+                }
+            }
+            PlayerCommand::PlayUrlCached(request, start_secs, options, reply_tx) => {
+                let result = self
+                    .play_source(
+                        PlaybackSource::CachedUrl(request, options),
+                        start_secs_to_duration(start_secs),
+                    )
+                    .await;
+                if let Err(err) = &result {
                     eprintln!("Play cached URL failed: {}", err);
+                }
+                if let Some(reply_tx) = reply_tx {
+                    let _ = reply_tx.send(result);
                 }
             }
             PlayerCommand::Pause => {
@@ -156,9 +168,11 @@ where
         start_at: Option<Duration>,
     ) -> BackendResult<()> {
         match source {
-            PlaybackSource::File(path) => player.play_file(path, start_at).await,
-            PlaybackSource::Url(url) => player.play_url(url, start_at).await,
-            PlaybackSource::CachedUrl(request) => player.play_url_cached(request, start_at).await,
+            PlaybackSource::File(path, options) => player.play_file(path, start_at, *options).await,
+            PlaybackSource::Url(url, options) => player.play_url(url, start_at, *options).await,
+            PlaybackSource::CachedUrl(request, options) => {
+                player.play_url_cached(request, start_at, *options).await
+            }
         }
     }
 

@@ -11,9 +11,14 @@ pub(crate) type SignalFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum PlaybackSource {
-    File(String),
-    Url(String),
-    CachedUrl(CachedUrlPlaybackRequest),
+    File(String, PlaybackOptions),
+    Url(String, PlaybackOptions),
+    CachedUrl(CachedUrlPlaybackRequest, PlaybackOptions),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PlaybackOptions {
+    pub(crate) strict_bit_perfect: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

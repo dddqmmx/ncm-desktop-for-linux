@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { SoundQualityType } from '@renderer/types/song'
 import { AudioDeviceInfo } from '@renderer/types/audio'
 import { AudioEngineType, DEFAULT_OUTPUT_DEVICE_ID } from './types'
@@ -19,7 +19,8 @@ export const useAudioConfigStore = defineStore('audioConfig', () => {
   const audioEngine = ref<AudioEngineType>(initialSettings.audioEngine)
   const outputDeviceId = ref(initialSettings.outputDeviceId)
   const outputDeviceName = ref(initialSettings.outputDeviceName)
-  const exclusiveMode = ref(initialSettings.exclusiveMode)
+  const strictBitPerfect = ref(initialSettings.strictBitPerfect)
+  const exclusiveMode = ref(initialSettings.strictBitPerfect ? true : initialSettings.exclusiveMode)
 
   const outputDevices = ref<AudioDeviceInfo[]>([])
   const currentOutputDevice = computed(() => {
@@ -28,6 +29,12 @@ export const useAudioConfigStore = defineStore('audioConfig', () => {
   const isLoadingOutputDevices = ref(false)
   const isSwitchingOutputDevice = ref(false)
   const outputDeviceError = ref('')
+
+  watch(strictBitPerfect, (enabled) => {
+    if (enabled) {
+      exclusiveMode.value = true
+    }
+  })
 
   const refreshOutputDevices = async (): Promise<AudioDeviceInfo[]> => {
     isLoadingOutputDevices.value = true
@@ -78,9 +85,6 @@ export const useAudioConfigStore = defineStore('audioConfig', () => {
       if (persistSelection) {
         outputDeviceId.value = deviceId
         outputDeviceName.value = nextOutputDeviceName
-      } else {
-        // Even if not persisting (e.g. temporary fallback), update the name for UI feedback
-        outputDeviceName.value = nextOutputDeviceName
       }
 
       if (refreshAfterSwitch) {
@@ -129,6 +133,7 @@ export const useAudioConfigStore = defineStore('audioConfig', () => {
     outputDeviceId,
     outputDeviceName,
     exclusiveMode,
+    strictBitPerfect,
     outputDevices,
     currentOutputDevice,
     isLoadingOutputDevices,

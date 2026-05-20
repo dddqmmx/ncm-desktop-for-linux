@@ -2,10 +2,13 @@ import { ipcMain } from 'electron'
 import { NativeService } from '../service/nativeService'
 
 export function registerNativeApi(): void {
-  ipcMain.handle('player:playUrl', (_event, url: string, startSecs?: number) => {
-    void _event
-    return NativeService.playUrl(url, startSecs)
-  })
+  ipcMain.handle(
+    'player:playUrl',
+    (_event, url: string, startSecs?: number, strictBitPerfect?: boolean) => {
+      void _event
+      return NativeService.playUrl(url, startSecs, strictBitPerfect)
+    }
+  )
   ipcMain.handle(
     'player:playUrlCached',
     (
@@ -16,7 +19,8 @@ export function registerNativeApi(): void {
       durationMs?: number,
       cacheAheadSecs?: number,
       maxCacheAheadBytes?: number,
-      startSecs?: number
+      startSecs?: number,
+      strictBitPerfect?: boolean
     ) => {
       void _event
       return NativeService.playUrlCached(
@@ -26,14 +30,18 @@ export function registerNativeApi(): void {
         durationMs,
         cacheAheadSecs,
         maxCacheAheadBytes,
-        startSecs
+        startSecs,
+        strictBitPerfect
       )
     }
   )
-  ipcMain.handle('player:playFile', (_event, filePath: string, startSecs?: number) => {
-    void _event
-    return NativeService.playFile(filePath, startSecs)
-  })
+  ipcMain.handle(
+    'player:playFile',
+    (_event, filePath: string, startSecs?: number, strictBitPerfect?: boolean) => {
+      void _event
+      return NativeService.playFile(filePath, startSecs, strictBitPerfect)
+    }
+  )
   ipcMain.handle('player:pause', () => {
     return NativeService.pause()
   })

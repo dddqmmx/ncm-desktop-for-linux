@@ -9,7 +9,7 @@ use crate::runtime::native_runtime;
 use super::backend::{AudioPlayerFactory, PlayerFactory};
 use super::command::PlayerCommand;
 use super::state::SharedState;
-use super::types::{AudioDeviceInfo, CachedUrlPlaybackRequest};
+use super::types::{AudioDeviceInfo, CachedUrlPlaybackRequest, PlaybackOptions};
 use super::worker::WorkerCore;
 
 #[napi]
@@ -38,21 +38,51 @@ impl PlayerService {
     }
 
     #[napi]
-    pub fn play_file(&self, path: String, start_secs: Option<f64>) -> Result<()> {
+    pub async fn play_file(
+        &self,
+        path: String,
+        start_secs: Option<f64>,
+        strict_bit_perfect: Option<bool>,
+    ) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
         self.sender
-            .send(PlayerCommand::PlayFile(path, start_secs))
-            .map_err(|_| Error::from_reason("Background worker died"))
+            .send(PlayerCommand::PlayFile(
+                path,
+                start_secs,
+                playback_options(strict_bit_perfect),
+                Some(tx),
+            ))
+            .map_err(|_| Error::from_reason("Background worker died"))?;
+
+        rx.await
+            .map_err(|_| Error::from_reason("Playback start interrupted"))?
+            .map_err(Error::from_reason)
     }
 
     #[napi]
-    pub fn play_url(&self, url: String, start_secs: Option<f64>) -> Result<()> {
+    pub async fn play_url(
+        &self,
+        url: String,
+        start_secs: Option<f64>,
+        strict_bit_perfect: Option<bool>,
+    ) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
         self.sender
-            .send(PlayerCommand::PlayUrl(url, start_secs))
-            .map_err(|_| Error::from_reason("Background worker died"))
+            .send(PlayerCommand::PlayUrl(
+                url,
+                start_secs,
+                playback_options(strict_bit_perfect),
+                Some(tx),
+            ))
+            .map_err(|_| Error::from_reason("Background worker died"))?;
+
+        rx.await
+            .map_err(|_| Error::from_reason("Playback start interrupted"))?
+            .map_err(Error::from_reason)
     }
 
     #[napi]
-    pub fn play_url_cached(
+    pub async fn play_url_cached(
         &self,
         url: String,
         cache_path: String,
@@ -61,7 +91,9 @@ impl PlayerService {
         cache_ahead_secs: Option<u32>,
         max_cache_ahead_bytes: Option<i64>,
         start_secs: Option<f64>,
+        strict_bit_perfect: Option<bool>,
     ) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
         self.sender
             .send(PlayerCommand::PlayUrlCached(
                 CachedUrlPlaybackRequest {
@@ -73,8 +105,14 @@ impl PlayerService {
                     max_cache_ahead_bytes: max_cache_ahead_bytes.map(|value| value.max(0) as u64),
                 },
                 start_secs,
+                playback_options(strict_bit_perfect),
+                Some(tx),
             ))
-            .map_err(|_| Error::from_reason("Background worker died"))
+            .map_err(|_| Error::from_reason("Background worker died"))?;
+
+        rx.await
+            .map_err(|_| Error::from_reason("Playback start interrupted"))?
+            .map_err(Error::from_reason)
     }
 
     #[napi]
@@ -153,5 +191,11 @@ impl PlayerService {
             .map_err(|_| Error::from_reason("Worker shutdown"))?;
         rx.await
             .map_err(|_| Error::from_reason("Playback task interrupted"))
+    }
+}
+
+fn playback_options(strict_bit_perfect: Option<bool>) -> PlaybackOptions {
+    PlaybackOptions {
+        strict_bit_perfect: strict_bit_perfect.unwrap_or(false),
     }
 }

@@ -24,6 +24,7 @@ export const useConfigStore = defineStore('config', () => {
     outputDeviceId: audio.outputDeviceId,
     outputDeviceName: audio.outputDeviceName,
     exclusiveMode: audio.exclusiveMode,
+    strictBitPerfect: audio.strictBitPerfect,
     theme: appearance.theme,
     acrylic: appearance.acrylic,
     accentColor: appearance.accentColor,
@@ -33,10 +34,32 @@ export const useConfigStore = defineStore('config', () => {
     songMaxCacheAheadMb: cache.songMaxCacheAheadMb
   })
 
-  const applyExternalAppearanceSettings = (settings: PersistedSettings): void => {
+  let skipNextSettingsBroadcast = false
+
+  const settingsEqual = (left: PersistedSettings, right: PersistedSettings): boolean =>
+    JSON.stringify(left) === JSON.stringify(right)
+
+  const applyExternalSettings = (settings: PersistedSettings): void => {
+    if (settingsEqual(snapshotSettings(), settings)) {
+      return
+    }
+
+    skipNextSettingsBroadcast = true
+    audio.soundQuality = settings.soundQuality
+    general.autoLaunch = settings.autoLaunch
+    general.trayMinimize = settings.trayMinimize
+    audio.audioEngine = settings.audioEngine
+    audio.outputDeviceId = settings.outputDeviceId
+    audio.outputDeviceName = settings.outputDeviceName
+    audio.exclusiveMode = settings.exclusiveMode
+    audio.strictBitPerfect = settings.strictBitPerfect
     appearance.theme = settings.theme
     appearance.acrylic = settings.acrylic
     appearance.accentColor = settings.accentColor
+    cache.libPaths = [...settings.libPaths]
+    cache.cacheLimitMb = settings.cacheLimitMb
+    cache.songCacheAheadSecs = settings.songCacheAheadSecs
+    cache.songMaxCacheAheadMb = settings.songMaxCacheAheadMb
   }
 
   const settingsChannel =
@@ -53,6 +76,7 @@ export const useConfigStore = defineStore('config', () => {
       () => audio.outputDeviceId,
       () => audio.outputDeviceName,
       () => audio.exclusiveMode,
+      () => audio.strictBitPerfect,
       () => appearance.theme,
       () => appearance.acrylic,
       () => appearance.accentColor,
@@ -62,6 +86,11 @@ export const useConfigStore = defineStore('config', () => {
       () => cache.songMaxCacheAheadMb
     ],
     () => {
+      if (skipNextSettingsBroadcast) {
+        skipNextSettingsBroadcast = false
+        return
+      }
+
       const nextSettings = snapshotSettings()
       persistSettings(nextSettings)
       settingsChannel?.postMessage({
@@ -94,13 +123,13 @@ export const useConfigStore = defineStore('config', () => {
       return
     }
 
-    applyExternalAppearanceSettings(loadSettings())
+    applyExternalSettings(loadSettings())
   })
 
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
     window.addEventListener('storage', (event) => {
       if (event.key === STORAGE_KEY) {
-        applyExternalAppearanceSettings(loadSettings())
+        applyExternalSettings(loadSettings())
       }
     })
   }
@@ -144,6 +173,10 @@ export const useConfigStore = defineStore('config', () => {
     exclusiveMode: computed({
       get: () => audio.exclusiveMode,
       set: (val) => (audio.exclusiveMode = val)
+    }),
+    strictBitPerfect: computed({
+      get: () => audio.strictBitPerfect,
+      set: (val) => (audio.strictBitPerfect = val)
     }),
     outputDevices: computed(() => audio.outputDevices),
     currentOutputDevice: computed(() => audio.currentOutputDevice),

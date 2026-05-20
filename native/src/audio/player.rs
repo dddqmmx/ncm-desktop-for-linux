@@ -1,3 +1,5 @@
+#[cfg(target_os = "linux")]
+use crate::audio::device_reservation::DeviceReservation;
 use cpal::traits::{HostTrait, StreamTrait};
 use ringbuf::HeapRb;
 use ringbuf::traits::{Producer, Split};
@@ -22,11 +24,16 @@ use crate::audio::source::{PersistentFileStorageProvider, SeekableSource};
 use crate::audio::state::SharedState;
 use crate::audio::utils::estimate_prefetch_bytes;
 
+const OUTPUT_BUFFER_SECONDS: usize = 6;
+const INITIAL_PREDECODE_SECONDS: usize = 2;
+
 pub struct AudioPlayer {
     device: cpal::Device,
     requested_device_id: Option<String>,
     stream: Option<cpal::Stream>,
     state: Arc<SharedState>,
+    #[cfg(target_os = "linux")]
+    device_reservation: Option<DeviceReservation>,
 }
 
 impl AudioPlayer {
@@ -64,6 +71,8 @@ impl AudioPlayer {
                 waiting_for_seek: AtomicBool::new(false),
                 has_seek_request: AtomicBool::new(false),
             }),
+            #[cfg(target_os = "linux")]
+            device_reservation: None,
         })
     }
 
@@ -93,7 +102,13 @@ impl AudioPlayer {
                 });
             }
         }
+        #[cfg(target_os = "linux")]
+        backend::append_linux_alsa_hint_output_devices(&mut devices, default_id.as_deref(), None);
+        #[cfg(target_os = "linux")]
+        backend::append_linux_proc_asound_output_devices(&mut devices, default_id.as_deref(), None);
 
+        #[cfg(target_os = "linux")]
+        backend::collapse_linux_duplicate_output_devices(&mut devices);
         backend::disambiguate_output_device_names(&mut devices);
         devices
     }
@@ -130,7 +145,21 @@ impl AudioPlayer {
                 is_current,
             });
         }
+        #[cfg(target_os = "linux")]
+        backend::append_linux_alsa_hint_output_devices(
+            &mut devices,
+            default_id.as_deref(),
+            self.requested_device_id.as_deref(),
+        );
+        #[cfg(target_os = "linux")]
+        backend::append_linux_proc_asound_output_devices(
+            &mut devices,
+            default_id.as_deref(),
+            self.requested_device_id.as_deref(),
+        );
 
+        #[cfg(target_os = "linux")]
+        backend::collapse_linux_duplicate_output_devices(&mut devices);
         backend::disambiguate_output_device_names(&mut devices);
         Ok(devices)
     }
@@ -161,6 +190,7 @@ impl AudioPlayer {
         &mut self,
         url: &str,
         start_at: Option<Duration>,
+        strict_bit_perfect: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let extension = Path::new(url)
             .extension()
@@ -180,7 +210,7 @@ impl AudioPlayer {
         let content_len = reader.content_length();
         let source = Box::new(SeekableSource::new(reader, content_len));
         let meta = decoder::spawn_probe_task(source, extension).await?;
-        self.setup_and_play(meta, start_at)
+        self.setup_and_play(meta, start_at, strict_bit_perfect)
     }
 
     pub async fn play_url_cached(
@@ -192,6 +222,7 @@ impl AudioPlayer {
         cache_ahead_secs: Option<u32>,
         max_cache_ahead_bytes: Option<u64>,
         start_at: Option<Duration>,
+        strict_bit_perfect: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let extension = Path::new(url)
             .extension()
@@ -221,13 +252,14 @@ impl AudioPlayer {
 
         let source = Box::new(SeekableSource::new(reader, content_len));
         let meta = decoder::spawn_probe_task(source, extension).await?;
-        self.setup_and_play(meta, start_at)
+        self.setup_and_play(meta, start_at, strict_bit_perfect)
     }
 
     pub async fn play_file(
         &mut self,
         path: &str,
         start_at: Option<Duration>,
+        strict_bit_perfect: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let path_buf = Path::new(path);
         let extension = path_buf
@@ -238,13 +270,14 @@ impl AudioPlayer {
         let source = Box::new(file);
 
         let meta = decoder::spawn_probe_task(source, extension).await?;
-        self.setup_and_play(meta, start_at)
+        self.setup_and_play(meta, start_at, strict_bit_perfect)
     }
 
     pub(crate) fn setup_and_play(
         &mut self,
-        meta: AudioMetadata,
+        mut meta: AudioMetadata,
         start_at: Option<Duration>,
+        strict_bit_perfect: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.stop();
 
@@ -265,33 +298,65 @@ impl AudioPlayer {
 
         let sr = meta.sample_rate;
         let channels = meta.channels;
+        let should_predecode = start_at.is_none_or(|target| target.is_zero());
 
-        let (config, sample_format) = match backend::find_best_config(
-            &self.device,
-            sr,
-            channels,
-            meta.bits_per_sample,
-            meta.sample_format,
-        ) {
-            Ok(cfg) => cfg,
-            Err(primary_err) => {
-                let primary_msg = primary_err.to_string();
-                if self.maybe_fallback_to_default_device()? {
-                    backend::find_best_config(
-                        &self.device,
-                        sr,
-                        channels,
-                        meta.bits_per_sample,
-                        meta.sample_format,
-                    )
-                    .map_err(|fallback_err| {
-                        format!(
-                            "No compatible output config: primary={}; fallback={}",
-                            primary_msg, fallback_err
+        #[cfg(target_os = "linux")]
+        if strict_bit_perfect {
+            let active_device_id = backend::device_id(&self.device);
+            if !backend::is_linux_real_hardware_output_id(&active_device_id) {
+                return Err(format!(
+                    "当前无法满足BitPerfect条件拒绝播放：当前输出端点 {} 不是真实硬件设备",
+                    active_device_id
+                )
+                .into());
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        let device_reservation = if strict_bit_perfect {
+            Some(DeviceReservation::reserve(&backend::device_id(
+                &self.device,
+            ))?)
+        } else {
+            None
+        };
+
+        let (config, sample_format) = if strict_bit_perfect {
+            backend::find_bit_perfect_config(
+                &self.device,
+                sr,
+                channels,
+                meta.bits_per_sample,
+                meta.sample_format,
+            )?
+        } else {
+            match backend::find_best_config(
+                &self.device,
+                sr,
+                channels,
+                meta.bits_per_sample,
+                meta.sample_format,
+            ) {
+                Ok(cfg) => cfg,
+                Err(primary_err) => {
+                    let primary_msg = primary_err.to_string();
+                    if self.maybe_fallback_to_default_device()? {
+                        backend::find_best_config(
+                            &self.device,
+                            sr,
+                            channels,
+                            meta.bits_per_sample,
+                            meta.sample_format,
                         )
-                    })?
-                } else {
-                    return Err(primary_msg.into());
+                        .map_err(|fallback_err| {
+                            format!(
+                                "No compatible output config: primary={}; fallback={}",
+                                primary_msg, fallback_err
+                            )
+                        })?
+                    } else {
+                        return Err(primary_msg.into());
+                    }
                 }
             }
         };
@@ -299,8 +364,9 @@ impl AudioPlayer {
         let state_for_cb = self.state.clone();
         let stream = match sample_format {
             cpal::SampleFormat::I16 => {
-                let rb = HeapRb::<i16>::new(sr as usize * channels as usize * 2);
-                let (producer, consumer) = rb.split();
+                let rb = HeapRb::<i16>::new(output_buffer_samples(sr, channels));
+                let (mut producer, consumer) = rb.split();
+                self.predecode_initial::<i16, _>(&mut meta, &mut producer, should_predecode);
                 let stream = backend::build_stream::<i16, _>(
                     &self.device,
                     &config,
@@ -312,8 +378,9 @@ impl AudioPlayer {
                 stream
             }
             cpal::SampleFormat::U16 => {
-                let rb = HeapRb::<u16>::new(sr as usize * channels as usize * 2);
-                let (producer, consumer) = rb.split();
+                let rb = HeapRb::<u16>::new(output_buffer_samples(sr, channels));
+                let (mut producer, consumer) = rb.split();
+                self.predecode_initial::<u16, _>(&mut meta, &mut producer, should_predecode);
                 let stream = backend::build_stream::<u16, _>(
                     &self.device,
                     &config,
@@ -325,8 +392,9 @@ impl AudioPlayer {
                 stream
             }
             cpal::SampleFormat::I8 => {
-                let rb = HeapRb::<i8>::new(sr as usize * channels as usize * 2);
-                let (producer, consumer) = rb.split();
+                let rb = HeapRb::<i8>::new(output_buffer_samples(sr, channels));
+                let (mut producer, consumer) = rb.split();
+                self.predecode_initial::<i8, _>(&mut meta, &mut producer, should_predecode);
                 let stream = backend::build_stream::<i8, _>(
                     &self.device,
                     &config,
@@ -338,8 +406,9 @@ impl AudioPlayer {
                 stream
             }
             cpal::SampleFormat::U8 => {
-                let rb = HeapRb::<u8>::new(sr as usize * channels as usize * 2);
-                let (producer, consumer) = rb.split();
+                let rb = HeapRb::<u8>::new(output_buffer_samples(sr, channels));
+                let (mut producer, consumer) = rb.split();
+                self.predecode_initial::<u8, _>(&mut meta, &mut producer, should_predecode);
                 let stream = backend::build_stream::<u8, _>(
                     &self.device,
                     &config,
@@ -351,8 +420,9 @@ impl AudioPlayer {
                 stream
             }
             cpal::SampleFormat::I24 => {
-                let rb = HeapRb::<i32>::new(sr as usize * channels as usize * 2);
-                let (producer, consumer) = rb.split();
+                let rb = HeapRb::<i32>::new(output_buffer_samples(sr, channels));
+                let (mut producer, consumer) = rb.split();
+                self.predecode_initial::<i32, _>(&mut meta, &mut producer, should_predecode);
                 let stream = backend::build_stream_converted::<i32, cpal::I24, _>(
                     &self.device,
                     &config,
@@ -364,8 +434,9 @@ impl AudioPlayer {
                 stream
             }
             cpal::SampleFormat::U24 => {
-                let rb = HeapRb::<u32>::new(sr as usize * channels as usize * 2);
-                let (producer, consumer) = rb.split();
+                let rb = HeapRb::<u32>::new(output_buffer_samples(sr, channels));
+                let (mut producer, consumer) = rb.split();
+                self.predecode_initial::<u32, _>(&mut meta, &mut producer, should_predecode);
                 let stream = backend::build_stream_converted::<u32, cpal::U24, _>(
                     &self.device,
                     &config,
@@ -377,8 +448,9 @@ impl AudioPlayer {
                 stream
             }
             cpal::SampleFormat::I32 => {
-                let rb = HeapRb::<i32>::new(sr as usize * channels as usize * 2);
-                let (producer, consumer) = rb.split();
+                let rb = HeapRb::<i32>::new(output_buffer_samples(sr, channels));
+                let (mut producer, consumer) = rb.split();
+                self.predecode_initial::<i32, _>(&mut meta, &mut producer, should_predecode);
                 let stream = backend::build_stream::<i32, _>(
                     &self.device,
                     &config,
@@ -390,8 +462,9 @@ impl AudioPlayer {
                 stream
             }
             cpal::SampleFormat::U32 => {
-                let rb = HeapRb::<u32>::new(sr as usize * channels as usize * 2);
-                let (producer, consumer) = rb.split();
+                let rb = HeapRb::<u32>::new(output_buffer_samples(sr, channels));
+                let (mut producer, consumer) = rb.split();
+                self.predecode_initial::<u32, _>(&mut meta, &mut producer, should_predecode);
                 let stream = backend::build_stream::<u32, _>(
                     &self.device,
                     &config,
@@ -403,8 +476,9 @@ impl AudioPlayer {
                 stream
             }
             cpal::SampleFormat::F32 => {
-                let rb = HeapRb::<f32>::new(sr as usize * channels as usize * 2);
-                let (producer, consumer) = rb.split();
+                let rb = HeapRb::<f32>::new(output_buffer_samples(sr, channels));
+                let (mut producer, consumer) = rb.split();
+                self.predecode_initial::<f32, _>(&mut meta, &mut producer, should_predecode);
                 let stream = backend::build_stream::<f32, _>(
                     &self.device,
                     &config,
@@ -416,8 +490,9 @@ impl AudioPlayer {
                 stream
             }
             cpal::SampleFormat::F64 => {
-                let rb = HeapRb::<f64>::new(sr as usize * channels as usize * 2);
-                let (producer, consumer) = rb.split();
+                let rb = HeapRb::<f64>::new(output_buffer_samples(sr, channels));
+                let (mut producer, consumer) = rb.split();
+                self.predecode_initial::<f64, _>(&mut meta, &mut producer, should_predecode);
                 let stream = backend::build_stream::<f64, _>(
                     &self.device,
                     &config,
@@ -437,6 +512,10 @@ impl AudioPlayer {
 
         stream.play()?;
         self.stream = Some(stream);
+        #[cfg(target_os = "linux")]
+        {
+            self.device_reservation = device_reservation;
+        }
         Ok(())
     }
 
@@ -491,6 +570,31 @@ impl AudioPlayer {
         });
     }
 
+    fn predecode_initial<S, P>(&self, meta: &mut AudioMetadata, producer: &mut P, enabled: bool)
+    where
+        S: ConvertibleSample + Copy,
+        P: Producer<Item = S>,
+    {
+        if !enabled {
+            return;
+        }
+
+        let target_samples =
+            predecode_target_samples(meta.sample_rate, meta.channels).min(producer.vacant_len());
+        while producer.occupied_len() < target_samples && !producer.is_full() {
+            if !decoder::decode_next_packet::<S, _>(
+                &mut *meta.format_reader,
+                &mut *meta.decoder,
+                meta.track_id,
+                producer,
+                &self.state,
+            ) {
+                self.state.decoder_done.store(true, Ordering::SeqCst);
+                break;
+            }
+        }
+    }
+
     pub fn pause(&self) {
         self.state.is_paused.store(true, Ordering::SeqCst);
     }
@@ -526,6 +630,10 @@ impl AudioPlayer {
     pub fn stop(&mut self) {
         self.state.is_terminating.store(true, Ordering::SeqCst);
         self.stream = None;
+        #[cfg(target_os = "linux")]
+        {
+            self.device_reservation = None;
+        }
         self.state.is_finished.store(true, Ordering::SeqCst);
         self.state.finish_notify.notify_waiters();
     }
@@ -546,9 +654,21 @@ impl AudioPlayer {
     }
 }
 
+fn output_buffer_samples(sample_rate: u32, channels: u16) -> usize {
+    sample_rate as usize * channels as usize * OUTPUT_BUFFER_SECONDS
+}
+
+fn predecode_target_samples(sample_rate: u32, channels: u16) -> usize {
+    sample_rate as usize * channels as usize * INITIAL_PREDECODE_SECONDS
+}
+
 impl Drop for AudioPlayer {
     fn drop(&mut self) {
         self.state.is_terminating.store(true, Ordering::SeqCst);
+        #[cfg(target_os = "linux")]
+        {
+            self.device_reservation = None;
+        }
         self.state.finish_notify.notify_waiters();
     }
 }

@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron'
-import { UiService } from '../service/uiService'
+import { DialogWindowOptions, UiService } from '../service/uiService'
 
 export function registerUiApi(mainWindow: BrowserWindow): void {
   ipcMain.handle('ui:openSettingsWindow', () => {
@@ -10,5 +10,8 @@ export function registerUiApi(mainWindow: BrowserWindow): void {
   })
   ipcMain.handle('ui:getAppInfo', () => {
     return UiService.getAppInfo()
+  })
+  ipcMain.handle('ui:openDialogWindow', (_event, options: DialogWindowOptions) => {
+    return UiService.openDialogWindow(options)
   })
 }

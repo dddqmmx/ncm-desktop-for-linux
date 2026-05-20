@@ -1,6 +1,7 @@
 pub(crate) mod backend;
 pub(crate) mod cache_tracker;
 pub(crate) mod decoder;
+pub(crate) mod device_reservation;
 pub(crate) mod player;
 pub(crate) mod source;
 pub(crate) mod state;

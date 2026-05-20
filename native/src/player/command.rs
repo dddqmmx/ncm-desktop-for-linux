@@ -1,11 +1,26 @@
 use tokio::sync::oneshot;
 
-use super::types::{AudioDeviceInfo, BackendResult, CachedUrlPlaybackRequest};
+use super::types::{AudioDeviceInfo, BackendResult, CachedUrlPlaybackRequest, PlaybackOptions};
 
 pub(crate) enum PlayerCommand {
-    PlayFile(String, Option<f64>),
-    PlayUrl(String, Option<f64>),
-    PlayUrlCached(CachedUrlPlaybackRequest, Option<f64>),
+    PlayFile(
+        String,
+        Option<f64>,
+        PlaybackOptions,
+        Option<oneshot::Sender<BackendResult<()>>>,
+    ),
+    PlayUrl(
+        String,
+        Option<f64>,
+        PlaybackOptions,
+        Option<oneshot::Sender<BackendResult<()>>>,
+    ),
+    PlayUrlCached(
+        CachedUrlPlaybackRequest,
+        Option<f64>,
+        PlaybackOptions,
+        Option<oneshot::Sender<BackendResult<()>>>,
+    ),
     Pause,
     Resume,
     Stop,

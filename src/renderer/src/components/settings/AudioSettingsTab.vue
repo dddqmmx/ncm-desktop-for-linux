@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import SettingGroup from '@renderer/components/settings/SettingGroup.vue'
 import SettingRow from '@renderer/components/settings/SettingRow.vue'
 import SegmentedSlider from '@renderer/components/SegmentedSlider.vue'
 import { useConfigStore } from '@renderer/stores/configStore'
+import { DEFAULT_OUTPUT_DEVICE_ID } from '@renderer/stores/config/types'
 import { type AudioDeviceInfo } from '@renderer/types/audio'
 
 const configStore = useConfigStore()
@@ -13,12 +14,26 @@ const {
   audioEngine,
   outputDeviceId,
   exclusiveMode,
+  strictBitPerfect,
   outputDevices,
   currentOutputDevice,
   isLoadingOutputDevices,
   isSwitchingOutputDevice,
   outputDeviceError
 } = storeToRefs(configStore)
+
+const exclusiveModeValue = computed({
+  get: () => strictBitPerfect.value || exclusiveMode.value,
+  set: (enabled: boolean) => {
+    if (!strictBitPerfect.value) {
+      exclusiveMode.value = enabled
+    }
+  }
+})
+
+const selectedOutputDevice = computed(
+  () => outputDevices.value.find((device) => device.id === outputDeviceId.value) ?? null
+)
 
 const formatDeviceLabel = (device: AudioDeviceInfo): string => {
   const flags: string[] = []
@@ -31,7 +46,9 @@ const formatDeviceLabel = (device: AudioDeviceInfo): string => {
     flags.push('当前')
   }
 
-  return flags.length > 0 ? `${device.name} (${flags.join(' / ')})` : device.name
+  const label = device.name || device.id
+  const suffix = flags.length > 0 ? ` (${flags.join(' / ')})` : ''
+  return `${label}${suffix}`
 }
 
 const handleOutputDeviceChange = async (event: Event): Promise<void> => {
@@ -80,15 +97,15 @@ onMounted(() => {
     </SettingGroup>
 
     <SettingGroup title="设备选择">
-      <SettingRow title="指定输出设备" description="切换后会立即调用原生播放器切到对应设备">
+      <SettingRow title="指定输出设备" description="选择系统默认输出或一个真实硬件端点">
         <div class="settings-device-picker">
           <select
             :value="outputDeviceId"
-            class="modern-select"
+            class="modern-select settings-device-select"
             :disabled="isLoadingOutputDevices || isSwitchingOutputDevice"
             @change="handleOutputDeviceChange"
           >
-            <option value="default">系统默认输出</option>
+            <option :value="DEFAULT_OUTPUT_DEVICE_ID">系统默认输出</option>
             <option v-for="device in outputDevices" :key="device.id" :value="device.id">
               {{ formatDeviceLabel(device) }}
             </option>
@@ -115,13 +132,29 @@ onMounted(() => {
           {{
             outputDeviceError ||
             currentOutputDevice?.name ||
+            selectedOutputDevice?.name ||
             (isLoadingOutputDevices ? '正在读取设备列表...' : '系统默认输出')
           }}
         </span>
       </SettingRow>
 
-      <SettingRow title="独占输出模式" description="保留配置项，后续可接入更底层的硬件独占逻辑">
-        <input v-model="exclusiveMode" type="checkbox" class="modern-switch" />
+      <SettingRow
+        title="独占输出模式"
+        description="严格 BitPerfect 打开时必须独占硬件端点，因此该选项会强制启用"
+      >
+        <input
+          v-model="exclusiveModeValue"
+          type="checkbox"
+          class="modern-switch"
+          :disabled="strictBitPerfect"
+        />
+      </SettingRow>
+
+      <SettingRow
+        title="严格 BitPerfect"
+        description="启用后仅在设备原生支持当前音源采样率、声道和样本格式时播放"
+      >
+        <input v-model="strictBitPerfect" type="checkbox" class="modern-switch" />
       </SettingRow>
     </SettingGroup>
   </div>

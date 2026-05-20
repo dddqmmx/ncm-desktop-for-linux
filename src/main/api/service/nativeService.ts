@@ -5,9 +5,9 @@ const { PlayerService } = getNativeModule()
 const player = new PlayerService()
 
 export const NativeService = {
-  playUrl(url: string, startSecs?: number) {
+  playUrl(url: string, startSecs?: number, strictBitPerfect?: boolean) {
     try {
-      return player.playUrl(url, startSecs)
+      return player.playUrl(url, startSecs, strictBitPerfect)
     } catch (e) {
       console.error('Native playUrl Error:', e)
       throw e
@@ -21,7 +21,8 @@ export const NativeService = {
     durationMs?: number,
     cacheAheadSecs?: number,
     maxCacheAheadBytes?: number,
-    startSecs?: number
+    startSecs?: number,
+    strictBitPerfect?: boolean
   ) {
     try {
       return player.playUrlCached(
@@ -31,7 +32,8 @@ export const NativeService = {
         durationMs,
         cacheAheadSecs,
         maxCacheAheadBytes,
-        startSecs
+        startSecs,
+        strictBitPerfect
       )
     } catch (e) {
       console.error('Native playUrlCached Error:', e)
@@ -39,8 +41,8 @@ export const NativeService = {
     }
   },
 
-  playFile(filePath: string, start_secs?: number) {
-    return player.playFile(filePath, start_secs)
+  playFile(filePath: string, start_secs?: number, strictBitPerfect?: boolean) {
+    return player.playFile(filePath, start_secs, strictBitPerfect)
   },
 
   pause() {

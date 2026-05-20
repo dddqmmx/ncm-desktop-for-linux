@@ -72,6 +72,7 @@ const api = {
   //ui相关工具方法
   open_settings_window: invoke('ui:openSettingsWindow'),
   close_settings_window: invoke('ui:closeSettingsWindow'),
+  open_dialog_window: invoke('ui:openDialogWindow'),
   get_app_info: invoke('ui:getAppInfo')
 }
 
