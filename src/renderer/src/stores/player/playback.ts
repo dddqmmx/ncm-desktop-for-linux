@@ -45,6 +45,10 @@ export const usePlaybackStore = defineStore('playback', () => {
   const STARTUP_STALL_TIMEOUT_MS = 30_000
   const NATURAL_END_TOLERANCE_MS = 2_500
   const PLAYBACK_STARTED_PROGRESS_THRESHOLD_MS = 150
+  // ====== 严格同步配置 ======
+  // 同步时间平滑阈值：超过此阈值的误差将直接触发跳变，而不是平滑过渡。
+  // 由于现在底层是 16ms 刷新率 + RTT 延迟补偿，因此阈值可以缩减到极小（20ms，一帧多一点）
+  const DRIFT_THRESHOLD_MS = 20
 
   const duration = computed(() => currentSong.value?.duration || 0)
   const progressPercent = computed(() => {
@@ -77,12 +81,14 @@ export const usePlaybackStore = defineStore('playback', () => {
   }
 
   const resetPlaybackLoadState = (): void => {
+    console.log(`[SYNC] resetPlaybackLoadState: isLoading false (was ${isLoading.value})`)
     isLoading.value = false
     loadingStartedAt = 0
     loadingExpectedStartTime = 0
   }
 
   const beginPlaybackLoadState = (expectedStartTime = 0): void => {
+    console.log(`[SYNC] beginPlaybackLoadState: isLoading=true, expectedStart=${expectedStartTime}ms`)
     playbackError.value = ''
     isLoading.value = true
     loadingStartedAt = Date.now()
@@ -121,25 +127,67 @@ export const usePlaybackStore = defineStore('playback', () => {
   /**
    * 定时同步播放进度
    * 从底层获取当前播放毫秒数并更新 currentTime
+   * 使用漂移平滑校正：小漂移直接吸收，大漂移立即纠正
+   *
+   * 关键设计：即使在 seek 拖拽期间也不完全跳过，
+   * 因为 isLoading 的清除逻辑在此函数内——如果完全跳过，
+   * isLoading 永远无法被清除，导致 seek 后歌词冻结。
    */
+  let ignoreDriftUntil = 0
+
   const syncProgress = async (): Promise<void> => {
-    if (isSeeking.value) return // 拖动中不同步，避免进度条跳动
     try {
-      const [progressMs, isBuffering] = await Promise.all([
+      const reqStart = performance.now()
+      const [rawProgressMs, isBuffering] = await Promise.all([
         window.api.get_progress(),
         window.api.is_buffering()
       ])
-      if (progressMs !== undefined && progressMs !== null) {
-        currentTime.value = progressMs
-        lastSyncedProgressMs = progressMs
-        lastSyncedAt = performance.now()
+      const reqEnd = performance.now()
+
+      let progressMs = rawProgressMs
+
+      if (rawProgressMs !== undefined && rawProgressMs !== null) {
+        // --- 核心优化：IPC RTT 延迟补偿 ---
+        // get_progress 需要经过 JS -> IPC -> Rust -> IPC -> JS 的漫长旅途。
+        // 我们假定往返时间是对称的，所以拿到数据的瞬间，真实音频已经又往前播放了 rtt / 2。
+        const rtt = reqEnd - reqStart
+        // 补偿后的精准进度（仅在非暂停时，或者说是简单加上偏移量。为了严谨，我们直接加上补偿量）
+        progressMs = isPlaying.value ? rawProgressMs + rtt / 2 : rawProgressMs
+
+        const now = performance.now()
+
+        if (isSeeking.value) {
+          console.log(`[SYNC] syncProgress (SEEKING): raw=${rawProgressMs}ms, rtt=${rtt.toFixed(1)}ms. updating anchors only. isLoading=${isLoading.value}`)
+          lastSyncedProgressMs = progressMs
+          lastSyncedAt = now
+        } else {
+          const interpolatedEstimate = lastSyncedProgressMs + (now - lastSyncedAt)
+          const drift = Math.abs(progressMs - interpolatedEstimate)
+
+          if (drift <= DRIFT_THRESHOLD_MS) {
+            lastSyncedProgressMs = progressMs
+            lastSyncedAt = now
+          } else if (now >= ignoreDriftUntil) {
+            console.log(`[SYNC] syncProgress: LARGE DRIFT ${drift.toFixed(0)}ms, correcting currentTime ${currentTime.value} -> ${progressMs}`)
+            currentTime.value = progressMs
+            lastSyncedProgressMs = progressMs
+            lastSyncedAt = now
+          } else {
+            console.log(`[SYNC] syncProgress: IGNORING LARGE DRIFT ${drift.toFixed(0)}ms (immune after seek), realProgress=${progressMs}ms`)
+            // 只更新锚点不更新 currentTime，保持现有的 UI 进度，给后端时间追上来
+            lastSyncedProgressMs = currentTime.value
+            lastSyncedAt = now
+          }
+        }
       }
       await updateCacheProgress()
 
       if (isLoading.value) {
         const hasStarted = !isBuffering && hasPlaybackReachedExpectedStart(progressMs)
+        console.log(`[SYNC] syncProgress: isLoading=true, realProgress=${progressMs}ms, expected=${loadingExpectedStartTime}ms, isBuffering=${isBuffering}, hasStarted=${hasStarted}`)
 
         if (hasStarted) {
+          console.log(`[SYNC] syncProgress: CLEARING isLoading! Audio reached expected position.`)
           resetPlaybackLoadState()
         } else if (loadingStartedAt && Date.now() - loadingStartedAt > STARTUP_STALL_TIMEOUT_MS) {
           await stopAfterPlaybackFailure('网络较慢，音乐加载超时。')
@@ -158,12 +206,17 @@ export const usePlaybackStore = defineStore('playback', () => {
     return progressMs >= loadingExpectedStartTime
   }
 
-  const syncLocalProgress = (): void => {
-    if (isPlaying.value && !isSeeking.value && !isLoading.value) {
-      const elapsedMs = performance.now() - lastSyncedAt
+  let _syncLocalLogCounter = 0
+  const syncLocalProgress = (rafTimestamp: number): void => {
+    const canRun = isPlaying.value && !isSeeking.value && !isLoading.value
+    if (canRun) {
+      const elapsedMs = rafTimestamp - lastSyncedAt
       const estimatedTime = Math.round(lastSyncedProgressMs + elapsedMs)
       currentTime.value =
         duration.value > 0 ? Math.min(estimatedTime, duration.value) : estimatedTime
+    } else if (_syncLocalLogCounter++ % 60 === 0) {
+      // 每秒打一次日志（约60帧），避免刷屏
+      console.log(`[SYNC] syncLocalProgress BLOCKED: isPlaying=${isPlaying.value}, isSeeking=${isSeeking.value}, isLoading=${isLoading.value}, currentTime=${currentTime.value}`)
     }
 
     progressAnimationFrame = window.requestAnimationFrame(syncLocalProgress)
@@ -539,14 +592,24 @@ export const usePlaybackStore = defineStore('playback', () => {
    * @param timeInMs 目标时间 (毫秒)
    */
   const seek = async (timeInMs: number): Promise<void> => {
+    const seekStartedAt = performance.now()
     const finiteTime = Number.isFinite(timeInMs) ? timeInMs : 0
     const roundedTime = Math.max(Math.round(finiteTime), 0)
     const clampedTime = duration.value > 0 ? Math.min(roundedTime, duration.value) : roundedTime
+    console.log(`[SEEK] START: target=${clampedTime}ms, isSeeking=${isSeeking.value}, isPlaying=${isPlaying.value}`)
     currentTime.value = clampedTime
     lastSyncedProgressMs = clampedTime
     lastSyncedAt = performance.now()
-    beginPlaybackLoadState(clampedTime)
+    // 给后端1秒钟的时间来 flush 缓冲区并更新真实 progressMs。
+    // 在这1秒内，忽略任何来自 get_progress() 的旧数据造成的大幅漂移，防止 UI 回弹。
+    ignoreDriftUntil = performance.now() + 1000
+    // 注意：不调用 beginPlaybackLoadState()。
+    // isLoading 是为初始加载设计的——seek 时我们已经知道目标位置，
+    // currentTime 已设好，rAF 插值应该从目标位置立即继续推进，
+    // 而不是等后端缓冲区追上（~1秒延迟）。
+    playbackError.value = ''
     await window.api.seek(clampedTime / 1000)
+    console.log(`[SEEK] API RETURNED: took ${(performance.now() - seekStartedAt).toFixed(0)}ms, isSeeking=${isSeeking.value}, isLoading=${isLoading.value}`)
   }
 
   /**

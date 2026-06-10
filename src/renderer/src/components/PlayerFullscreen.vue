@@ -39,20 +39,26 @@ const currentArtists = computed(() => playerStore.currentSong?.artists ?? [])
 
 const beginSeek = (): void => {
   if (!isDragging.value) isDragging.value = true
-  if (!playerStore.isSeeking) playerStore.isSeeking = true
+  if (!playerStore.isSeeking) {
+    console.log('[FULLSCREEN] beginSeek: isSeeking -> true')
+    playerStore.isSeeking = true
+  }
 }
 
 const endSeek = (): void => {
+  console.log('[FULLSCREEN] endSeek: scheduling isSeeking=false in 50ms')
   setTimeout(() => {
+    console.log('[FULLSCREEN] endSeek TIMER: isSeeking -> false, isLoading=', playerStore.isLoading)
     isDragging.value = false
     playerStore.isSeeking = false
-  }, 500)
+  }, 50)
 }
 
 // 处理进度跳转
 const handleSeek = async (e: Event): Promise<void> => {
   beginSeek()
   const targetTime = Number((e.target as HTMLInputElement).value)
+  console.log(`[FULLSCREEN] handleSeek: target=${targetTime}ms`)
   try {
     await playerStore.seek(targetTime)
   } finally {
@@ -272,6 +278,7 @@ const onImageLoad = (): void => {
           :song-id="playerStore.currentSong?.id"
           :current-time="playerStore.currentTime"
           :is-dark="theme.isDark"
+          :is-seeking="playerStore.isSeeking"
         />
       </main>
     </div>

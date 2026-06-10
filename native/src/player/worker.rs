@@ -34,7 +34,7 @@ where
     }
 
     pub(crate) async fn run(mut self, mut rx: mpsc::UnboundedReceiver<PlayerCommand>) {
-        let mut ticker = tokio::time::interval(Duration::from_millis(100));
+        let mut ticker = tokio::time::interval(Duration::from_millis(16));
 
         loop {
             tokio::select! {

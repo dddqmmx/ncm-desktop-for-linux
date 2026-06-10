@@ -6,10 +6,11 @@ const props = defineProps<{
   songId?: number
   currentTime: number // 假设是毫秒
   isDark: boolean
+  isSeeking?: boolean
 }>()
 
 // --- 配置常量 ---
-const LYRIC_OFFSET_MS = 400 // 提前 400ms 触发高亮和滚动，补偿人眼感知和动画启动
+const LYRIC_OFFSET_MS = 50 // 仅补偿人眼感知延迟（~50ms），CSS 动画已拆分为快速响应阶段
 const LYRIC_PRONUNCIATION_VISIBLE_KEY = 'lyric:showPronunciation'
 const LYRIC_TRANSLATION_VISIBLE_KEY = 'lyric:showTranslation'
 
@@ -29,6 +30,7 @@ const showTranslation = ref(localStorage.getItem(LYRIC_TRANSLATION_VISIBLE_KEY) 
 const isUserScrolling = ref(false)
 let userScrollTimer: number | undefined
 let lyricRequestId = 0
+let lastCurrentTime = 0 // 用于检测 seek 跳变
 
 const hasPronunciation = computed(() => lyrics.value.some((line) => !!line.pronunciation))
 const hasTranslation = computed(() => lyrics.value.some((line) => !!line.translation))
@@ -48,14 +50,16 @@ const themeVars = computed(() => {
 const parseTimedLines = (lrcString: string): LyricLine[] => {
   const lines = lrcString.split('\n')
   const result: LyricLine[] = []
-  const timeExp = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/
+  const timeExp = /\[(\d{2}):(\d{2})\.(\d{1,3})\]/
   lines.forEach((line) => {
     const match = timeExp.exec(line)
     if (match) {
       const m = parseInt(match[1])
       const s = parseInt(match[2])
-      const ms = parseInt(match[3])
-      const time = m * 60 + s + (ms > 99 ? ms / 1000 : ms / 100)
+      const msStr = match[3]
+      // 使用字符串长度驱动的归一化："4"→0.4, "45"→0.45, "456"→0.456
+      const msFraction = parseInt(msStr) / Math.pow(10, msStr.length)
+      const time = m * 60 + s + msFraction
       const text = line.replace(timeExp, '').trim()
       if (text) result.push({ time, text })
     }
@@ -133,11 +137,25 @@ watch(showTranslation, (value) => {
   localStorage.setItem(LYRIC_TRANSLATION_VISIBLE_KEY, String(value))
 })
 
-// --- 逻辑优化：提前量计算 ---
+// --- 逻辑优化：二分搜索 + 提前量计算 ---
 const currentLyricIndex = computed(() => {
-  // 加上偏移量，让 index 的切换提前发生
   const adjustedTime = (props.currentTime + LYRIC_OFFSET_MS) / 1000
-  return lyrics.value.findLastIndex((l) => adjustedTime >= l.time)
+  const lines = lyrics.value
+  if (lines.length === 0) return -1
+  // 二分搜索：找到最后一个 time <= adjustedTime 的行
+  let lo = 0
+  let hi = lines.length - 1
+  let result = -1
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1
+    if (lines[mid].time <= adjustedTime) {
+      result = mid
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
+  }
+  return result
 })
 
 // --- 滚动逻辑 ---
@@ -145,6 +163,7 @@ const scrollActiveLyricToCenter = (behavior: 'auto' | 'smooth' = 'smooth'): void
   const activeIndex = currentLyricIndex.value
   if (activeIndex === -1) return
 
+  console.log(`[LYRIC] scrollActiveLyricToCenter: index=${activeIndex}, behavior=${behavior}, time=${(props.currentTime / 1000).toFixed(2)}s`)
   nextTick(() => {
     const activeEl = lineRefs.value[activeIndex]
     if (activeEl) {
@@ -156,10 +175,44 @@ const scrollActiveLyricToCenter = (behavior: 'auto' | 'smooth' = 'smooth'): void
   })
 }
 
-watch(currentLyricIndex, () => {
+watch(currentLyricIndex, (newIndex, oldIndex) => {
   if (isUserScrolling.value) return
+  console.log(`[LYRIC] index changed: ${oldIndex} -> ${newIndex}, time=${(props.currentTime / 1000).toFixed(2)}s, isSeeking=${props.isSeeking}`)
   scrollActiveLyricToCenter()
 })
+
+// --- Seek 跳变检测：当 currentTime 发生大幅跳变时，立即定位歌词 ---
+watch(
+  () => props.currentTime,
+  (newTime) => {
+    const delta = Math.abs(newTime - lastCurrentTime)
+    lastCurrentTime = newTime
+    // 超过 1 秒的跳变视为 seek 操作，立即定位
+    if (delta > 1000) {
+      console.log(`[LYRIC] SEEK JUMP detected: delta=${delta.toFixed(0)}ms, newTime=${newTime.toFixed(0)}ms`)
+      // 取消用户滚动锁定
+      isUserScrolling.value = false
+      if (userScrollTimer) {
+        window.clearTimeout(userScrollTimer)
+        userScrollTimer = undefined
+      }
+      scrollActiveLyricToCenter('auto')
+    }
+  }
+)
+
+// --- isSeeking prop 变化：seek 结束后立即同步歌词位置 ---
+watch(
+  () => props.isSeeking,
+  (seeking, wasSeeking) => {
+    console.log(`[LYRIC] isSeeking prop: ${wasSeeking} -> ${seeking}`)
+    if (wasSeeking && !seeking) {
+      console.log(`[LYRIC] Seek ended, forcing scroll to current lyric`)
+      isUserScrolling.value = false
+      scrollActiveLyricToCenter('auto')
+    }
+  }
+)
 
 watch([showPronunciation, showTranslation], () => {
   scrollActiveLyricToCenter('auto')
@@ -222,7 +275,10 @@ watch([showPronunciation, showTranslation], () => {
           }
         "
         class="lyric-line"
-        :class="{ active: index === currentLyricIndex }"
+        :class="{
+          active: index === currentLyricIndex,
+          'near-active': Math.abs(index - currentLyricIndex) <= 15
+        }"
       >
         <span class="lyric-text">{{ line.text }}</span>
         <span
@@ -300,7 +356,7 @@ watch([showPronunciation, showTranslation], () => {
   overflow-y: auto;
   overflow-x: hidden; /* 严禁左右滚动 */
   padding: 50% 40px; /* 左右 Padding 必须足够大，防止 scale 后的文字被 mask 截断 */
-  scroll-behavior: smooth;
+  /* 注意：不设置 scroll-behavior: smooth，滚动行为完全由 JS scrollIntoView 控制 */
   scrollbar-width: none;
   pointer-events: auto;
   /* 增加遮罩的平滑度 */
@@ -326,12 +382,10 @@ watch([showPronunciation, showTranslation], () => {
   line-height: 1.4;
   text-align: center;
 
-  /* 优化过渡曲线：out-expo 风格，开始快，结束慢，视觉上更灵敏 */
+  /* 基础过渡，不包含 GPU 密集型属性 */
   transition:
-    transform 0.4s cubic-bezier(0.23, 1, 0.32, 1),
-    opacity 0.4s cubic-bezier(0.23, 1, 0.32, 1),
-    filter 0.4s ease,
-    color 0.3s ease; /* 增加颜色过渡 */
+    opacity 0.15s cubic-bezier(0.23, 1, 0.32, 1),
+    color 0.15s ease;
 
   opacity: 0.3;
   /* 使用 CSS 变量控制颜色 */
@@ -339,11 +393,26 @@ watch([showPronunciation, showTranslation], () => {
   font-size: 26px;
   font-weight: 500;
 
-  /* 关键：防止抖动的核心属性 */
+  transform-origin: center center;
+
+  /* CSS 虚拟渲染核心：让浏览器跳过不可见元素的布局和绘制 */
+  content-visibility: auto;
+  contain-intrinsic-size: 0 56px; /* 估算的基础高度 (26px * 1.4 + margin/padding) */
+}
+
+/* 仅对即将在屏幕上出现的歌词应用 GPU 硬件加速和模糊特效，避免上百个图层撑爆 GPU */
+.lyric-line.near-active {
+  /* 关键：防止抖动的核心属性，并移入视窗内的元素 */
   will-change: transform, opacity;
   backface-visibility: hidden;
-  transform-origin: center center;
   filter: blur(0.5px); /* 未激活时轻微模糊，增加层次感 */
+  
+  /* 恢复平滑的完整过渡 */
+  transition:
+    transform 0.35s cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 0.15s cubic-bezier(0.23, 1, 0.32, 1),
+    filter 0.35s ease,
+    color 0.15s ease;
 }
 
 .lyric-line.active {

@@ -20,14 +20,19 @@ const isDragging = ref(false)
 
 const beginSeek = (): void => {
   if (!isDragging.value) isDragging.value = true
-  if (!playerStore.isSeeking) playerStore.isSeeking = true
+  if (!playerStore.isSeeking) {
+    console.log('[BAR] beginSeek: isSeeking -> true')
+    playerStore.isSeeking = true
+  }
 }
 
 const endSeek = (): void => {
+  console.log('[BAR] endSeek: scheduling isSeeking=false in 50ms')
   setTimeout(() => {
+    console.log('[BAR] endSeek TIMER: isSeeking -> false, isLoading=', playerStore.isLoading)
     isDragging.value = false
     playerStore.isSeeking = false
-  }, 500)
+  }, 50)
 }
 
 const handleInput = (e: Event): void => {
@@ -39,6 +44,7 @@ const handleInput = (e: Event): void => {
 const handleSeek = async (e: Event): Promise<void> => {
   beginSeek()
   const targetTime = Number((e.target as HTMLInputElement).value)
+  console.log(`[BAR] handleSeek: target=${targetTime}ms`)
   try {
     await playerStore.seek(targetTime)
   } finally {
