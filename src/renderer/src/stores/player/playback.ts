@@ -3,14 +3,19 @@ import { ref, watch, computed } from 'vue'
 import { CurrentSong } from '@renderer/types/player'
 import { Song } from '@renderer/types/songDetail'
 import { SongUrl, SoundQualityType } from '@renderer/types/song'
-import type { SongCacheProgress } from '@renderer/types/cache'
+import type {
+  PlaybackCacheEngine,
+  PreparedPlaybackCache,
+  SongCacheProgress
+} from '@renderer/types/cache'
 import { useUserStore } from '../userStore'
 import { useConfigStore } from '../configStore'
 import { useDialogStore } from '../dialogStore'
 import { usePlaylistStore } from './playlist'
-import { prepareCachedSongSource } from '@renderer/utils/cache'
+import { preparePlaybackCache, startPlaybackBackgroundCache } from '@renderer/utils/cache'
 import { createCurrentSongArtists } from './utils'
-import { isSoundQualityLevel } from './quality'
+import { isSoundQualityLevel, getFallbackQualities } from './quality'
+import { webAudioEngine } from './webAudioEngine'
 
 export const usePlaybackStore = defineStore('playback', () => {
   const currentSong = ref<CurrentSong | null>(
@@ -21,8 +26,11 @@ export const usePlaybackStore = defineStore('playback', () => {
   const isPlaying = ref(false)
   const isHistorySong = ref(true)
   const isSeeking = ref(false)
+  const isBuffering = ref(false)
   const isSwitching = ref(false)
   const isLoading = ref(false)
+  // [调试] 后端上报的原始播放位置（未经媒体时钟处理），用于定位延迟到底卡在哪一环
+  const rawProgressMs = ref(0)
   const playbackError = ref('')
   const bufferedPercent = ref(0)
 
@@ -45,6 +53,8 @@ export const usePlaybackStore = defineStore('playback', () => {
   const STARTUP_STALL_TIMEOUT_MS = 30_000
   const NATURAL_END_TOLERANCE_MS = 2_500
   const PLAYBACK_STARTED_PROGRESS_THRESHOLD_MS = 150
+  const CACHE_PROGRESS_POLL_INTERVAL_MS = 100
+  const NATIVE_PROGRESS_POLL_INTERVAL_MS = 200
   // ====== 严格同步配置 ======
   // 同步时间平滑阈值：超过此阈值的误差将直接触发跳变，而不是平滑过渡。
   // 由于现在底层是 16ms 刷新率 + RTT 延迟补偿，因此阈值可以缩减到极小（20ms，一帧多一点）
@@ -88,7 +98,9 @@ export const usePlaybackStore = defineStore('playback', () => {
   }
 
   const beginPlaybackLoadState = (expectedStartTime = 0): void => {
-    console.log(`[SYNC] beginPlaybackLoadState: isLoading=true, expectedStart=${expectedStartTime}ms`)
+    console.log(
+      `[SYNC] beginPlaybackLoadState: isLoading=true, expectedStart=${expectedStartTime}ms`
+    )
     playbackError.value = ''
     isLoading.value = true
     loadingStartedAt = Date.now()
@@ -138,26 +150,30 @@ export const usePlaybackStore = defineStore('playback', () => {
   const syncProgress = async (): Promise<void> => {
     try {
       const reqStart = performance.now()
-      const [rawProgressMs, isBuffering] = await Promise.all([
+      const [backendProgressMs, isBufferingNow] = await Promise.all([
         window.api.get_progress(),
         window.api.is_buffering()
       ])
       const reqEnd = performance.now()
+      isBuffering.value = isBufferingNow === true
 
-      let progressMs = rawProgressMs
+      let progressMs = backendProgressMs
 
-      if (rawProgressMs !== undefined && rawProgressMs !== null) {
+      if (backendProgressMs !== undefined && backendProgressMs !== null) {
+        rawProgressMs.value = backendProgressMs
         // --- 核心优化：IPC RTT 延迟补偿 ---
         // get_progress 需要经过 JS -> IPC -> Rust -> IPC -> JS 的漫长旅途。
         // 我们假定往返时间是对称的，所以拿到数据的瞬间，真实音频已经又往前播放了 rtt / 2。
         const rtt = reqEnd - reqStart
         // 补偿后的精准进度（仅在非暂停时，或者说是简单加上偏移量。为了严谨，我们直接加上补偿量）
-        progressMs = isPlaying.value ? rawProgressMs + rtt / 2 : rawProgressMs
+        progressMs = isPlaying.value ? backendProgressMs + rtt / 2 : backendProgressMs
 
         const now = performance.now()
 
         if (isSeeking.value) {
-          console.log(`[SYNC] syncProgress (SEEKING): raw=${rawProgressMs}ms, rtt=${rtt.toFixed(1)}ms. updating anchors only. isLoading=${isLoading.value}`)
+          console.log(
+            `[SYNC] syncProgress (SEEKING): raw=${backendProgressMs}ms, rtt=${rtt.toFixed(1)}ms. updating anchors only. isLoading=${isLoading.value}`
+          )
           lastSyncedProgressMs = progressMs
           lastSyncedAt = now
         } else {
@@ -168,23 +184,33 @@ export const usePlaybackStore = defineStore('playback', () => {
             lastSyncedProgressMs = progressMs
             lastSyncedAt = now
           } else if (now >= ignoreDriftUntil) {
-            console.log(`[SYNC] syncProgress: LARGE DRIFT ${drift.toFixed(0)}ms, correcting currentTime ${currentTime.value} -> ${progressMs}`)
+            console.log(
+              `[SYNC] syncProgress: LARGE DRIFT ${drift.toFixed(0)}ms, correcting currentTime ${currentTime.value} -> ${progressMs}`
+            )
             currentTime.value = progressMs
             lastSyncedProgressMs = progressMs
             lastSyncedAt = now
           } else {
-            console.log(`[SYNC] syncProgress: IGNORING LARGE DRIFT ${drift.toFixed(0)}ms (immune after seek), realProgress=${progressMs}ms`)
+            console.log(
+              `[SYNC] syncProgress: IGNORING LARGE DRIFT ${drift.toFixed(0)}ms (immune after seek), realProgress=${progressMs}ms`
+            )
             // 只更新锚点不更新 currentTime，保持现有的 UI 进度，给后端时间追上来
             lastSyncedProgressMs = currentTime.value
             lastSyncedAt = now
           }
         }
       }
+
       await updateCacheProgress()
 
       if (isLoading.value) {
-        const hasStarted = !isBuffering && hasPlaybackReachedExpectedStart(progressMs)
-        console.log(`[SYNC] syncProgress: isLoading=true, realProgress=${progressMs}ms, expected=${loadingExpectedStartTime}ms, isBuffering=${isBuffering}, hasStarted=${hasStarted}`)
+        const hasStarted =
+          typeof progressMs === 'number' &&
+          !isBuffering.value &&
+          hasPlaybackReachedExpectedStart(progressMs)
+        console.log(
+          `[SYNC] syncProgress: isLoading=true, realProgress=${progressMs}ms, expected=${loadingExpectedStartTime}ms, isBuffering=${isBuffering.value}, hasStarted=${hasStarted}`
+        )
 
         if (hasStarted) {
           console.log(`[SYNC] syncProgress: CLEARING isLoading! Audio reached expected position.`)
@@ -208,7 +234,18 @@ export const usePlaybackStore = defineStore('playback', () => {
 
   let _syncLocalLogCounter = 0
   const syncLocalProgress = (rafTimestamp: number): void => {
-    const canRun = isPlaying.value && !isSeeking.value && !isLoading.value
+    if (isWebEngine()) {
+      // WebAPI 引擎：直接读 <audio> 的真实播放位置驱动歌词/进度
+      if (!isSeeking.value) {
+        const ms = Math.round(webAudioEngine.currentTimeMs)
+        rawProgressMs.value = ms
+        currentTime.value = duration.value > 0 ? Math.min(ms, duration.value) : ms
+      }
+      progressAnimationFrame = window.requestAnimationFrame(syncLocalProgress)
+      return
+    }
+
+    const canRun = isPlaying.value && !isSeeking.value && !isLoading.value && !isBuffering.value
     if (canRun) {
       const elapsedMs = rafTimestamp - lastSyncedAt
       const estimatedTime = Math.round(lastSyncedProgressMs + elapsedMs)
@@ -216,9 +253,10 @@ export const usePlaybackStore = defineStore('playback', () => {
         duration.value > 0 ? Math.min(estimatedTime, duration.value) : estimatedTime
     } else if (_syncLocalLogCounter++ % 60 === 0) {
       // 每秒打一次日志（约60帧），避免刷屏
-      console.log(`[SYNC] syncLocalProgress BLOCKED: isPlaying=${isPlaying.value}, isSeeking=${isSeeking.value}, isLoading=${isLoading.value}, currentTime=${currentTime.value}`)
+      console.log(
+        `[SYNC] syncLocalProgress BLOCKED: isPlaying=${isPlaying.value}, isSeeking=${isSeeking.value}, isLoading=${isLoading.value}, currentTime=${currentTime.value}`
+      )
     }
-
     progressAnimationFrame = window.requestAnimationFrame(syncLocalProgress)
   }
 
@@ -226,13 +264,26 @@ export const usePlaybackStore = defineStore('playback', () => {
    * 启动进度同步计时器
    */
   const startTimer = (): void => {
+    if (isWebEngine()) {
+      // WebAPI 引擎不轮询 native 后端，只用 rAF 读取 <audio>.currentTime
+      if (!progressAnimationFrame) {
+        progressAnimationFrame = window.requestAnimationFrame(syncLocalProgress)
+      }
+      if (!progressTimer) {
+        progressTimer = setInterval(() => {
+          void updateCacheProgress()
+        }, CACHE_PROGRESS_POLL_INTERVAL_MS)
+        void updateCacheProgress()
+      }
+      return
+    }
     lastSyncedProgressMs = currentTime.value
     lastSyncedAt = performance.now()
     if (!progressAnimationFrame) {
       progressAnimationFrame = window.requestAnimationFrame(syncLocalProgress)
     }
     if (progressTimer) return
-    progressTimer = setInterval(syncProgress, 200) // 每 200ms 同步一次
+    progressTimer = setInterval(syncProgress, NATIVE_PROGRESS_POLL_INTERVAL_MS)
     void syncProgress()
   }
 
@@ -276,27 +327,91 @@ export const usePlaybackStore = defineStore('playback', () => {
     song_id: number,
     level: SoundQualityType
   ): Promise<{ url: string; level: SoundQualityType; size?: number; sampleRate?: number }> => {
-    try {
-      const res = (await window.api.song_url({
-        id: song_id,
-        level: level,
-        cookie: userStore.cookie
-      })) as { body?: { data?: SongUrl[] } }
-      const data = res.body?.data?.[0]
-      return {
-        url: data?.url ?? '',
-        level: isSoundQualityLevel(data?.level) ? data.level : level,
-        ...(typeof data?.size === 'number' && Number.isFinite(data.size)
-          ? { size: data.size }
-          : {}),
-        ...(typeof data?.sr === 'number' && Number.isFinite(data.sr)
-          ? { sampleRate: data.sr }
-          : {})
+    const levels = getFallbackQualities(level)
+    for (const tryLevel of levels) {
+      try {
+        const res = (await window.api.song_url({
+          id: song_id,
+          level: tryLevel,
+          cookie: userStore.cookie
+        })) as {
+          status: number
+          body?: { data?: SongUrl[] } | null
+          error?: string
+          cookie?: unknown
+        }
+        const data = res.body?.data?.[0]
+        const url = data?.url
+        if (url) {
+          if (tryLevel !== level) {
+            console.warn(
+              `[playback] 请求的音质 ${level} 不可用，已降级为 ${tryLevel}: song_id=${song_id}`
+            )
+          }
+          return {
+            url,
+            level: isSoundQualityLevel(data?.level) ? data.level! : tryLevel,
+            ...(typeof data?.size === 'number' && Number.isFinite(data.size)
+              ? { size: data.size }
+              : {}),
+            ...(typeof data?.sr === 'number' && Number.isFinite(data.sr)
+              ? { sampleRate: data.sr }
+              : {})
+          }
+        }
+        console.warn(
+          `[playback] song_url 音质 ${tryLevel} 不可用: id=${song_id}, ` +
+            `status=${res.status}, hasBody=${res.body !== null && res.body !== undefined}, ` +
+            `dataLen=${JSON.stringify(res.body?.data?.length)}, ` +
+            `error=${JSON.stringify(res.error)}, rawData=${JSON.stringify(data)}`
+        )
+      } catch (e) {
+        console.warn(`[playback] song_url 音质 ${tryLevel} 请求异常:`, e)
       }
-    } catch (e) {
-      console.error('获取歌曲 URL 失败', e)
-      return { url: '', level }
     }
+    console.error(`[playback] 所有音质均不可用: song_id=${song_id}`)
+    return { url: '', level }
+  }
+
+  const prepareCacheForPlayback = (
+    engine: PlaybackCacheEngine,
+    songId: number,
+    songUrl: Awaited<ReturnType<typeof fetchSongUrl>>,
+    durationMs: number
+  ): Promise<PreparedPlaybackCache> => {
+    return preparePlaybackCache({
+      engine,
+      songId,
+      quality: songUrl.level,
+      url: songUrl.url,
+      expectedBytes: songUrl.size,
+      durationMs
+    })
+  }
+
+  const activatePlaybackCache = async (
+    cache: PreparedPlaybackCache,
+    songId: number
+  ): Promise<void> => {
+    const playbackSource = cache.source
+    console.log(
+      `[playback] preparePlaybackCache result: engine=${cache.engine}, type=${playbackSource.type}, value=${playbackSource.value}`
+    )
+    activeCacheMetadataPath = cache.metadataPath
+    bufferedPercent.value = cache.initialBufferedPercent
+    await updateCacheProgress()
+
+    const backgroundCache = startPlaybackBackgroundCache(cache)
+    if (!backgroundCache) return
+
+    console.log(`[playback] cache miss, starting background cache for song ${songId}`)
+    backgroundCache
+      .then((cached) => {
+        if (cached.type === 'file') {
+          console.log(`[playback] background cache completed: ${cached.value}`)
+        }
+      })
+      .catch((err) => console.warn('后台缓存歌曲失败:', err))
   }
 
   /**
@@ -357,6 +472,92 @@ export const usePlaybackStore = defineStore('playback', () => {
 
   // --- 公开操作 (Actions) ---
 
+  const isWebEngine = (): boolean => configStore.audioEngine === 'webapi'
+
+  /**
+   * WebAPI 引擎播放：作为 native 引擎的对照路径，底层走 <audio> + 浏览器内置缓冲。
+   * 复用缓存系统，优先播放已缓存的本地文件；未命中缓存时由浏览器拉取网络 URL，
+   * 同时后台启动边播边存。
+   */
+  const playWithWebEngine = async (song_id: number, startTime: number): Promise<void> => {
+    playToken++
+    const currentToken = playToken
+    isSwitching.value = true
+    beginPlaybackLoadState(startTime)
+    bufferedPercent.value = 0
+    activeCacheMetadataPath = ''
+
+    try {
+      // 关掉 native 输出，避免两套引擎同时出声
+      try {
+        await window.api.stop()
+      } catch {
+        // ignore
+      }
+
+      const detailData = await getSongDetailData(song_id)
+      if (currentToken !== playToken) return
+      if (!detailData) throw new Error('无法获取歌曲详情')
+
+      currentTime.value = startTime
+      setPlayerData(detailData.song, false)
+
+      const songUrl = await fetchSongUrl(song_id, configStore.soundQuality)
+      if (currentToken !== playToken) return
+      if (!songUrl.url) {
+        console.warn(
+          `[playback] fetchSongUrl 返回空 URL: song_id=${song_id}, level=${configStore.soundQuality}, cookie=${userStore.cookie ? '已设置' : '未设置（未登录）'}`
+        )
+        throw new Error('获取播放 URL 失败')
+      }
+
+      const playbackCache = await prepareCacheForPlayback(
+        'webapi',
+        song_id,
+        songUrl,
+        detailData.song.dt
+      )
+      if (currentToken !== playToken) return
+      await activatePlaybackCache(playbackCache, song_id)
+
+      await webAudioEngine.load(playbackCache.source, startTime / 1000)
+      if (currentToken !== playToken) {
+        webAudioEngine.stop()
+        return
+      }
+
+      setPlayerData(detailData.song, true)
+      isHistorySong.value = false
+      currentTime.value = startTime
+      resetPlaybackLoadState()
+
+      const exists = playlistStore.playlist.some((s) => s.id === song_id)
+      if (!exists) {
+        playlistStore.addToPlaylist({
+          id: detailData.song.id,
+          name: detailData.song.name,
+          artists: createCurrentSongArtists(detailData.song.ar),
+          cover: detailData.song.al.picUrl,
+          duration: detailData.song.dt
+        })
+      }
+    } catch (error) {
+      if (currentToken === playToken) {
+        console.error('WebAPI 播放失败:', error)
+        playbackError.value = error instanceof Error ? error.message : '音乐播放失败。'
+        webAudioEngine.stop()
+        isPlaying.value = false
+        isHistorySong.value = true
+        resetPlaybackLoadState()
+        stopTimer()
+      }
+    } finally {
+      if (currentToken === playToken) {
+        isSwitching.value = false
+      }
+    }
+  }
+
   /**
    * 核心播放入口：播放单首歌曲
    * @param song_id 歌曲 ID
@@ -370,6 +571,12 @@ export const usePlaybackStore = defineStore('playback', () => {
   ): Promise<void> => {
     // 1. 状态检查：如果是当前正在播放的同一首歌，且没有强制重启，则直接返回
     if (!forceRestart && currentSongId.value === song_id && isPlaying.value) {
+      return
+    }
+
+    // WebAPI 引擎走完全独立的播放路径
+    if (isWebEngine()) {
+      await playWithWebEngine(song_id, startTime)
       return
     }
 
@@ -435,6 +642,9 @@ export const usePlaybackStore = defineStore('playback', () => {
       )
       if (currentToken !== playToken) return
       if (!songUrl.url) {
+        console.warn(
+          `[playback] fetchSongUrl 返回空 URL: song_id=${song_id}, level=${targetLevel}, cookie=${userStore.cookie ? '已设置' : '未设置（未登录）'}`
+        )
         throw new Error('获取播放 URL 失败')
       }
 
@@ -455,17 +665,16 @@ export const usePlaybackStore = defineStore('playback', () => {
       if (currentToken !== playToken) return
 
       // 9. 准备播放源：处理缓存逻辑 (可能是本地文件，也可能是带缓存的 URL)
-      const playbackSource = await withTimeout(
-        prepareCachedSongSource(song_id, songUrl.level, songUrl.url, songUrl.size),
+      const playbackCache = await withTimeout(
+        prepareCacheForPlayback('native', song_id, songUrl, song.dt),
         PLAYBACK_OPERATION_TIMEOUT_MS,
         '准备播放缓存超时'
       )
       if (currentToken !== playToken) return
-      activeCacheMetadataPath = playbackSource.metadataPath ?? ''
-      bufferedPercent.value = playbackSource.type === 'file' ? 100 : 0
-      await updateCacheProgress()
+      await activatePlaybackCache(playbackCache, song_id)
 
       // 10. 执行底层播放指令
+      const playbackSource = playbackCache.source
       const startTimeInSeconds = startTime / 1000
       if (playbackSource.type === 'file') {
         // 情况 A: 命中本地文件缓存，直接播放文件
@@ -568,6 +777,21 @@ export const usePlaybackStore = defineStore('playback', () => {
     // 正在切换中不响应
     if (isSwitching.value || isLoading.value) return
 
+    if (isWebEngine()) {
+      if (isPlaying.value) {
+        webAudioEngine.pause()
+        isPlaying.value = false
+        return
+      }
+      if (isHistorySong.value && currentSongId.value) {
+        await playMusic(currentSongId.value, currentTime.value)
+        return
+      }
+      await webAudioEngine.resume()
+      isPlaying.value = true
+      return
+    }
+
     // 如果当前正在播放，则暂停
     if (isPlaying.value) {
       await window.api.pause()
@@ -596,8 +820,21 @@ export const usePlaybackStore = defineStore('playback', () => {
     const finiteTime = Number.isFinite(timeInMs) ? timeInMs : 0
     const roundedTime = Math.max(Math.round(finiteTime), 0)
     const clampedTime = duration.value > 0 ? Math.min(roundedTime, duration.value) : roundedTime
-    console.log(`[SEEK] START: target=${clampedTime}ms, isSeeking=${isSeeking.value}, isPlaying=${isPlaying.value}`)
+
+    if (isWebEngine()) {
+      isBuffering.value = true
+      webAudioEngine.seek(clampedTime / 1000)
+      currentTime.value = clampedTime
+      rawProgressMs.value = clampedTime
+      isSeeking.value = false
+      return
+    }
+
+    console.log(
+      `[SEEK] START: target=${clampedTime}ms, isSeeking=${isSeeking.value}, isPlaying=${isPlaying.value}`
+    )
     currentTime.value = clampedTime
+    rawProgressMs.value = clampedTime
     lastSyncedProgressMs = clampedTime
     lastSyncedAt = performance.now()
     // 给后端1秒钟的时间来 flush 缓冲区并更新真实 progressMs。
@@ -609,7 +846,9 @@ export const usePlaybackStore = defineStore('playback', () => {
     // 而不是等后端缓冲区追上（~1秒延迟）。
     playbackError.value = ''
     await window.api.seek(clampedTime / 1000)
-    console.log(`[SEEK] API RETURNED: took ${(performance.now() - seekStartedAt).toFixed(0)}ms, isSeeking=${isSeeking.value}, isLoading=${isLoading.value}`)
+    console.log(
+      `[SEEK] API RETURNED: took ${(performance.now() - seekStartedAt).toFixed(0)}ms, isSeeking=${isSeeking.value}, isLoading=${isLoading.value}`
+    )
   }
 
   /**
@@ -637,10 +876,14 @@ export const usePlaybackStore = defineStore('playback', () => {
    * 停止播放并清空状态
    */
   const stop = async (): Promise<void> => {
-    try {
-      await window.api.stop()
-    } catch {
-      // ignore
+    if (isWebEngine()) {
+      webAudioEngine.stop()
+    } else {
+      try {
+        await window.api.stop()
+      } catch {
+        // ignore
+      }
     }
     currentSong.value = null
     currentSongId.value = null
@@ -649,6 +892,11 @@ export const usePlaybackStore = defineStore('playback', () => {
     isHistorySong.value = true
     playbackError.value = ''
     bufferedPercent.value = 0
+    isBuffering.value = false
+    rawProgressMs.value = 0
+    lastSyncedProgressMs = 0
+    lastSyncedAt = performance.now()
+    ignoreDriftUntil = 0
     activeCacheMetadataPath = ''
     resetPlaybackLoadState()
     stopTimer()
@@ -723,12 +971,43 @@ export const usePlaybackStore = defineStore('playback', () => {
     { immediate: true }
   )
 
+  // WebAPI 引擎的事件回调（自然结束自动下一首、缓冲/播放态同步、错误处理）
+  webAudioEngine.setCallbacks({
+    onEnded: () => {
+      if (!isWebEngine()) return
+      isPlaying.value = false
+      isHistorySong.value = true
+      resetPlaybackLoadState()
+      stopTimer()
+      currentTime.value = duration.value
+      bufferedPercent.value = 100
+      void playNext(true)
+    },
+    onBuffering: (buffering) => {
+      if (isWebEngine()) isBuffering.value = buffering
+    },
+    onPlayStateChange: (playing) => {
+      // 反映浏览器侧的播放/暂停（如系统媒体键），切换加载期间不干预
+      if (isWebEngine() && !isSwitching.value) isPlaying.value = playing
+    },
+    onError: (message) => {
+      if (!isWebEngine()) return
+      playbackError.value = message
+      isPlaying.value = false
+      isHistorySong.value = true
+      resetPlaybackLoadState()
+      stopTimer()
+    }
+  })
+
   return {
     currentSong,
     currentSongId,
     currentTime,
     isPlaying,
     isSeeking,
+    isBuffering,
+    rawProgressMs,
     isLoading,
     playbackError,
     bufferedPercent,

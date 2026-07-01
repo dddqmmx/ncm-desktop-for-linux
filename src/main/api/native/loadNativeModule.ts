@@ -50,6 +50,13 @@ export interface NativePlayerBinding {
   waitFinished(): Promise<void>
 }
 
+export interface NativeSongCacheProgress {
+  downloadedBytes: number
+  totalBytes: number
+  percent: number
+  isComplete: boolean
+}
+
 export interface NativeCacheBinding {
   getStats(): Promise<NativeCacheStats>
   getJson(bucket: string, key: string): Promise<string | null | undefined>
@@ -78,6 +85,25 @@ export interface NativeCacheBinding {
     maxCacheAheadBytes?: number
     max_cache_ahead_bytes?: number
   }>
+  cacheSongSource(
+    songId: number,
+    quality: string,
+    url: string,
+    expectedBytes?: number,
+    durationMs?: number
+  ): Promise<{
+    type?: string
+    value?: string
+    cachePath?: string
+    cache_path?: string
+    metadataPath?: string
+    metadata_path?: string
+    cacheAheadSecs?: number
+    cache_ahead_secs?: number
+    maxCacheAheadBytes?: number
+    max_cache_ahead_bytes?: number
+  }>
+  getSongCacheProgress(metadataPath: string): Promise<NativeSongCacheProgress>
 }
 
 type NativeModule = {

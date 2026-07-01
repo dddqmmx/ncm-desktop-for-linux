@@ -4,7 +4,8 @@ import { app } from 'electron'
 import {
   getNativeModule,
   type NativeCacheBinding,
-  type NativeCacheStats
+  type NativeCacheStats,
+  type NativeSongCacheProgress
 } from '../native/loadNativeModule'
 import { createCacheAssetUrl } from '../protocol/registerCacheProtocol'
 
@@ -41,6 +42,9 @@ export interface SongCacheProgress {
 
 type CacheableJsonValue = unknown
 
+const RESOLVED_MEDIA_URL_CACHE_LIMIT = 500
+const LOCAL_SCHEMES = ['ncm-cache:', 'file:', 'data:', 'blob:']
+
 let nativeCache: NativeCacheBinding | null = null
 const resolvedMediaUrlCache = new Map<string, string>()
 
@@ -61,7 +65,7 @@ function toNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
-function normalizeCacheStats(raw: NativeCacheStats | null | undefined): CacheStats {
+export function normalizeCacheStats(raw: NativeCacheStats | null | undefined): CacheStats {
   return {
     totalBytes: toNumber(raw?.totalBytes ?? raw?.total_bytes),
     maxSizeBytes: toNumber(raw?.maxSizeBytes ?? raw?.max_size_bytes),
@@ -121,59 +125,39 @@ function normalizeCachedSongSource(
   }
 }
 
+function normalizeSongCacheProgress(
+  raw: NativeSongCacheProgress | null | undefined
+): SongCacheProgress {
+  return {
+    downloadedBytes: toNumber(raw?.downloadedBytes),
+    totalBytes: toNumber(raw?.totalBytes),
+    percent: typeof raw?.percent === 'number' && Number.isFinite(raw.percent) ? raw.percent : 0,
+    isComplete: raw?.isComplete === true
+  }
+}
+
 function isExistingCachedPath(filePath: string): boolean {
   return fs.existsSync(filePath)
 }
 
-function isInsideCacheRoot(filePath: string): boolean {
+export function isPathInsideRoot(filePath: string, rootDir: string): boolean {
   const resolvedPath = path.resolve(filePath)
-  const resolvedRoot = path.resolve(getCacheRootDir())
+  const resolvedRoot = path.resolve(rootDir)
   return resolvedPath === resolvedRoot || resolvedPath.startsWith(`${resolvedRoot}${path.sep}`)
 }
 
-function normalizeByteRanges(value: unknown): Array<{ start: number; end: number }> {
-  if (!Array.isArray(value)) {
-    return []
-  }
-
-  return value
-    .map((range) => {
-      if (!range || typeof range !== 'object') {
-        return null
-      }
-
-      const start = toNumber((range as Record<string, unknown>).start)
-      const end = toNumber((range as Record<string, unknown>).end)
-      return end > start ? { start, end } : null
-    })
-    .filter((range): range is { start: number; end: number } => range !== null)
+export function isLocalScheme(url: string): boolean {
+  return LOCAL_SCHEMES.some((scheme) => url.startsWith(scheme))
 }
 
-function normalizeSongCacheProgress(raw: unknown): SongCacheProgress {
-  if (!raw || typeof raw !== 'object') {
-    return {
-      downloadedBytes: 0,
-      totalBytes: 0,
-      percent: 0,
-      isComplete: false
+function cacheMediaUrl(url: string, cachedPath: string): void {
+  if (resolvedMediaUrlCache.size >= RESOLVED_MEDIA_URL_CACHE_LIMIT) {
+    const oldestKey = resolvedMediaUrlCache.keys().next().value
+    if (oldestKey !== undefined) {
+      resolvedMediaUrlCache.delete(oldestKey)
     }
   }
-
-  const payload = raw as Record<string, unknown>
-  const ranges = normalizeByteRanges(payload.downloaded_ranges)
-  const downloadedBytes = ranges.reduce(
-    (sum, range) => sum + Math.max(0, range.end - range.start),
-    0
-  )
-  const totalBytes = toNumber(payload.content_length)
-  const percent = totalBytes > 0 ? Math.min(100, (downloadedBytes / totalBytes) * 100) : 0
-
-  return {
-    downloadedBytes,
-    totalBytes,
-    percent,
-    isComplete: payload.is_complete === true || (totalBytes > 0 && downloadedBytes >= totalBytes)
-  }
+  resolvedMediaUrlCache.set(url, cachedPath)
 }
 
 function stableStringify(value: unknown): string {
@@ -295,12 +279,7 @@ export const CacheService = {
       return ''
     }
 
-    if (
-      normalizedUrl.startsWith('ncm-cache:') ||
-      normalizedUrl.startsWith('file:') ||
-      normalizedUrl.startsWith('data:') ||
-      normalizedUrl.startsWith('blob:')
-    ) {
+    if (isLocalScheme(normalizedUrl)) {
       return normalizedUrl
     }
 
@@ -318,7 +297,7 @@ export const CacheService = {
         return normalizedUrl
       }
 
-      resolvedMediaUrlCache.set(normalizedUrl, cachedPath)
+      cacheMediaUrl(normalizedUrl, cachedPath)
       return createCacheAssetUrl(cachedPath)
     } catch (error) {
       console.warn('[cache] failed to resolve cached media url', error)
@@ -361,16 +340,51 @@ export const CacheService = {
     }
   },
 
+  async cacheSongSource(payload: {
+    songId: number
+    quality: string
+    url: string
+    expectedBytes?: number
+    durationMs?: number
+  }): Promise<CachedSongSource> {
+    const { songId, quality, url, expectedBytes, durationMs } = payload
+    const normalizedUrl = url.trim()
+
+    if (!normalizedUrl) {
+      return { type: 'url', value: '' }
+    }
+
+    try {
+      const source = normalizeCachedSongSource(
+        await getNativeCache().cacheSongSource(
+          songId,
+          quality,
+          normalizedUrl,
+          Number.isFinite(expectedBytes) ? expectedBytes : undefined,
+          Number.isFinite(durationMs) ? durationMs : undefined
+        )
+      )
+      if (source) {
+        return source
+      }
+    } catch (error) {
+      console.warn('[cache] failed to cache song source', error)
+    }
+
+    return {
+      type: 'url',
+      value: normalizedUrl
+    }
+  },
+
   async getSongCacheProgress(metadataPath: string): Promise<SongCacheProgress> {
     const normalizedPath = normalizeCachedPath(metadataPath)
-    if (!normalizedPath || !isInsideCacheRoot(normalizedPath) || !fs.existsSync(normalizedPath)) {
+    if (!normalizedPath) {
       return normalizeSongCacheProgress(null)
     }
 
     try {
-      return normalizeSongCacheProgress(
-        JSON.parse(await fs.promises.readFile(normalizedPath, 'utf8'))
-      )
+      return normalizeSongCacheProgress(await getNativeCache().getSongCacheProgress(normalizedPath))
     } catch (error) {
       console.warn('[cache] failed to read song cache progress', error)
       return normalizeSongCacheProgress(null)

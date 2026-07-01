@@ -6,6 +6,7 @@ use ringbuf::traits::{Producer, Split};
 use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 use stream_download::http::HttpStream;
@@ -26,6 +27,48 @@ use crate::audio::utils::estimate_prefetch_bytes;
 
 const OUTPUT_BUFFER_SECONDS: usize = 6;
 const INITIAL_PREDECODE_SECONDS: usize = 2;
+
+static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    Client::builder()
+        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(10))
+        .build()
+        .expect("Failed to build HTTP client")
+});
+
+async fn build_cached_stream_download(
+    url: &str,
+    cache_path: &str,
+    metadata_path: &str,
+    duration_ms: Option<u64>,
+    cache_ahead_secs: Option<u32>,
+    max_cache_ahead_bytes: Option<u64>,
+) -> Result<StreamDownload<PersistentFileStorageProvider>, Box<dyn std::error::Error>> {
+    let stream = HttpStream::new(HTTP_CLIENT.clone(), url.parse()?).await?;
+    let content_len = stream.content_length();
+    let tracker = SongCacheTracker::new(metadata_path)?;
+    tracker.set_content_length(content_len)?;
+
+    let prefetch_bytes =
+        estimate_prefetch_bytes(content_len, duration_ms, cache_ahead_secs.unwrap_or(30));
+    let prefetch_bytes = max_cache_ahead_bytes
+        .map(|max_bytes| prefetch_bytes.min(max_bytes))
+        .unwrap_or(prefetch_bytes);
+
+    let reader = StreamDownload::from_stream(
+        stream,
+        PersistentFileStorageProvider::new(cache_path)
+            .max_write_ahead_bytes(max_cache_ahead_bytes),
+        Settings::default()
+            .prefetch_bytes(prefetch_bytes)
+            .on_progress(move |stream: &HttpStream<Client>, state, _| {
+                tracker.record_progress(state, stream.content_length());
+            }),
+    )
+    .await?;
+
+    Ok(reader)
+}
 
 pub struct AudioPlayer {
     device: cpal::Device,
@@ -196,7 +239,7 @@ impl AudioPlayer {
             .extension()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
-        let stream = HttpStream::<Client>::create(url.parse()?).await?;
+        let stream = HttpStream::new(HTTP_CLIENT.clone(), url.parse()?).await?;
         let reader = StreamDownload::from_stream(
             stream,
             AdaptiveStorageProvider::new(
@@ -228,31 +271,46 @@ impl AudioPlayer {
             .extension()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
-        let stream = HttpStream::<Client>::create(url.parse()?).await?;
-        let content_len = stream.content_length();
-        let tracker = SongCacheTracker::new(metadata_path)?;
-        tracker.set_content_length(content_len)?;
+        let reader =
+            build_cached_stream_download(url, cache_path, metadata_path, duration_ms, cache_ahead_secs, max_cache_ahead_bytes)
+                .await?;
 
-        let prefetch_bytes =
-            estimate_prefetch_bytes(content_len, duration_ms, cache_ahead_secs.unwrap_or(30));
-        let prefetch_bytes = max_cache_ahead_bytes
-            .map(|max_bytes| prefetch_bytes.min(max_bytes))
-            .unwrap_or(prefetch_bytes);
-        let reader = StreamDownload::from_stream(
-            stream,
-            PersistentFileStorageProvider::new(cache_path)
-                .max_write_ahead_bytes(max_cache_ahead_bytes),
-            Settings::default()
-                .prefetch_bytes(prefetch_bytes)
-                .on_progress(move |stream: &HttpStream<Client>, state, _| {
-                    tracker.record_progress(state, stream.content_length());
-                }),
-        )
-        .await?;
-
+        let content_len = reader.content_length();
         let source = Box::new(SeekableSource::new(reader, content_len));
         let meta = decoder::spawn_probe_task(source, extension).await?;
         self.setup_and_play(meta, start_at, strict_bit_perfect)
+    }
+
+    /// 仅下载并缓存歌曲，不播放。
+    /// 使用与 play_url_cached 相同的 HttpStream + StreamDownload 链路，
+    /// 保证 WebAPI 引擎的缓存行为与 native 引擎一致（边下边存，按 prefetch 控制）。
+    pub async fn download_song_for_cache(
+        url: &str,
+        cache_path: &str,
+        metadata_path: &str,
+        duration_ms: Option<u64>,
+        cache_ahead_secs: Option<u32>,
+        max_cache_ahead_bytes: Option<u64>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let reader =
+            build_cached_stream_download(url, cache_path, metadata_path, duration_ms, cache_ahead_secs, max_cache_ahead_bytes)
+                .await?;
+
+        tokio::task::spawn_blocking(move || {
+            let mut reader = reader;
+            let mut buf = [0u8; 64 * 1024];
+            loop {
+                match std::io::Read::read(&mut reader, &mut buf) {
+                    Ok(0) => break,
+                    Ok(_) => continue,
+                    Err(err) => return Err(err),
+                }
+            }
+            Ok(())
+        })
+        .await??;
+
+        Ok(())
     }
 
     pub async fn play_file(

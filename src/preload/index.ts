@@ -66,7 +66,8 @@ const api = {
   cache_set_song_max_cache_ahead_bytes: invoke('cache:setSongMaxCacheAheadBytes'),
   cache_clear: invoke('cache:clear'),
   resolve_cached_media_url: invoke('cache:resolveCachedMediaUrl'),
-  prepare_cached_song_source: invoke('cache:prepareSongSource'),
+  prepare_cached_song_source: invokeArgs('cache:prepareSongSource'),
+  cache_song_source: invokeArgs('cache:cacheSongSource'), // { songId, quality, url, expectedBytes?, durationMs? }
   get_cached_song_progress: invoke('cache:getSongCacheProgress'),
 
   //ui相关工具方法

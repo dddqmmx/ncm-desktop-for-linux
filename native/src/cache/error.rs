@@ -4,6 +4,7 @@ use std::io;
 #[derive(Debug)]
 pub enum CacheError {
     InvalidBucket(String),
+    InvalidState(String),
     EmptyKey,
     Io(io::Error),
     Json(serde_json::Error),
@@ -16,6 +17,7 @@ impl Display for CacheError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidBucket(bucket) => write!(f, "Unsupported cache bucket: {bucket}"),
+            Self::InvalidState(reason) => write!(f, "Cache invalid state: {reason}"),
             Self::EmptyKey => write!(f, "Cache key must not be empty"),
             Self::Io(err) => write!(f, "Cache I/O error: {err}"),
             Self::Json(err) => write!(f, "Cache JSON error: {err}"),

@@ -63,6 +63,13 @@ interface CustomApi {
     url: string
     expectedBytes?: number
   }) => Promise<CachedSongSource>
+  cache_song_source: (payload: {
+    songId: number
+    quality: string
+    url: string
+    expectedBytes?: number
+    durationMs?: number
+  }) => Promise<CachedSongSource>
   get_cached_song_progress: (metadataPath: string) => Promise<SongCacheProgress>
   //ui相关工具方法
   open_settings_window: () => Promise<unknown>

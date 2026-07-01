@@ -13,3 +13,9 @@ const SOUND_QUALITY_LEVELS: SoundQualityType[] = [
 export const isSoundQualityLevel = (value: unknown): value is SoundQualityType => {
   return typeof value === 'string' && SOUND_QUALITY_LEVELS.includes(value as SoundQualityType)
 }
+
+export const getFallbackQualities = (preferredLevel: SoundQualityType): SoundQualityType[] => {
+  const idx = SOUND_QUALITY_LEVELS.indexOf(preferredLevel)
+  if (idx === -1) return SOUND_QUALITY_LEVELS
+  return SOUND_QUALITY_LEVELS.slice(idx)
+}

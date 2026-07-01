@@ -4,6 +4,7 @@ use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 
 use crate::cache::error::CacheResult;
+use crate::cache::io_util::atomic_write;
 use crate::cache::song::SongStreamCacheMeta;
 use crate::cache::types::CacheBucket;
 
@@ -48,6 +49,23 @@ impl CacheFileStore {
 
     pub fn absolute_path(&self, relative_path: &str) -> PathBuf {
         self.root_dir.join(relative_path)
+    }
+
+    pub fn relative_path(&self, absolute_path: impl AsRef<Path>) -> Option<PathBuf> {
+        absolute_path
+            .as_ref()
+            .strip_prefix(&self.root_dir)
+            .ok()
+            .map(|p| p.to_path_buf())
+    }
+
+    pub fn is_inside_root(&self, absolute_path: &Path) -> bool {
+        let resolved = absolute_path.canonicalize().unwrap_or_else(|_| absolute_path.to_path_buf());
+        let root = self
+            .root_dir
+            .canonicalize()
+            .unwrap_or_else(|_| self.root_dir.clone());
+        resolved == root || resolved.starts_with(&root)
     }
 
     pub fn song_meta_path(&self, relative_path: &str) -> PathBuf {
@@ -105,14 +123,7 @@ impl CacheFileStore {
         meta: &SongStreamCacheMeta,
     ) -> CacheResult<PathBuf> {
         let meta_path = self.song_meta_path(relative_path);
-        if let Some(parent) = meta_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let tmp_path = meta_path.with_extension("meta.json.tmp");
-        let serialized = serde_json::to_vec_pretty(meta)?;
-        fs::write(&tmp_path, serialized)?;
-        fs::rename(&tmp_path, &meta_path)?;
+        atomic_write(&meta_path, &serde_json::to_vec_pretty(meta)?)?;
         Ok(meta_path)
     }
 
@@ -122,12 +133,13 @@ impl CacheFileStore {
             fs::create_dir_all(parent)?;
         }
 
-        OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .read(true)
-            .open(&absolute_path)?;
+        if !absolute_path.exists() {
+            OpenOptions::new()
+                .create(true)
+                .write(true)
+                .read(true)
+                .open(&absolute_path)?;
+        }
 
         Ok(absolute_path)
     }

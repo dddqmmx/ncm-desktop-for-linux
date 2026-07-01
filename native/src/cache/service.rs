@@ -1,15 +1,19 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use reqwest::header::CONTENT_TYPE;
 
+use crate::audio::player::AudioPlayer;
 use crate::cache::catalog::{CacheCatalog, CacheEntryUpsert};
 use crate::cache::error::{CacheError, CacheResult};
 use crate::cache::eviction::EvictionPlanner;
 use crate::cache::settings::CacheSettingsStore;
 use crate::cache::song::SongStreamCacheMeta;
 use crate::cache::storage::CacheFileStore;
-use crate::cache::types::{CacheBucket, CacheStats, CachedSongSource};
+use crate::cache::types::{CacheBucket, CacheStats, CachedSongSource, SongCacheProgress};
+use crate::runtime::native_runtime;
 
 struct CacheState {
     settings: CacheSettingsStore,
@@ -33,6 +37,7 @@ impl CacheState {
 pub struct NativeCacheService {
     files: CacheFileStore,
     state: Mutex<CacheState>,
+    http_client: reqwest::Client,
 }
 
 impl NativeCacheService {
@@ -43,9 +48,15 @@ impl NativeCacheService {
 
         let catalog = CacheCatalog::load(files.index_path())?;
 
+        let http_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
+            .build()?;
+
         let service = Self {
             files,
             state: Mutex::new(CacheState { settings, catalog }),
+            http_client,
         };
 
         service.reconcile_missing_files()?;
@@ -55,7 +66,6 @@ impl NativeCacheService {
     }
 
     pub fn get_stats(&self) -> CacheResult<CacheStats> {
-        self.refresh_catalog_from_disk()?;
         let state = self.lock_state()?;
         Ok(state.stats())
     }
@@ -64,7 +74,12 @@ impl NativeCacheService {
         let relative_path = {
             let mut state = self.lock_state()?;
             let entry = match state.catalog.touch(bucket, key)? {
-                Some(entry) => entry,
+                Some(entry) if !entry.is_expired() => entry,
+                Some(_) => {
+                    state.catalog.remove(bucket, key)?;
+                    state.catalog.persist()?;
+                    return Ok(None);
+                }
                 None => return Ok(None),
             };
 
@@ -74,7 +89,6 @@ impl NativeCacheService {
                 return Ok(None);
             }
 
-            state.catalog.persist()?;
             entry.relative_path
         };
 
@@ -90,6 +104,7 @@ impl NativeCacheService {
             "json",
             None,
             Some("application/json"),
+            bucket.default_ttl_secs(),
         )?;
         self.get_stats()
     }
@@ -136,16 +151,6 @@ impl NativeCacheService {
     pub fn clear(&self) -> CacheResult<CacheStats> {
         {
             let mut state = self.lock_state()?;
-            let existing_entries = state
-                .catalog
-                .entries()
-                .map(|(_, entry)| entry.clone())
-                .collect::<Vec<_>>();
-
-            for entry in &existing_entries {
-                self.remove_entry_files(entry)?;
-            }
-
             state.catalog.clear();
             state.catalog.persist()?;
         }
@@ -167,7 +172,7 @@ impl NativeCacheService {
             return Ok(Some(path));
         }
 
-        let response = reqwest::get(url).await?;
+        let response = self.http_client.get(url).send().await?;
         let status = response.status();
         if !status.is_success() {
             return Err(CacheError::HttpStatus(status.as_u16()));
@@ -188,6 +193,7 @@ impl NativeCacheService {
             &extension,
             Some(url.to_string()),
             content_type.as_deref(),
+            bucket.default_ttl_secs(),
         )
     }
 
@@ -210,78 +216,86 @@ impl NativeCacheService {
             });
         }
 
-        self.refresh_catalog_from_disk()?;
-
         let normalized_quality = quality.trim().to_ascii_lowercase();
         let cache_key = song_stream_key(song_id, &normalized_quality);
 
-        let (same_quality_entry, variant_victims, cache_ahead_secs, max_cache_ahead_bytes) = {
-            let state = self.lock_state()?;
-            let same_quality_entry = state.catalog.entries().find_map(|(_, entry)| {
-                if entry.bucket != CacheBucket::Song {
-                    return None;
-                }
-
-                if entry.song_id == Some(song_id)
-                    && entry.quality.as_deref() == Some(normalized_quality.as_str())
-                {
-                    return Some(entry.clone());
-                }
-
-                (entry.song_id.is_none()
-                    && is_legacy_audio_key_for_song(&entry.key, song_id)
-                    && legacy_audio_key_matches_quality(&entry.key, &normalized_quality))
-                .then_some(entry.clone())
-            });
-            let variant_victims = state
-                .catalog
-                .entries()
-                .filter_map(|(composite_key, entry)| {
-                    (entry.bucket == CacheBucket::Song
-                        && ((entry.song_id == Some(song_id)
-                            && entry.quality.as_deref() != Some(normalized_quality.as_str()))
-                            || (entry.song_id.is_none()
-                                && is_legacy_audio_key_for_song(&entry.key, song_id)
-                                && !legacy_audio_key_matches_quality(
-                                    &entry.key,
-                                    &normalized_quality,
-                                ))))
-                    .then_some(composite_key.clone())
-                })
-                .collect::<Vec<_>>();
-            (
-                same_quality_entry,
-                variant_victims,
-                state.song_cache_ahead_secs(),
-                state.song_max_cache_ahead_bytes(),
-            )
-        };
-
-        if !variant_victims.is_empty() {
+        let (existing_source, cache_ahead_secs, max_cache_ahead_bytes) = {
             let mut state = self.lock_state()?;
+
+            let (same_quality_entry, variant_victims, cache_ahead_secs, max_cache_ahead_bytes) = {
+                let same_quality_entry = state.catalog.entries().find_map(|(_, entry)| {
+                    if entry.bucket != CacheBucket::Song {
+                        return None;
+                    }
+
+                    if entry.song_id == Some(song_id)
+                        && entry.quality.as_deref() == Some(normalized_quality.as_str())
+                    {
+                        return Some(entry.clone());
+                    }
+
+                    (entry.song_id.is_none()
+                        && is_legacy_audio_key_for_song(&entry.key, song_id)
+                        && legacy_audio_key_matches_quality(&entry.key, &normalized_quality))
+                    .then_some(entry.clone())
+                });
+                let variant_victims = state
+                    .catalog
+                    .entries()
+                    .filter_map(|(composite_key, entry)| {
+                        (entry.bucket == CacheBucket::Song
+                            && ((entry.song_id == Some(song_id)
+                                && entry.quality.as_deref() != Some(normalized_quality.as_str()))
+                                || (entry.song_id.is_none()
+                                    && is_legacy_audio_key_for_song(&entry.key, song_id)
+                                    && !legacy_audio_key_matches_quality(
+                                        &entry.key,
+                                        &normalized_quality,
+                                    ))))
+                        .then_some(composite_key.clone())
+                    })
+                    .collect::<Vec<_>>();
+                (
+                    same_quality_entry,
+                    variant_victims,
+                    state.song_cache_ahead_secs(),
+                    state.song_max_cache_ahead_bytes(),
+                )
+            };
+
             for victim in variant_victims {
                 if let Some(entry) = state.catalog.remove_by_composite_key(&victim) {
                     self.remove_entry_files(&entry)?;
                 }
             }
-            state.catalog.persist()?;
-        }
 
-        if let Some(entry) = same_quality_entry {
-            if let Some(expected_bytes) = expected_bytes {
-                let cached_bytes = entry
-                    .content_length
-                    .or_else(|| self.files.file_size(&entry.relative_path).ok().flatten())
-                    .unwrap_or(entry.size_bytes);
+            let mut existing_source = None;
+            if let Some(entry) = same_quality_entry {
+                if let Some(expected_bytes) = expected_bytes {
+                    let cached_bytes = entry
+                        .content_length
+                        .or_else(|| self.files.file_size(&entry.relative_path).ok().flatten())
+                        .unwrap_or(entry.size_bytes);
 
-                if cached_bytes != expected_bytes {
-                    let mut state = self.lock_state()?;
-                    if let Some(entry) = state.catalog.remove(entry.bucket, &entry.key)? {
-                        self.remove_entry_files(&entry)?;
+                    if cached_bytes != expected_bytes {
+                        if let Some(entry) = state.catalog.remove(entry.bucket, &entry.key)? {
+                            self.remove_entry_files(&entry)?;
+                        }
+                    } else {
+                        existing_source = self.prepare_existing_song_source_locked(
+                            &mut state,
+                            entry,
+                            song_id,
+                            &normalized_quality,
+                            normalized_url,
+                            &cache_key,
+                            cache_ahead_secs,
+                            max_cache_ahead_bytes,
+                        )?;
                     }
-                    state.catalog.persist()?;
                 } else {
-                    if let Some(source) = self.prepare_existing_song_source(
+                    existing_source = self.prepare_existing_song_source_locked(
+                        &mut state,
                         entry,
                         song_id,
                         &normalized_quality,
@@ -289,23 +303,16 @@ impl NativeCacheService {
                         &cache_key,
                         cache_ahead_secs,
                         max_cache_ahead_bytes,
-                    )? {
-                        return Ok(source);
-                    }
-                }
-            } else {
-                if let Some(source) = self.prepare_existing_song_source(
-                    entry,
-                    song_id,
-                    &normalized_quality,
-                    normalized_url,
-                    &cache_key,
-                    cache_ahead_secs,
-                    max_cache_ahead_bytes,
-                )? {
-                    return Ok(source);
+                    )?;
                 }
             }
+
+            state.catalog.persist()?;
+            (existing_source, cache_ahead_secs, max_cache_ahead_bytes)
+        };
+
+        if let Some(source) = existing_source {
+            return Ok(source);
         }
 
         let extension = infer_extension(CacheBucket::Song, normalized_url, None);
@@ -330,6 +337,7 @@ impl NativeCacheService {
                 quality: Some(normalized_quality),
                 content_length: expected_bytes,
                 is_complete: false,
+                ttl_secs: None,
             })?;
             state.catalog.persist()?;
         }
@@ -344,8 +352,182 @@ impl NativeCacheService {
         })
     }
 
-    fn prepare_existing_song_source(
+    pub fn spawn_song_cache_download(
+        self_arc: Arc<Self>,
+        song_id: i64,
+        quality: String,
+        url: String,
+        expected_bytes: Option<u64>,
+        duration_ms: Option<u64>,
+    ) -> CacheResult<CachedSongSource> {
+        let normalized_quality = quality.trim().to_ascii_lowercase();
+        let source =
+            self_arc.prepare_song_source(song_id, &normalized_quality, &url, expected_bytes)?;
+
+        if source.r#type == "file" {
+            return Ok(source);
+        }
+
+        let cache_path = source
+            .cache_path
+            .clone()
+            .ok_or_else(|| CacheError::InvalidState("missing cache_path".to_string()))?;
+        let metadata_path = source
+            .metadata_path
+            .clone()
+            .ok_or_else(|| CacheError::InvalidState("missing metadata_path".to_string()))?;
+        let cache_ahead_secs = source.cache_ahead_secs.map(|value| value as u32);
+        let max_cache_ahead_bytes = source.max_cache_ahead_bytes.map(|value| value as u64);
+
+        println!(
+            "[cache] 启动后台流式缓存: song_id={} quality={} cache_path={}",
+            song_id, normalized_quality, cache_path
+        );
+
+        let cache_path_for_task = cache_path.clone();
+        let url_for_task = url.clone();
+        let quality_for_task = normalized_quality.clone();
+        native_runtime().spawn(async move {
+            println!(
+                "[cache] 后台下载开始: song_id={} quality={}",
+                song_id, quality_for_task
+            );
+
+            if let Err(err) = AudioPlayer::download_song_for_cache(
+                &url_for_task,
+                &cache_path_for_task,
+                &metadata_path,
+                duration_ms,
+                cache_ahead_secs,
+                max_cache_ahead_bytes,
+            )
+            .await
+            {
+                eprintln!("[cache] 后台下载失败: song_id={} err={}", song_id, err);
+                if let Err(cleanup_err) =
+                    self_arc.remove_song_cache_entry(song_id, &quality_for_task)
+                {
+                    eprintln!(
+                        "[cache] 清理失败缓存条目失败: song_id={} err={}",
+                        song_id, cleanup_err
+                    );
+                }
+                return;
+            }
+
+            let file_size = match std::fs::metadata(&cache_path_for_task) {
+                Ok(metadata) => metadata.len(),
+                Err(err) => {
+                    eprintln!(
+                        "[cache] 获取缓存文件大小失败: song_id={} err={}",
+                        song_id, err
+                    );
+                    return;
+                }
+            };
+
+            if let Err(err) = self_arc.mark_song_cache_complete(
+                song_id,
+                &quality_for_task,
+                &cache_path_for_task,
+                file_size,
+                &url_for_task,
+            ) {
+                eprintln!("[cache] 标记缓存完成失败: song_id={} err={}", song_id, err);
+            } else {
+                println!(
+                    "[cache] 后台下载完成: song_id={} quality={} size={}",
+                    song_id, quality_for_task, file_size
+                );
+            }
+        });
+
+        Ok(source)
+    }
+
+    fn mark_song_cache_complete(
         &self,
+        song_id: i64,
+        normalized_quality: &str,
+        cache_path: &str,
+        file_size: u64,
+        url: &str,
+    ) -> CacheResult<()> {
+        let cache_key = song_stream_key(song_id, normalized_quality);
+        let cache_path_buf = PathBuf::from(cache_path);
+        let relative_path = self
+            .files
+            .relative_path(&cache_path_buf)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| cache_path.to_string());
+
+        let mut state = self.lock_state()?;
+        state.catalog.upsert(CacheEntryUpsert {
+            bucket: CacheBucket::Song,
+            key: &cache_key,
+            relative_path,
+            size_bytes: file_size,
+            source_url: Some(url.to_string()),
+            mime_type: None,
+            song_id: Some(song_id),
+            quality: Some(normalized_quality.to_string()),
+            content_length: Some(file_size),
+            is_complete: true,
+            ttl_secs: None,
+        })?;
+        state.catalog.persist()?;
+        Ok(())
+    }
+
+    fn remove_song_cache_entry(&self, song_id: i64, normalized_quality: &str) -> CacheResult<()> {
+        let cache_key = song_stream_key(song_id, normalized_quality);
+        let mut state = self.lock_state()?;
+        if let Some(entry) = state.catalog.remove(CacheBucket::Song, &cache_key)? {
+            self.remove_entry_files(&entry)?;
+        }
+        state.catalog.persist()?;
+        Ok(())
+    }
+
+    pub fn get_song_cache_progress(&self, metadata_path: &str) -> CacheResult<SongCacheProgress> {
+        let path = PathBuf::from(metadata_path);
+        if !self.files.is_inside_root(&path) {
+            return Ok(SongCacheProgress::default());
+        }
+
+        if !path.exists() {
+            return Ok(SongCacheProgress::default());
+        }
+
+        let raw = match std::fs::read_to_string(&path) {
+            Ok(raw) => raw,
+            Err(_) => return Ok(SongCacheProgress::default()),
+        };
+
+        let meta: SongStreamCacheMeta = match serde_json::from_str(&raw) {
+            Ok(meta) => meta,
+            Err(_) => return Ok(SongCacheProgress::default()),
+        };
+
+        let downloaded_bytes = meta.downloaded_bytes();
+        let total_bytes = meta.content_length.unwrap_or(0);
+        let percent = if total_bytes > 0 {
+            ((downloaded_bytes as f64 / total_bytes as f64) * 100.0).min(100.0)
+        } else {
+            0.0
+        };
+
+        Ok(SongCacheProgress {
+            downloaded_bytes: downloaded_bytes.min(i64::MAX as u64) as i64,
+            total_bytes: total_bytes.min(i64::MAX as u64) as i64,
+            percent,
+            is_complete: meta.is_fully_downloaded(),
+        })
+    }
+
+    fn prepare_existing_song_source_locked(
+        &self,
+        state: &mut CacheState,
         entry: crate::cache::types::CacheEntry,
         song_id: i64,
         normalized_quality: &str,
@@ -362,7 +544,6 @@ impl NativeCacheService {
             meta.mark_complete();
             self.files.write_song_meta(&entry.relative_path, &meta)?;
 
-            let mut state = self.lock_state()?;
             let _ = state.catalog.remove(CacheBucket::Song, &entry.key)?;
             state.catalog.upsert(CacheEntryUpsert {
                 bucket: CacheBucket::Song,
@@ -375,8 +556,8 @@ impl NativeCacheService {
                 quality: Some(normalized_quality.to_string()),
                 content_length: Some(file_size),
                 is_complete: true,
+                ttl_secs: None,
             })?;
-            state.catalog.persist()?;
 
             return Ok(Some(CachedSongSource {
                 r#type: "file".to_string(),
@@ -393,9 +574,7 @@ impl NativeCacheService {
         }
 
         if entry.is_complete && self.files.exists(&entry.relative_path) {
-            let mut state = self.lock_state()?;
             let _ = state.catalog.touch(CacheBucket::Song, cache_key)?;
-            state.catalog.persist()?;
             return Ok(Some(CachedSongSource {
                 r#type: "file".to_string(),
                 value: self
@@ -410,11 +589,9 @@ impl NativeCacheService {
             }));
         }
 
-        let mut state = self.lock_state()?;
         if let Some(entry) = state.catalog.remove(entry.bucket, &entry.key)? {
             self.remove_entry_files(&entry)?;
         }
-        state.catalog.persist()?;
 
         Ok(None)
     }
@@ -423,7 +600,12 @@ impl NativeCacheService {
         let relative_path = {
             let mut state = self.lock_state()?;
             let entry = match state.catalog.touch(bucket, key)? {
-                Some(entry) => entry,
+                Some(entry) if !entry.is_expired() => entry,
+                Some(_) => {
+                    state.catalog.remove(bucket, key)?;
+                    state.catalog.persist()?;
+                    return Ok(None);
+                }
                 None => return Ok(None),
             };
 
@@ -433,7 +615,6 @@ impl NativeCacheService {
                 return Ok(None);
             }
 
-            state.catalog.persist()?;
             entry.relative_path
         };
 
@@ -448,6 +629,7 @@ impl NativeCacheService {
         extension: &str,
         source_url: Option<String>,
         mime_type: Option<&str>,
+        ttl_secs: Option<u64>,
     ) -> CacheResult<Option<PathBuf>> {
         let relative_path = self.files.build_relative_path(bucket, key, extension);
         let absolute_path = self.files.write_bytes(&relative_path, bytes)?;
@@ -465,6 +647,7 @@ impl NativeCacheService {
                 quality: None,
                 content_length: None,
                 is_complete: false,
+                ttl_secs,
             })?;
 
             if let Some(previous_path) = previous_path
@@ -518,8 +701,6 @@ impl NativeCacheService {
     }
 
     fn enforce_limit(&self) -> CacheResult<()> {
-        self.refresh_catalog_from_disk()?;
-
         let victims = {
             let state = self.lock_state()?;
             let stats = state.stats();
@@ -544,14 +725,13 @@ impl NativeCacheService {
     }
 
     fn refresh_catalog_from_disk(&self) -> CacheResult<()> {
-        let snapshots = {
-            let state = self.lock_state()?;
-            state
-                .catalog
-                .entries()
-                .map(|(composite_key, entry)| (composite_key.clone(), entry.clone()))
-                .collect::<Vec<_>>()
-        };
+        let mut state = self.lock_state()?;
+
+        let snapshots: Vec<_> = state
+            .catalog
+            .entries()
+            .map(|(composite_key, entry)| (composite_key.clone(), entry.clone()))
+            .collect();
 
         if snapshots.is_empty() {
             return Ok(());
@@ -559,7 +739,6 @@ impl NativeCacheService {
 
         let mut dirty = false;
         let mut victims = Vec::new();
-        let mut state = self.lock_state()?;
 
         for (composite_key, snapshot) in snapshots {
             if !self.files.exists(&snapshot.relative_path) {
@@ -674,7 +853,7 @@ mod tests {
         meta.add_range(0..bytes);
         meta.mark_complete();
         fs::write(
-            metadata_path,
+            &metadata_path,
             serde_json::to_vec_pretty(&meta).expect("serialize song meta"),
         )
         .expect("write song meta");

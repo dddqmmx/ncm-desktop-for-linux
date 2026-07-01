@@ -157,19 +157,26 @@ describe('playerStore device switch sequencing', () => {
     expect(currentDeviceId).toBe('headphones')
   })
 
-  it('does not advance local progress while a seek is still loading', async () => {
+  it('keeps native seek out of loading and ignores stale progress during drift immunity', async () => {
     let now = 1_000
-    let animationFrameCallback: FrameRequestCallback | undefined
+    let progressTimer: (() => void) | undefined
+    // 模拟 seek 后底层仍停留在旧位置(10s)，且 buffering 为 true
+    const getProgress = vi.fn(async () => 10_000)
 
     vi.spyOn(performance, 'now').mockImplementation(() => now)
+    vi.stubGlobal(
+      'setInterval',
+      vi.fn((callback: () => void) => {
+        progressTimer = callback
+        return 1 as unknown as ReturnType<typeof setInterval>
+      })
+    )
+    vi.stubGlobal('clearInterval', vi.fn())
     vi.stubGlobal('window', {
-      requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
-        animationFrameCallback = callback
-        return 1
-      }),
+      requestAnimationFrame: vi.fn(() => 1),
       cancelAnimationFrame: vi.fn(),
       api: {
-        get_progress: vi.fn(async () => 60_000),
+        get_progress: getProgress,
         is_buffering: vi.fn(async () => true),
         get_cached_song_progress: vi.fn(async () => ({ percent: 0 })),
         seek: vi.fn(async () => undefined)
@@ -188,10 +195,70 @@ describe('playerStore device switch sequencing', () => {
 
     await playerStore.seek(60_000)
 
-    now = 3_500
-    animationFrameCallback?.(now)
+    // seek 不进入启动加载态；1 秒免疫窗口内忽略旧进度，避免 UI 回跳
+    expect(playerStore.isLoading).toBe(false)
+    now = 1_500
+    await progressTimer?.()
 
+    expect(getProgress).toHaveBeenCalled()
     expect(playerStore.currentTime).toBe(60_000)
+    expect(playerStore.isLoading).toBe(false)
+  })
+
+  it('corrects to native progress after seek drift immunity expires', async () => {
+    let now = 1_000
+    let progressTimer: (() => void) | undefined
+    let nativeProgress = 0
+    let buffering = false
+    const getProgress = vi.fn(async () => nativeProgress)
+
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    vi.stubGlobal(
+      'setInterval',
+      vi.fn((callback: () => void) => {
+        progressTimer = callback
+        return 1 as unknown as ReturnType<typeof setInterval>
+      })
+    )
+    vi.stubGlobal('clearInterval', vi.fn())
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        get_progress: getProgress,
+        is_buffering: vi.fn(async () => buffering),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 0 })),
+        seek: vi.fn(async () => undefined)
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+    playerStore.currentSong = {
+      id: 1,
+      name: 'Current Song',
+      artists: [{ id: 1, name: 'Artist' }],
+      cover: 'cover',
+      duration: 180000
+    }
+    playerStore.isPlaying = true
+
+    await playerStore.seek(60_000)
+
+    // 免疫窗口结束后，底层已在目标点恢复出声：重新按后端真实进度校正
+    nativeProgress = 60_000
+    buffering = false
+    now = 2_100
+    await progressTimer?.()
+
+    expect(playerStore.isLoading).toBe(false)
+    expect(playerStore.currentTime).toBe(60_000)
+
+    // 之后随后端进度推进而平滑跟踪
+    nativeProgress = 61_000
+    now = 2_300
+    await progressTimer?.()
+
+    expect(playerStore.currentTime).toBe(61_000)
   })
 
   it('requests configured quality and uses the API returned actual level for cache identity', async () => {

@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::cache::error::CacheResult;
+use crate::cache::io_util::atomic_write_json;
 use crate::cache::types::{
     CacheBucket, CacheEntry, CacheIndexData, CacheStats, composite_key, now_unix_secs,
 };
@@ -22,6 +23,7 @@ pub struct CacheEntryUpsert<'a> {
     pub quality: Option<String>,
     pub content_length: Option<u64>,
     pub is_complete: bool,
+    pub ttl_secs: Option<u64>,
 }
 
 impl CacheCatalog {
@@ -59,6 +61,7 @@ impl CacheCatalog {
             quality,
             content_length,
             is_complete,
+            ttl_secs,
         } = request;
         let now = now_unix_secs();
         let composite = composite_key(bucket, key)?;
@@ -73,6 +76,7 @@ impl CacheCatalog {
             .get(&composite)
             .map(|entry| entry.created_at)
             .unwrap_or(now);
+        let expires_at = ttl_secs.map(|ttl| now.saturating_add(ttl));
 
         self.data.entries.insert(
             composite,
@@ -89,6 +93,7 @@ impl CacheCatalog {
                 quality,
                 content_length,
                 is_complete,
+                expires_at,
             },
         );
 
@@ -117,13 +122,7 @@ impl CacheCatalog {
     }
 
     pub fn persist(&self) -> CacheResult<()> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let serialized = serde_json::to_vec_pretty(&self.data)?;
-        fs::write(&self.path, serialized)?;
-        Ok(())
+        atomic_write_json(&self.path, &self.data)
     }
 
     pub fn stats(&self, max_size_bytes: u64) -> CacheStats {

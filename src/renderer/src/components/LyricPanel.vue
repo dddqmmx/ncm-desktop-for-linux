@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import type { Lyric } from '@renderer/types/lyric'
+import { usePlayerStore } from '@renderer/stores/playerStore'
 
 const props = defineProps<{
   songId?: number
@@ -8,6 +9,10 @@ const props = defineProps<{
   isDark: boolean
   isSeeking?: boolean
 }>()
+
+// [调试] 同步链路可视化：定位歌词延迟卡在哪一环，定位后删除
+const LYRIC_DEBUG = true
+const playerStore = usePlayerStore()
 
 // --- 配置常量 ---
 const LYRIC_OFFSET_MS = 50 // 仅补偿人眼感知延迟（~50ms），CSS 动画已拆分为快速响应阶段
@@ -158,26 +163,53 @@ const currentLyricIndex = computed(() => {
   return result
 })
 
+// [调试] HUD 显示用：当前命中行的索引/时间戳/文本
+const debugActiveLine = computed(() => {
+  const i = currentLyricIndex.value
+  const line = i >= 0 ? lyrics.value[i] : undefined
+  return line ? `#${i} @${line.time.toFixed(2)}s ${line.text.slice(0, 18)}` : `#${i}`
+})
+
 // --- 滚动逻辑 ---
 const scrollActiveLyricToCenter = (behavior: 'auto' | 'smooth' = 'smooth'): void => {
   const activeIndex = currentLyricIndex.value
   if (activeIndex === -1) return
 
-  console.log(`[LYRIC] scrollActiveLyricToCenter: index=${activeIndex}, behavior=${behavior}, time=${(props.currentTime / 1000).toFixed(2)}s`)
+  console.log(
+    `[LYRIC] scrollActiveLyricToCenter: index=${activeIndex}, behavior=${behavior}, time=${(props.currentTime / 1000).toFixed(2)}s`
+  )
   nextTick(() => {
     const activeEl = lineRefs.value[activeIndex]
-    if (activeEl) {
+    const scrollContainer = scrollContainerRef.value
+    if (!activeEl || !scrollContainer) {
+      if (LYRIC_DEBUG)
+        console.log(
+          `[lyric] scroll skipped idx=${activeIndex} el=${!!activeEl} cont=${!!scrollContainer}`
+        )
+      return
+    }
+
+    if (behavior === 'auto') {
+      scrollContainer.scrollTop =
+        activeEl.offsetTop - scrollContainer.clientHeight / 2 + activeEl.clientHeight / 2
+    } else {
       activeEl.scrollIntoView({
         behavior,
         block: 'center'
       })
     }
+    if (LYRIC_DEBUG)
+      console.log(
+        `[lyric] scroll(${behavior}) idx=${activeIndex} offsetTop=${activeEl.offsetTop} scrollTop=${Math.round(scrollContainer.scrollTop)}`
+      )
   })
 }
 
 watch(currentLyricIndex, (newIndex, oldIndex) => {
   if (isUserScrolling.value) return
-  console.log(`[LYRIC] index changed: ${oldIndex} -> ${newIndex}, time=${(props.currentTime / 1000).toFixed(2)}s, isSeeking=${props.isSeeking}`)
+  console.log(
+    `[LYRIC] index changed: ${oldIndex} -> ${newIndex}, time=${(props.currentTime / 1000).toFixed(2)}s, isSeeking=${props.isSeeking}`
+  )
   scrollActiveLyricToCenter()
 })
 
@@ -189,7 +221,9 @@ watch(
     lastCurrentTime = newTime
     // 超过 1 秒的跳变视为 seek 操作，立即定位
     if (delta > 1000) {
-      console.log(`[LYRIC] SEEK JUMP detected: delta=${delta.toFixed(0)}ms, newTime=${newTime.toFixed(0)}ms`)
+      console.log(
+        `[LYRIC] SEEK JUMP detected: delta=${delta.toFixed(0)}ms, newTime=${newTime.toFixed(0)}ms`
+      )
       // 取消用户滚动锁定
       isUserScrolling.value = false
       if (userScrollTimer) {
@@ -221,6 +255,20 @@ watch([showPronunciation, showTranslation], () => {
 
 <template>
   <section class="lyrics-panel" :style="themeVars">
+    <div v-if="LYRIC_DEBUG" class="lyric-debug-hud">
+      <div>clock(currentTime): {{ Math.round(props.currentTime) }} ms</div>
+      <div>
+        backend raw: {{ playerStore.rawProgressMs }} ms (Δ
+        {{ Math.round(props.currentTime - playerStore.rawProgressMs) }})
+      </div>
+      <div>
+        play={{ playerStore.isPlaying }} buf={{ playerStore.isBuffering }} load={{
+          playerStore.isLoading
+        }}
+        userScroll={{ isUserScrolling }}
+      </div>
+      <div>lyric: {{ debugActiveLine }}</div>
+    </div>
     <div class="lyric-toolbar">
       <button
         v-if="hasPronunciation"
@@ -304,6 +352,22 @@ watch([showPronunciation, showTranslation], () => {
   overflow: hidden;
 }
 
+.lyric-debug-hud {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #0f0;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 .lyric-toolbar {
   position: absolute;
   bottom: 14px;
@@ -371,12 +435,16 @@ watch([showPronunciation, showTranslation], () => {
   /* 启用硬件加速 */
   will-change: scroll-position;
 }
+
+.lyrics-panel.snapping .lyrics-scroll-container {
+  scroll-behavior: auto;
+}
+
 .lyrics-scroll-container::-webkit-scrollbar {
   display: none;
 }
 
 .lyric-line {
-  /* 使用 margin 而不是 padding 来控制行间距，这样 scale 不会影响行高布局 */
   margin: 12px 0;
   padding: 10px 0;
   line-height: 1.4;
@@ -388,7 +456,6 @@ watch([showPronunciation, showTranslation], () => {
     color 0.15s ease;
 
   opacity: 0.3;
-  /* 使用 CSS 变量控制颜色 */
   color: var(--lrc-text-color);
   font-size: 26px;
   font-weight: 500;
@@ -406,7 +473,7 @@ watch([showPronunciation, showTranslation], () => {
   will-change: transform, opacity;
   backface-visibility: hidden;
   filter: blur(0.5px); /* 未激活时轻微模糊，增加层次感 */
-  
+
   /* 恢复平滑的完整过渡 */
   transition:
     transform 0.35s cubic-bezier(0.23, 1, 0.32, 1),
@@ -418,12 +485,19 @@ watch([showPronunciation, showTranslation], () => {
 .lyric-line.active {
   opacity: 1;
   font-weight: 700;
-  /* 缩放控制在 1.1 以内，配合 padding 40px 绝不会截断 */
   transform: scale(1.1);
-  filter: blur(0);
-  /* 使用 CSS 变量控制激活态颜色 */
   color: var(--lrc-text-active-color);
   text-shadow: 0 0 18px var(--lrc-text-shadow);
+
+  /* 仅激活行提升到独立的 GPU 合成层 */
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform-origin: center center;
+}
+
+.lyrics-panel.snapping .lyric-line,
+.lyrics-panel.snapping .lyric-line.active {
+  transition: none;
 }
 
 .lyric-text {

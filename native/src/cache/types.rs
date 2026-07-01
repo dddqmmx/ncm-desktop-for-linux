@@ -25,6 +25,13 @@ impl CacheBucket {
             Self::Lyric => "lyric",
         }
     }
+
+    pub fn default_ttl_secs(self) -> Option<u64> {
+        match self {
+            Self::Entity | Self::Lyric => Some(24 * 60 * 60),
+            Self::Song | Self::Cover => None,
+        }
+    }
 }
 
 impl TryFrom<&str> for CacheBucket {
@@ -59,6 +66,16 @@ pub struct CacheEntry {
     pub content_length: Option<u64>,
     #[serde(default)]
     pub is_complete: bool,
+    #[serde(default)]
+    pub expires_at: Option<u64>,
+}
+
+impl CacheEntry {
+    pub fn is_expired(&self) -> bool {
+        self.expires_at
+            .map(|expires_at| now_unix_secs() >= expires_at)
+            .unwrap_or(false)
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -109,6 +126,15 @@ pub struct CachedSongSource {
     pub metadata_path: Option<String>,
     pub cache_ahead_secs: Option<u32>,
     pub max_cache_ahead_bytes: Option<i64>,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, Default)]
+pub struct SongCacheProgress {
+    pub downloaded_bytes: i64,
+    pub total_bytes: i64,
+    pub percent: f64,
+    pub is_complete: bool,
 }
 
 impl CacheStats {

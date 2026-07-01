@@ -1,63 +1,39 @@
-import { ipcMain } from 'electron'
+import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { CacheService } from '../service/cacheService'
 
+function handle(channel: string, fn: () => Promise<unknown>): void {
+  ipcMain.handle(channel, () => fn())
+}
+
+function handleWithArg<T>(channel: string, fn: (arg: T) => Promise<unknown>): void {
+  ipcMain.handle(channel, (_event: IpcMainInvokeEvent, arg: T) => fn(arg))
+}
+
 export function registerCacheApi(): void {
-  ipcMain.handle('cache:getStats', () => {
-    return CacheService.getStats()
-  })
-
-  ipcMain.handle('cache:setMaxSizeBytes', (_event, maxSizeBytes: number) => {
-    void _event
-    return CacheService.setMaxSizeBytes(maxSizeBytes)
-  })
-
-  ipcMain.handle('cache:getSongCacheAheadSecs', () => {
-    return CacheService.getSongCacheAheadSecs()
-  })
-
-  ipcMain.handle('cache:setSongCacheAheadSecs', (_event, songCacheAheadSecs: number) => {
-    void _event
-    return CacheService.setSongCacheAheadSecs(songCacheAheadSecs)
-  })
-
-  ipcMain.handle('cache:getSongMaxCacheAheadBytes', () => {
-    return CacheService.getSongMaxCacheAheadBytes()
-  })
-
-  ipcMain.handle('cache:setSongMaxCacheAheadBytes', (_event, songMaxCacheAheadBytes: number) => {
-    void _event
-    return CacheService.setSongMaxCacheAheadBytes(songMaxCacheAheadBytes)
-  })
-
-  ipcMain.handle('cache:clear', () => {
-    return CacheService.clear()
-  })
-
-  ipcMain.handle('cache:resolveCachedMediaUrl', (_event, url: string) => {
-    void _event
-    return CacheService.resolveCachedMediaUrl(url)
-  })
-
-  ipcMain.handle(
-    'cache:prepareSongSource',
-    (
-      _event,
-      payload: {
-        songId: number
-        quality: string
-        url: string
-        expectedBytes?: number
-      }
-    ) => {
-      void _event
-      return CacheService.prepareSongSource(payload)
-    }
+  handle('cache:getStats', () => CacheService.getStats())
+  handleWithArg<number>('cache:setMaxSizeBytes', (v) => CacheService.setMaxSizeBytes(v))
+  handle('cache:getSongCacheAheadSecs', () => CacheService.getSongCacheAheadSecs())
+  handleWithArg<number>('cache:setSongCacheAheadSecs', (v) => CacheService.setSongCacheAheadSecs(v))
+  handle('cache:getSongMaxCacheAheadBytes', () => CacheService.getSongMaxCacheAheadBytes())
+  handleWithArg<number>('cache:setSongMaxCacheAheadBytes', (v) =>
+    CacheService.setSongMaxCacheAheadBytes(v)
   )
-
-  ipcMain.handle('cache:getSongCacheProgress', (_event, metadataPath: string) => {
-    void _event
-    return CacheService.getSongCacheProgress(metadataPath)
-  })
+  handle('cache:clear', () => CacheService.clear())
+  handleWithArg<string>('cache:resolveCachedMediaUrl', (v) => CacheService.resolveCachedMediaUrl(v))
+  handleWithArg<{
+    songId: number
+    quality: string
+    url: string
+    expectedBytes?: number
+  }>('cache:prepareSongSource', (payload) => CacheService.prepareSongSource(payload))
+  handleWithArg<{
+    songId: number
+    quality: string
+    url: string
+    expectedBytes?: number
+    durationMs?: number
+  }>('cache:cacheSongSource', (payload) => CacheService.cacheSongSource(payload))
+  handleWithArg<string>('cache:getSongCacheProgress', (v) => CacheService.getSongCacheProgress(v))
 
   console.log('Cache API registered successfully.')
 }

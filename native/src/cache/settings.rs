@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::cache::error::CacheResult;
+use crate::cache::io_util::atomic_write_json;
 use crate::cache::types::CacheSettingsData;
 
 pub struct CacheSettingsStore {
@@ -57,12 +58,6 @@ impl CacheSettingsStore {
     }
 
     pub fn persist(&self) -> CacheResult<()> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let serialized = serde_json::to_vec_pretty(&self.settings)?;
-        fs::write(&self.path, serialized)?;
-        Ok(())
+        atomic_write_json(&self.path, &self.settings)
     }
 }

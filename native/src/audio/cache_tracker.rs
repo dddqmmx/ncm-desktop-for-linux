@@ -82,15 +82,10 @@ impl SongCacheTracker {
 
     fn persist_locked(&self, state: &mut SongCacheTrackerState) -> io::Result<()> {
         let path = self.metadata_path.as_ref();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
         let serialized = serde_json::to_vec_pretty(&state.meta)
             .map_err(|err| io::Error::other(err.to_string()))?;
-        let tmp_path = path.with_extension("json.tmp");
-        fs::write(&tmp_path, serialized)?;
-        fs::rename(&tmp_path, path)?;
+        crate::cache::io_util::atomic_write(path, &serialized)
+            .map_err(|err| io::Error::other(err.to_string()))?;
         state.last_persisted_bytes = state.meta.downloaded_bytes();
         Ok(())
     }

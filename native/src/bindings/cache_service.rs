@@ -4,8 +4,20 @@ use std::sync::Arc;
 use napi::{Error, Result};
 use napi_derive::napi;
 
-use crate::cache::{CacheBucket, CacheStats, CachedSongSource, NativeCacheService};
+use crate::cache::{CacheBucket, CacheStats, CachedSongSource, NativeCacheService, SongCacheProgress};
+use crate::cache::error::CacheResult;
 use crate::runtime::native_runtime;
+
+async fn run_blocking<T, F>(service: Arc<NativeCacheService>, f: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce(&NativeCacheService) -> CacheResult<T> + Send + 'static,
+{
+    native_runtime()
+        .spawn_blocking(move || f(&service).map_err(|err| Error::from_reason(err.to_string())))
+        .await
+        .map_err(|e| Error::from_reason(e.to_string()))?
+}
 
 #[napi]
 pub struct CacheService {
@@ -30,61 +42,33 @@ impl CacheService {
     #[napi]
     pub async fn get_stats(&self) -> Result<CacheStats> {
         let service = Arc::clone(&self.service);
-        native_runtime()
-            .spawn_blocking(move || {
-                service
-                    .get_stats()
-                    .map_err(|err| Error::from_reason(err.to_string()))
-            })
-            .await
-            .map_err(|e| Error::from_reason(e.to_string()))?
+        run_blocking(service, |s| s.get_stats()).await
     }
 
     #[napi]
     pub async fn get_json(&self, bucket: String, key: String) -> Result<Option<String>> {
         let service = Arc::clone(&self.service);
-
-        native_runtime()
-            .spawn_blocking(move || {
-                let bucket = CacheBucket::try_from(bucket.as_str())
-                    .map_err(|err| Error::from_reason(err.to_string()))?;
-
-                service
-                    .get_json(bucket, &key)
-                    .map_err(|err| Error::from_reason(err.to_string()))
-            })
-            .await
-            .map_err(|e| Error::from_reason(e.to_string()))?
+        run_blocking(service, move |s| {
+            let bucket = CacheBucket::try_from(bucket.as_str())?;
+            s.get_json(bucket, &key)
+        })
+        .await
     }
 
     #[napi]
     pub async fn put_json(&self, bucket: String, key: String, value: String) -> Result<CacheStats> {
         let service = Arc::clone(&self.service);
-
-        native_runtime()
-            .spawn_blocking(move || {
-                let bucket = CacheBucket::try_from(bucket.as_str())
-                    .map_err(|err| Error::from_reason(err.to_string()))?;
-
-                service
-                    .put_json(bucket, &key, &value)
-                    .map_err(|err| Error::from_reason(err.to_string()))
-            })
-            .await
-            .map_err(|e| Error::from_reason(e.to_string()))?
+        run_blocking(service, move |s| {
+            let bucket = CacheBucket::try_from(bucket.as_str())?;
+            s.put_json(bucket, &key, &value)
+        })
+        .await
     }
 
     #[napi]
     pub async fn set_max_size_bytes(&self, max_size_bytes: i64) -> Result<CacheStats> {
         let service = Arc::clone(&self.service);
-        native_runtime()
-            .spawn_blocking(move || {
-                service
-                    .set_max_size_bytes(max_size_bytes.max(0) as u64)
-                    .map_err(|err| Error::from_reason(err.to_string()))
-            })
-            .await
-            .map_err(|e| Error::from_reason(e.to_string()))?
+        run_blocking(service, move |s| s.set_max_size_bytes(max_size_bytes.max(0) as u64)).await
     }
 
     #[napi]
@@ -123,14 +107,7 @@ impl CacheService {
     #[napi]
     pub async fn clear(&self) -> Result<CacheStats> {
         let service = Arc::clone(&self.service);
-        native_runtime()
-            .spawn_blocking(move || {
-                service
-                    .clear()
-                    .map_err(|err| Error::from_reason(err.to_string()))
-            })
-            .await
-            .map_err(|e| Error::from_reason(e.to_string()))?
+        run_blocking(service, |s| s.clear()).await
     }
 
     #[napi]
@@ -159,18 +136,47 @@ impl CacheService {
         expected_bytes: Option<i64>,
     ) -> Result<CachedSongSource> {
         let service = Arc::clone(&self.service);
+        run_blocking(service, move |s| {
+            s.prepare_song_source(
+                song_id,
+                &quality,
+                &url,
+                expected_bytes.map(|value| value.max(0) as u64),
+            )
+        })
+        .await
+    }
+
+    #[napi]
+    pub async fn cache_song_source(
+        &self,
+        song_id: i64,
+        quality: String,
+        url: String,
+        expected_bytes: Option<i64>,
+        duration_ms: Option<i64>,
+    ) -> Result<CachedSongSource> {
+        let service = Arc::clone(&self.service);
         native_runtime()
             .spawn_blocking(move || {
-                service
-                    .prepare_song_source(
-                        song_id,
-                        &quality,
-                        &url,
-                        expected_bytes.map(|value| value.max(0) as u64),
-                    )
-                    .map_err(|err| Error::from_reason(err.to_string()))
+                NativeCacheService::spawn_song_cache_download(
+                    service,
+                    song_id,
+                    quality,
+                    url,
+                    expected_bytes.map(|value| value.max(0) as u64),
+                    duration_ms.map(|value| value.max(0) as u64),
+                )
+                .map_err(|err| Error::from_reason(err.to_string()))
             })
             .await
             .map_err(|e| Error::from_reason(e.to_string()))?
+    }
+
+    #[napi]
+    pub async fn get_song_cache_progress(&self, metadata_path: String) -> Result<SongCacheProgress> {
+        self.service
+            .get_song_cache_progress(&metadata_path)
+            .map_err(|err| Error::from_reason(err.to_string()))
     }
 }
