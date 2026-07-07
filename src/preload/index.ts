@@ -35,12 +35,15 @@ const api = {
   recommend_songs: invoke('music:recommendSongs'),
   like: invoke('music:like'),
   likelist: invoke('music:likelist'),
+  playlist_track_add: invoke('music:playlistTrackAdd'),
+  playlist_track_delete: invoke('music:playlistTrackDelete'),
   song_url: invoke('music:songUrl'),
   artist_detail: invoke('music:artistDetail'),
   artist_top_song: invoke('music:artistTopSong'),
   artist_album: invoke('music:artistAlbum'),
   artist_mv: invoke('music:artistMv'),
   album: invoke('music:album'),
+  configureXeapi: invoke('music:configureXeapi'),
 
   // --- Rust 播放器操作 (多参数或特定逻辑) ---
   play_url: invokeArgs('player:playUrl'),

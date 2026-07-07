@@ -23,12 +23,15 @@ export function registerMusicApi(): void {
     'music:recommendSongs': MusicService.recommend_songs,
     'music:like': MusicService.like,
     'music:likelist': MusicService.likelist,
+    'music:playlistTrackAdd': MusicService.playlist_track_add,
+    'music:playlistTrackDelete': MusicService.playlist_track_delete,
     'music:songUrl': MusicService.song_url,
     'music:artistDetail': MusicService.artist_detail,
     'music:artistTopSong': MusicService.artist_top_song,
     'music:artistAlbum': MusicService.artist_album,
     'music:artistMv': MusicService.artist_mv,
-    'music:album': MusicService.album
+    'music:album': MusicService.album,
+    'music:configureXeapi': MusicService.configureXeapi as MusicApiHandler
   } as Record<string, MusicApiHandler>
 
   // 批量注册

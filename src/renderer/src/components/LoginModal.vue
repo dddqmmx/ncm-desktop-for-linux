@@ -64,6 +64,7 @@ const initQrLogin = async (): Promise<void> => {
         const cookie = checkRes.body?.cookie || ''
         userStore.setLoginData(cookie)
         emit('login-success')
+        window.api.configureXeapi()
       }
     }, 2000)
   } catch (err) {
@@ -178,6 +179,7 @@ const handleLogin = async (): Promise<void> => {
       }
       userStore.setLoginData(cookie)
       emit('login-success')
+      window.api.configureXeapi()
     } else {
       errorMsg.value = res.body?.message || '登录失败，请重试'
     }

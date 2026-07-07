@@ -25,13 +25,11 @@ import {
   album,
   captcha_sent,
   like,
-  likelist
+  likelist,
+  playlist_track_add,
+  playlist_track_delete
 } from '@neteasecloudmusicapienhanced/api'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { tmpdir } from 'node:os'
-import { dirname, resolve } from 'node:path'
-import { app } from 'electron'
 import { CacheService } from './cacheService'
 
 type ServiceResult<T = APIBaseResponse> = {
@@ -51,92 +49,18 @@ type SongUrlItem = Record<string, unknown> & {
 type SongUrlBody = APIBaseResponse & {
   data?: SongUrlItem[]
 }
-type XeapiPublicKey = Record<string, unknown> & {
-  sk?: unknown
-}
-type XeapiKeyModule = {
-  getXeapiPublicKey: (
-    currentPublicKey?: XeapiPublicKey,
-    deviceId?: string
-  ) => Promise<XeapiPublicKey>
-}
-
 const nodeRequire = createRequire(import.meta.url)
-const { getXeapiPublicKey } = nodeRequire(
-  '@neteasecloudmusicapienhanced/api/util/xeapiKey'
-) as XeapiKeyModule
-const xeapiPublicKeyPersistPath = resolve(app.getPath('userData'), 'xeapi_public_key')
-const xeapiPublicKeyTempPath = resolve(tmpdir(), 'xeapi_public_key')
-const XEAPI_PUBLIC_KEY_MISSING_ERROR = 'xeapi public key is missing'
-let xeapiConfigPromise: Promise<void> | null = null
+const generateConfig = nodeRequire(
+  '@neteasecloudmusicapienhanced/api/generateConfig'
+) as () => Promise<void>
 
-function readXeapiPublicKey(): XeapiPublicKey {
-  const path = existsSync(xeapiPublicKeyPersistPath)
-    ? xeapiPublicKeyPersistPath
-    : xeapiPublicKeyTempPath
-
-  if (!existsSync(path)) return {}
-
-  try {
-    return JSON.parse(readFileSync(path, 'utf-8')) as XeapiPublicKey
-  } catch {
-    return {}
-  }
+function configureXeapi(): Promise<void> {
+  return generateConfig().catch((error) => {
+    console.warn('[musicService] 更新网易云 xeapi 公钥失败:', error)
+  })
 }
 
-function hasXeapiPublicKey(): boolean {
-  const publicKey = readXeapiPublicKey()
-  return typeof publicKey.sk === 'string' && publicKey.sk.length > 0
-}
-
-function isXeapiPublicKeyMissing(error: unknown): boolean {
-  return error instanceof Error && error.message.includes(XEAPI_PUBLIC_KEY_MISSING_ERROR)
-}
-
-function getGlobalDeviceId(): string {
-  const deviceId = (globalThis as { deviceId?: unknown }).deviceId
-  return typeof deviceId === 'string' ? deviceId : ''
-}
-
-async function refreshXeapiPublicKey(): Promise<void> {
-  const publicKey = await getXeapiPublicKey(readXeapiPublicKey(), getGlobalDeviceId())
-  const data = JSON.stringify(publicKey)
-  mkdirSync(dirname(xeapiPublicKeyPersistPath), { recursive: true })
-  writeFileSync(xeapiPublicKeyPersistPath, data, 'utf-8')
-  writeFileSync(xeapiPublicKeyTempPath, data, 'utf-8')
-}
-
-function startXeapiConfigGeneration(): Promise<void> {
-  if (!xeapiConfigPromise) {
-    xeapiConfigPromise = Promise.resolve()
-      .then(() => refreshXeapiPublicKey())
-      .catch((error) => {
-        console.warn('[musicService] 更新网易云 xeapi 公钥失败:', error)
-      })
-      .finally(() => {
-        xeapiConfigPromise = null
-      })
-  }
-  return xeapiConfigPromise
-}
-
-async function ensureXeapiConfig(force = false): Promise<void> {
-  if (
-    existsSync(xeapiPublicKeyPersistPath) &&
-    !existsSync(xeapiPublicKeyTempPath)
-  ) {
-    writeFileSync(
-      xeapiPublicKeyTempPath,
-      readFileSync(xeapiPublicKeyPersistPath, 'utf-8'),
-      'utf-8'
-    )
-  }
-
-  if (!force && hasXeapiPublicKey()) return
-  await startXeapiConfigGeneration()
-}
-
-void ensureXeapiConfig()
+void configureXeapi()
 
 function bitrateForLegacySongUrl(level: SongUrlParams['level']): number {
   if (level === 'standard') return 128000
@@ -177,21 +101,18 @@ async function fetchLegacySongUrl(params: SongUrlParams): Promise<Response<SongU
 }
 
 async function fetchSongUrl(params: SongUrlParams): Promise<Response<SongUrlBody>> {
-  await ensureXeapiConfig()
+  try {
+    return (await song_url_v1(params)) as Response<SongUrlBody>
+  } catch (error) {
+    if (!(error instanceof Error && error.message.includes('xeapi public key'))) throw error
+  }
 
-  if (hasXeapiPublicKey()) {
-    try {
-      return (await song_url_v1(params)) as Response<SongUrlBody>
-    } catch (error) {
-      if (!isXeapiPublicKeyMissing(error)) {
-        throw error
-      }
+  await configureXeapi()
 
-      await ensureXeapiConfig(true)
-      if (hasXeapiPublicKey()) {
-        return (await song_url_v1(params)) as Response<SongUrlBody>
-      }
-    }
+  try {
+    return (await song_url_v1(params)) as Response<SongUrlBody>
+  } catch (error) {
+    if (!(error instanceof Error && error.message.includes('xeapi public key'))) throw error
   }
 
   console.warn(
@@ -272,6 +193,7 @@ const createCachedMethod = <P, T>(
 }
 
 export const MusicService = {
+  configureXeapi,
   login: createMethod(login_cellphone),
   captcha_sent: createMethod(captcha_sent),
   getBanner: createMethod(banner),
@@ -316,6 +238,8 @@ export const MusicService = {
   recommend_songs: createMethod(recommend_songs),
   like: createMethod(like),
   likelist: createMethod(likelist),
+  playlist_track_add: createMethod(playlist_track_add),
+  playlist_track_delete: createMethod(playlist_track_delete),
   artist_detail: createCachedMethod(
     'entity',
     (params: { id: number | string }) => cacheKey('artist_detail', { id: params.id }),
