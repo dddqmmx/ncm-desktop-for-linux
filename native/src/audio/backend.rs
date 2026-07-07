@@ -3,7 +3,10 @@ use cpal::traits::DeviceTrait;
 use ringbuf::traits::{Consumer, Observer};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 use symphonia::core::sample::SampleFormat as SymphoniaSampleFormat;
+
+const TARGET_OUTPUT_BUFFER_MS: u32 = 20;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputDeviceInfo {
@@ -103,39 +106,12 @@ where
 {
     let stream = device.build_output_stream(
         config,
-        move |data: &mut [S], _: &cpal::OutputCallbackInfo| {
-            if state.discard_buffer.swap(false, Ordering::SeqCst) {
-                while consumer.try_pop().is_some() {}
-            }
+        move |data: &mut [S], info: &cpal::OutputCallbackInfo| {
+            drain_discarded_buffer(&mut consumer, &state);
 
-            let buffered_samples = consumer.occupied_len();
-            let sr = state.sample_rate.load(Ordering::Relaxed) as usize;
-            let decoder_done = state.decoder_done.load(Ordering::Relaxed);
-            let min_samples_to_resume = sr * channels;
-
-            let mut is_buffering = state.waiting_for_seek.load(Ordering::Relaxed);
-
-            if is_buffering {
-                if buffered_samples >= min_samples_to_resume || decoder_done {
-                    state.waiting_for_seek.store(false, Ordering::Relaxed);
-                } else {
-                    data.fill(S::EQUILIBRIUM);
-                    return;
-                }
-            }
-
-            if !is_buffering && buffered_samples == 0 && !decoder_done {
-                state.waiting_for_seek.store(true, Ordering::Relaxed);
-                is_buffering = true;
-            }
-
-            if is_buffering {
-                if buffered_samples >= min_samples_to_resume || decoder_done {
-                    state.waiting_for_seek.store(false, Ordering::Relaxed);
-                } else {
-                    data.fill(S::EQUILIBRIUM);
-                    return;
-                }
+            if should_wait_for_buffer(consumer.occupied_len(), channels, &state) {
+                data.fill(S::EQUILIBRIUM);
+                return;
             }
 
             if state.is_paused.load(Ordering::Relaxed) {
@@ -154,10 +130,18 @@ where
             }
 
             if samples_read > 0 {
-                state
+                let frames_read = (samples_read / channels) as u64;
+                let buffer_start_frame = state
                     .current_frame
-                    .fetch_add((samples_read / channels) as u64, Ordering::Relaxed);
-            } else if decoder_done && !state.is_finished.swap(true, Ordering::SeqCst) {
+                    .fetch_add(frames_read, Ordering::Relaxed);
+                state.update_playback_clock_from_output(
+                    buffer_start_frame,
+                    buffer_start_frame.saturating_add(frames_read),
+                    output_latency(info),
+                );
+            } else if state.decoder_done.load(Ordering::Relaxed)
+                && !state.is_finished.swap(true, Ordering::SeqCst)
+            {
                 state.finish_notify.notify_waiters();
             }
         },
@@ -181,38 +165,12 @@ where
 {
     let stream = device.build_output_stream(
         config,
-        move |data: &mut [Out], _: &cpal::OutputCallbackInfo| {
-            if state.discard_buffer.swap(false, Ordering::SeqCst) {
-                while consumer.try_pop().is_some() {}
-            }
+        move |data: &mut [Out], info: &cpal::OutputCallbackInfo| {
+            drain_discarded_buffer(&mut consumer, &state);
 
-            let buffered_samples = consumer.occupied_len();
-            let sr = state.sample_rate.load(Ordering::Relaxed) as usize;
-            let decoder_done = state.decoder_done.load(Ordering::Relaxed);
-            let min_samples_to_resume = sr * channels;
-
-            let mut is_buffering = state.waiting_for_seek.load(Ordering::Relaxed);
-            if is_buffering {
-                if buffered_samples >= min_samples_to_resume || decoder_done {
-                    state.waiting_for_seek.store(false, Ordering::Relaxed);
-                } else {
-                    data.fill(Out::EQUILIBRIUM);
-                    return;
-                }
-            }
-
-            if !is_buffering && buffered_samples == 0 && !decoder_done {
-                state.waiting_for_seek.store(true, Ordering::Relaxed);
-                is_buffering = true;
-            }
-
-            if is_buffering {
-                if buffered_samples >= min_samples_to_resume || decoder_done {
-                    state.waiting_for_seek.store(false, Ordering::Relaxed);
-                } else {
-                    data.fill(Out::EQUILIBRIUM);
-                    return;
-                }
+            if should_wait_for_buffer(consumer.occupied_len(), channels, &state) {
+                data.fill(Out::EQUILIBRIUM);
+                return;
             }
 
             if state.is_paused.load(Ordering::Relaxed) {
@@ -231,10 +189,18 @@ where
             }
 
             if samples_read > 0 {
-                state
+                let frames_read = (samples_read / channels) as u64;
+                let buffer_start_frame = state
                     .current_frame
-                    .fetch_add((samples_read / channels) as u64, Ordering::Relaxed);
-            } else if decoder_done && !state.is_finished.swap(true, Ordering::SeqCst) {
+                    .fetch_add(frames_read, Ordering::Relaxed);
+                state.update_playback_clock_from_output(
+                    buffer_start_frame,
+                    buffer_start_frame.saturating_add(frames_read),
+                    output_latency(info),
+                );
+            } else if state.decoder_done.load(Ordering::Relaxed)
+                && !state.is_finished.swap(true, Ordering::SeqCst)
+            {
                 state.finish_notify.notify_waiters();
             }
         },
@@ -242,6 +208,52 @@ where
         None,
     )?;
     Ok(stream)
+}
+
+fn output_latency(info: &cpal::OutputCallbackInfo) -> Duration {
+    let timestamp = info.timestamp();
+    timestamp
+        .playback
+        .duration_since(&timestamp.callback)
+        .unwrap_or(Duration::ZERO)
+}
+
+fn drain_discarded_buffer<S, C>(consumer: &mut C, state: &SharedState)
+where
+    C: Consumer<Item = S>,
+{
+    if state.discard_buffer.load(Ordering::SeqCst) {
+        state.is_discarding_buffer.store(true, Ordering::SeqCst);
+        state.discard_buffer.store(false, Ordering::SeqCst);
+        while consumer.try_pop().is_some() {}
+        state.is_discarding_buffer.store(false, Ordering::SeqCst);
+    }
+}
+
+fn should_wait_for_buffer(buffered_samples: usize, channels: usize, state: &SharedState) -> bool {
+    if state.has_seek_request.load(Ordering::Relaxed) {
+        return true;
+    }
+
+    let sr = state.sample_rate.load(Ordering::Relaxed) as usize;
+    let decoder_done = state.decoder_done.load(Ordering::Relaxed);
+    let min_samples_to_resume = sr * channels;
+
+    if state.waiting_for_seek.load(Ordering::Relaxed) {
+        if buffered_samples >= min_samples_to_resume || decoder_done {
+            state.waiting_for_seek.store(false, Ordering::Relaxed);
+            return false;
+        }
+
+        return true;
+    }
+
+    if buffered_samples == 0 && !decoder_done {
+        state.waiting_for_seek.store(true, Ordering::Relaxed);
+        return true;
+    }
+
+    false
 }
 
 pub(crate) fn find_best_config(
@@ -269,7 +281,7 @@ pub(crate) fn find_best_config(
     let prefer = preferred_output_formats(bits_per_sample, source_sample_format);
     for fmt in prefer.iter() {
         if let Some(c) = candidates.iter().find(|c| c.sample_format() == *fmt) {
-            let config: cpal::StreamConfig = c.with_sample_rate(target_sr).into();
+            let config = stream_config_with_target_buffer(c, target_sr);
             return Ok((config, *fmt));
         }
     }
@@ -278,7 +290,7 @@ pub(crate) fn find_best_config(
         .iter()
         .find(|c| is_supported_output_format(c.sample_format()))
     {
-        let config: cpal::StreamConfig = c.with_sample_rate(target_sr).into();
+        let config = stream_config_with_target_buffer(c, target_sr);
         return Ok((config, c.sample_format()));
     }
 
@@ -364,7 +376,7 @@ pub(crate) fn find_bit_perfect_config(
             && target_sr >= c.min_sample_rate()
             && target_sr <= c.max_sample_rate()
         {
-            let config: cpal::StreamConfig = c.with_sample_rate(target_sr).into();
+            let config = stream_config_with_target_buffer(&c, target_sr);
             return Ok((config, c.sample_format()));
         }
     }
@@ -426,6 +438,28 @@ pub(crate) fn find_bit_perfect_config(
             .join(" 或 ")
     )
     .into())
+}
+
+fn stream_config_with_target_buffer(
+    config: &cpal::SupportedStreamConfigRange,
+    sample_rate: u32,
+) -> cpal::StreamConfig {
+    let mut stream_config: cpal::StreamConfig = config.with_sample_rate(sample_rate).into();
+    stream_config.buffer_size = target_output_buffer_size(config.buffer_size(), sample_rate);
+    stream_config
+}
+
+fn target_output_buffer_size(
+    supported: &cpal::SupportedBufferSize,
+    sample_rate: u32,
+) -> cpal::BufferSize {
+    let target_frames = (sample_rate / (1_000 / TARGET_OUTPUT_BUFFER_MS)).max(1);
+    match *supported {
+        cpal::SupportedBufferSize::Range { min, max } => {
+            cpal::BufferSize::Fixed(target_frames.clamp(min, max))
+        }
+        cpal::SupportedBufferSize::Unknown => cpal::BufferSize::Default,
+    }
 }
 
 pub(crate) fn device_id(device: &cpal::Device) -> String {
@@ -869,6 +903,32 @@ pub(crate) fn disambiguate_output_device_names(devices: &mut [OutputDeviceInfo])
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::state::{NO_TRIM_FRAME, SharedState};
+    use ringbuf::HeapRb;
+    use ringbuf::traits::{Observer, Producer, Split};
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+    use tokio::sync::Notify;
+
+    fn create_state(sample_rate: u32) -> SharedState {
+        SharedState {
+            is_paused: AtomicBool::new(false),
+            current_frame: AtomicU64::new(0),
+            playback_clock: Mutex::new(crate::audio::state::PlaybackClock::new()),
+            trim_until_frame: AtomicU64::new(NO_TRIM_FRAME),
+            sample_rate: AtomicU32::new(sample_rate),
+            has_seek_request: AtomicBool::new(false),
+            seek_request: Mutex::new(None),
+            is_terminating: AtomicBool::new(false),
+            discard_buffer: AtomicBool::new(false),
+            is_discarding_buffer: AtomicBool::new(false),
+            decoder_done: AtomicBool::new(false),
+            is_finished: AtomicBool::new(false),
+            finish_notify: Notify::new(),
+            buffered_frames: AtomicU64::new(0),
+            waiting_for_seek: AtomicBool::new(false),
+        }
+    }
 
     #[test]
     fn preferred_output_formats_prioritizes_source_format() {
@@ -894,6 +954,157 @@ mod tests {
         assert_eq!(unique_count, formats.len());
         assert_eq!(formats[0], cpal::SampleFormat::I16);
         assert!(formats.contains(&cpal::SampleFormat::F32));
+    }
+
+    #[test]
+    fn target_output_buffer_size_uses_low_latency_fixed_frames_when_supported() {
+        assert_eq!(
+            target_output_buffer_size(
+                &cpal::SupportedBufferSize::Range {
+                    min: 128,
+                    max: 4096
+                },
+                48_000
+            ),
+            cpal::BufferSize::Fixed(960)
+        );
+        assert_eq!(
+            target_output_buffer_size(
+                &cpal::SupportedBufferSize::Range {
+                    min: 2048,
+                    max: 4096
+                },
+                48_000
+            ),
+            cpal::BufferSize::Fixed(2048)
+        );
+    }
+
+    #[test]
+    fn old_samples_without_discard_would_release_seek_buffering() {
+        let sample_rate = 48_000;
+        let channels = 2;
+        let state = create_state(sample_rate);
+        let rb = HeapRb::<i16>::new(sample_rate as usize * channels * 2);
+        let (mut producer, consumer) = rb.split();
+        let old_samples = vec![1_i16; sample_rate as usize * channels + 1024];
+        assert_eq!(producer.push_slice(&old_samples), old_samples.len());
+
+        state.waiting_for_seek.store(true, Ordering::SeqCst);
+
+        assert!(
+            !should_wait_for_buffer(consumer.occupied_len(), channels, &state),
+            "bug condition: old pre-seek samples satisfy the resume threshold"
+        );
+        assert!(!state.waiting_for_seek.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn pending_seek_request_keeps_old_samples_from_resuming_output() {
+        let sample_rate = 48_000;
+        let channels = 2;
+        let state = create_state(sample_rate);
+        let rb = HeapRb::<i16>::new(sample_rate as usize * channels * 2);
+        let (mut producer, consumer) = rb.split();
+        let old_samples = vec![1_i16; sample_rate as usize * channels + 1024];
+        assert_eq!(producer.push_slice(&old_samples), old_samples.len());
+
+        state.waiting_for_seek.store(true, Ordering::SeqCst);
+        state.has_seek_request.store(true, Ordering::SeqCst);
+
+        assert!(should_wait_for_buffer(
+            consumer.occupied_len(),
+            channels,
+            &state
+        ));
+        assert!(state.waiting_for_seek.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn pending_discard_drains_old_samples_before_seek_resume_check() {
+        let sample_rate = 48_000;
+        let channels = 2;
+        let state = create_state(sample_rate);
+        let rb = HeapRb::<i16>::new(sample_rate as usize * channels * 2);
+        let (mut producer, mut consumer) = rb.split();
+        let old_samples = vec![1_i16; sample_rate as usize * channels + 1024];
+        assert_eq!(producer.push_slice(&old_samples), old_samples.len());
+
+        state.discard_buffer.store(true, Ordering::SeqCst);
+        state.waiting_for_seek.store(true, Ordering::SeqCst);
+
+        drain_discarded_buffer(&mut consumer, &state);
+
+        assert_eq!(consumer.occupied_len(), 0);
+        assert!(should_wait_for_buffer(
+            consumer.occupied_len(),
+            channels,
+            &state
+        ));
+        assert!(state.waiting_for_seek.load(Ordering::SeqCst));
+        assert!(!state.discard_buffer.load(Ordering::SeqCst));
+    }
+
+    /// 反衬测试：seek 完成、解码器已把 *正确目标位置* 样本写入 ringbuf 后，若再像旧
+    /// `handle_seek_if_needed` 那样二次置位 `discard_buffer`，回调进入
+    /// `drain_discarded_buffer` 会把这些目标样本一并排空——ringbuf 回到空，进度停在
+    /// seek 锚点而听不到声音，正是“进度与实际播放位置不一致”。修复去掉了二次拉高，
+    /// 此处复现旧行为以证明其危害。
+    #[test]
+    fn legacy_post_seek_discard_would_flush_correct_target_samples() {
+        let sample_rate = 48_000;
+        let channels = 2;
+        let state = create_state(sample_rate);
+        let rb = HeapRb::<i16>::new(sample_rate as usize * channels * 2);
+        let (mut producer, mut consumer) = rb.split();
+
+        // seek 锚点已设（见 decoder.rs），随后解码写入正确目标位置样本。
+        state.waiting_for_seek.store(true, Ordering::SeqCst);
+        let target_samples = vec![2_i16; sample_rate as usize * channels + 1024];
+        assert_eq!(producer.push_slice(&target_samples), target_samples.len());
+        assert!(consumer.occupied_len() >= sample_rate as usize * channels);
+
+        // 旧行为：decode 侧在 format.seek 之后再置 discard_buffer=true。
+        state.discard_buffer.store(true, Ordering::SeqCst);
+
+        // 回调线程进来处理 discard → 目标样本被全部排空。
+        drain_discarded_buffer(&mut consumer, &state);
+
+        assert_eq!(
+            consumer.occupied_len(),
+            0,
+            "BUG 重现：旧行为二次置 discard 把正确的目标位置样本全部排空，\
+             导致播放无声而 current_frame 仍向前推进 → 进度与播放脱节"
+        );
+
+        // 验证 ~1 秒目标样本被清空后，回调会重新进入等待/再缓冲状态。
+        assert!(should_wait_for_buffer(
+            consumer.occupied_len(),
+            channels,
+            &state
+        ));
+    }
+
+    /// 互补正向测试：修复后 seek 完成不再二次拉高 discard，目标样本完好保留，
+    /// 缓冲达成阈值即可正常恢复播放，current_frame 与播放位置一致前进。
+    #[test]
+    fn post_seek_no_second_discard_preserves_target_samples() {
+        let sample_rate = 48_000;
+        let channels = 2;
+        let state = create_state(sample_rate);
+        let rb = HeapRb::<i16>::new(sample_rate as usize * channels * 2);
+        let (mut producer, consumer) = rb.split();
+
+        state.waiting_for_seek.store(true, Ordering::SeqCst);
+        let target_samples = vec![2_i16; sample_rate as usize * channels + 1024];
+        assert_eq!(producer.push_slice(&target_samples), target_samples.len());
+
+        assert_eq!(consumer.occupied_len(), target_samples.len());
+        // 目标样本同样会被回调当作正常音频消费、计入 current_frame，与实际播放一致。
+        assert!(
+            !should_wait_for_buffer(consumer.occupied_len(), channels, &state),
+            "修复后目标样本驱动播放恢复正常，不再误清空"
+        );
     }
 
     #[cfg(target_os = "linux")]

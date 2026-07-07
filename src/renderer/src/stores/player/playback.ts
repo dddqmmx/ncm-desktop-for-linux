@@ -234,7 +234,7 @@ export const usePlaybackStore = defineStore('playback', () => {
 
   let _syncLocalLogCounter = 0
   const syncLocalProgress = (rafTimestamp: number): void => {
-    if (isWebEngine()) {
+    if (isWebEngine.value) {
       // WebAPI 引擎：直接读 <audio> 的真实播放位置驱动歌词/进度
       if (!isSeeking.value) {
         const ms = Math.round(webAudioEngine.currentTimeMs)
@@ -264,7 +264,7 @@ export const usePlaybackStore = defineStore('playback', () => {
    * 启动进度同步计时器
    */
   const startTimer = (): void => {
-    if (isWebEngine()) {
+    if (isWebEngine.value) {
       // WebAPI 引擎不轮询 native 后端，只用 rAF 读取 <audio>.currentTime
       if (!progressAnimationFrame) {
         progressAnimationFrame = window.requestAnimationFrame(syncLocalProgress)
@@ -472,7 +472,7 @@ export const usePlaybackStore = defineStore('playback', () => {
 
   // --- 公开操作 (Actions) ---
 
-  const isWebEngine = (): boolean => configStore.audioEngine === 'webapi'
+  const isWebEngine = computed(() => configStore.audioEngine === 'webapi')
 
   /**
    * WebAPI 引擎播放：作为 native 引擎的对照路径，底层走 <audio> + 浏览器内置缓冲。
@@ -575,7 +575,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     }
 
     // WebAPI 引擎走完全独立的播放路径
-    if (isWebEngine()) {
+    if (isWebEngine.value) {
       await playWithWebEngine(song_id, startTime)
       return
     }
@@ -777,7 +777,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     // 正在切换中不响应
     if (isSwitching.value || isLoading.value) return
 
-    if (isWebEngine()) {
+    if (isWebEngine.value) {
       if (isPlaying.value) {
         webAudioEngine.pause()
         isPlaying.value = false
@@ -821,7 +821,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     const roundedTime = Math.max(Math.round(finiteTime), 0)
     const clampedTime = duration.value > 0 ? Math.min(roundedTime, duration.value) : roundedTime
 
-    if (isWebEngine()) {
+    if (isWebEngine.value) {
       isBuffering.value = true
       webAudioEngine.seek(clampedTime / 1000)
       currentTime.value = clampedTime
@@ -876,7 +876,7 @@ export const usePlaybackStore = defineStore('playback', () => {
    * 停止播放并清空状态
    */
   const stop = async (): Promise<void> => {
-    if (isWebEngine()) {
+    if (isWebEngine.value) {
       webAudioEngine.stop()
     } else {
       try {
@@ -971,10 +971,29 @@ export const usePlaybackStore = defineStore('playback', () => {
     { immediate: true }
   )
 
+  watch(
+    () => configStore.audioEngine,
+    (newEngine, oldEngine) => {
+      if (oldEngine === undefined) return
+      if (newEngine === oldEngine) return
+      if (!currentSongId.value || isSwitching.value) return
+
+      const savedTime = currentTime.value
+      stopTimer()
+      webAudioEngine.stop()
+      try {
+        window.api.stop().catch(() => {})
+      } catch {
+        // ignore
+      }
+      void playMusic(currentSongId.value, savedTime)
+    }
+  )
+
   // WebAPI 引擎的事件回调（自然结束自动下一首、缓冲/播放态同步、错误处理）
   webAudioEngine.setCallbacks({
     onEnded: () => {
-      if (!isWebEngine()) return
+      if (!isWebEngine.value) return
       isPlaying.value = false
       isHistorySong.value = true
       resetPlaybackLoadState()
@@ -984,14 +1003,14 @@ export const usePlaybackStore = defineStore('playback', () => {
       void playNext(true)
     },
     onBuffering: (buffering) => {
-      if (isWebEngine()) isBuffering.value = buffering
+      if (isWebEngine.value) isBuffering.value = buffering
     },
     onPlayStateChange: (playing) => {
       // 反映浏览器侧的播放/暂停（如系统媒体键），切换加载期间不干预
-      if (isWebEngine() && !isSwitching.value) isPlaying.value = playing
+      if (isWebEngine.value && !isSwitching.value) isPlaying.value = playing
     },
     onError: (message) => {
-      if (!isWebEngine()) return
+      if (!isWebEngine.value) return
       playbackError.value = message
       isPlaying.value = false
       isHistorySong.value = true

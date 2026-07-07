@@ -22,7 +22,7 @@ use crate::audio::backend::{self, OutputDeviceInfo};
 use crate::audio::cache_tracker::SongCacheTracker;
 use crate::audio::decoder::{self, AudioMetadata};
 use crate::audio::source::{PersistentFileStorageProvider, SeekableSource};
-use crate::audio::state::SharedState;
+use crate::audio::state::{NO_TRIM_FRAME, PlaybackClock, SharedState};
 use crate::audio::utils::estimate_prefetch_bytes;
 
 const OUTPUT_BUFFER_SECONDS: usize = 6;
@@ -57,8 +57,7 @@ async fn build_cached_stream_download(
 
     let reader = StreamDownload::from_stream(
         stream,
-        PersistentFileStorageProvider::new(cache_path)
-            .max_write_ahead_bytes(max_cache_ahead_bytes),
+        PersistentFileStorageProvider::new(cache_path).max_write_ahead_bytes(max_cache_ahead_bytes),
         Settings::default()
             .prefetch_bytes(prefetch_bytes)
             .on_progress(move |stream: &HttpStream<Client>, state, _| {
@@ -103,10 +102,13 @@ impl AudioPlayer {
             state: Arc::new(SharedState {
                 is_paused: AtomicBool::new(false),
                 current_frame: AtomicU64::new(0),
+                playback_clock: std::sync::Mutex::new(PlaybackClock::new()),
+                trim_until_frame: AtomicU64::new(NO_TRIM_FRAME),
                 sample_rate: AtomicU32::new(0),
                 seek_request: std::sync::Mutex::new(None),
                 is_terminating: AtomicBool::new(false),
                 discard_buffer: AtomicBool::new(false),
+                is_discarding_buffer: AtomicBool::new(false),
                 decoder_done: AtomicBool::new(false),
                 is_finished: AtomicBool::new(false),
                 finish_notify: Notify::new(),
@@ -271,9 +273,15 @@ impl AudioPlayer {
             .extension()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
-        let reader =
-            build_cached_stream_download(url, cache_path, metadata_path, duration_ms, cache_ahead_secs, max_cache_ahead_bytes)
-                .await?;
+        let reader = build_cached_stream_download(
+            url,
+            cache_path,
+            metadata_path,
+            duration_ms,
+            cache_ahead_secs,
+            max_cache_ahead_bytes,
+        )
+        .await?;
 
         let content_len = reader.content_length();
         let source = Box::new(SeekableSource::new(reader, content_len));
@@ -292,9 +300,15 @@ impl AudioPlayer {
         cache_ahead_secs: Option<u32>,
         max_cache_ahead_bytes: Option<u64>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let reader =
-            build_cached_stream_download(url, cache_path, metadata_path, duration_ms, cache_ahead_secs, max_cache_ahead_bytes)
-                .await?;
+        let reader = build_cached_stream_download(
+            url,
+            cache_path,
+            metadata_path,
+            duration_ms,
+            cache_ahead_secs,
+            max_cache_ahead_bytes,
+        )
+        .await?;
 
         tokio::task::spawn_blocking(move || {
             let mut reader = reader;
@@ -342,10 +356,13 @@ impl AudioPlayer {
         self.state = Arc::new(SharedState {
             is_paused: AtomicBool::new(false),
             current_frame: AtomicU64::new(0),
+            playback_clock: std::sync::Mutex::new(PlaybackClock::new()),
+            trim_until_frame: AtomicU64::new(NO_TRIM_FRAME),
             sample_rate: AtomicU32::new(meta.sample_rate),
             seek_request: std::sync::Mutex::new(None),
             is_terminating: AtomicBool::new(false),
             discard_buffer: AtomicBool::new(false),
+            is_discarding_buffer: AtomicBool::new(false),
             decoder_done: AtomicBool::new(false),
             is_finished: AtomicBool::new(false),
             finish_notify: Notify::new(),
@@ -601,6 +618,7 @@ impl AudioPlayer {
         let mut format = meta.format_reader;
         let track_id = meta.track_id;
         let sr = meta.sample_rate;
+        let time_base = meta.time_base;
 
         std::thread::spawn(move || {
             loop {
@@ -608,13 +626,22 @@ impl AudioPlayer {
                     break;
                 }
 
-                decoder::handle_seek_if_needed(&state, &mut *format, &mut *decoder, track_id, sr);
+                decoder::handle_seek_if_needed(
+                    &state,
+                    &mut *format,
+                    &mut *decoder,
+                    track_id,
+                    sr,
+                    time_base,
+                );
 
                 if !producer.is_full() {
                     if !decoder::decode_next_packet::<S, _>(
                         &mut *format,
                         &mut *decoder,
                         track_id,
+                        sr,
+                        time_base,
                         &mut producer,
                         &state,
                     ) {
@@ -644,6 +671,8 @@ impl AudioPlayer {
                 &mut *meta.format_reader,
                 &mut *meta.decoder,
                 meta.track_id,
+                meta.sample_rate,
+                meta.time_base,
                 producer,
                 &self.state,
             ) {
@@ -662,7 +691,7 @@ impl AudioPlayer {
     }
 
     pub fn progress(&self) -> Duration {
-        let frames = self.state.current_frame.load(Ordering::Relaxed);
+        let frames = self.state.progress_frame();
         let rate = self.state.sample_rate.load(Ordering::Relaxed);
         if rate == 0 {
             return Duration::ZERO;
@@ -671,18 +700,7 @@ impl AudioPlayer {
     }
 
     pub fn seek(&self, target: Duration) {
-        {
-            let mut seek_req = self.state.seek_request.lock().unwrap();
-            *seek_req = Some(target);
-        }
-
-        let target_frame =
-            (target.as_secs_f64() * self.state.sample_rate.load(Ordering::Relaxed) as f64) as u64;
-        self.state
-            .current_frame
-            .store(target_frame, Ordering::SeqCst);
-        self.state.waiting_for_seek.store(true, Ordering::SeqCst);
-        self.state.has_seek_request.store(true, Ordering::SeqCst);
+        self.state.schedule_seek(target);
     }
 
     pub fn stop(&mut self) {
@@ -741,11 +759,14 @@ mod tests {
         SharedState {
             is_paused: AtomicBool::new(false),
             current_frame: AtomicU64::new(0),
+            playback_clock: Mutex::new(PlaybackClock::new()),
+            trim_until_frame: AtomicU64::new(NO_TRIM_FRAME),
             sample_rate: AtomicU32::new(sample_rate),
             has_seek_request: AtomicBool::new(false),
             seek_request: Mutex::new(None),
             is_terminating: AtomicBool::new(false),
             discard_buffer: AtomicBool::new(false),
+            is_discarding_buffer: AtomicBool::new(false),
             decoder_done: AtomicBool::new(false),
             is_finished: AtomicBool::new(false),
             finish_notify: Notify::new(),
@@ -759,19 +780,108 @@ mod tests {
         let state = create_state(48_000);
         let target = Duration::from_millis(2_500);
 
-        {
-            let mut seek_req = state.seek_request.lock().unwrap();
-            *seek_req = Some(target);
-        }
-        let target_frame =
-            (target.as_secs_f64() * state.sample_rate.load(Ordering::Relaxed) as f64) as u64;
-        state.current_frame.store(target_frame, Ordering::SeqCst);
-        state.waiting_for_seek.store(true, Ordering::SeqCst);
-        state.has_seek_request.store(true, Ordering::SeqCst);
+        state.schedule_seek(target);
 
         assert_eq!(*state.seek_request.lock().unwrap(), Some(target));
         assert!(state.has_seek_request.load(Ordering::SeqCst));
         assert!(state.waiting_for_seek.load(Ordering::SeqCst));
         assert_eq!(state.current_frame.load(Ordering::SeqCst), 120_000);
+    }
+
+    #[test]
+    fn seek_without_discard_buffer_causes_progress_drift() {
+        let sr: u32 = 48_000;
+        let channels: usize = 2;
+        let state = create_state(sr);
+
+        state.current_frame.store(50_000, Ordering::SeqCst);
+
+        let target = Duration::from_secs(30);
+        let target_frame = (target.as_secs_f64() * sr as f64) as u64;
+
+        state.current_frame.store(target_frame, Ordering::SeqCst);
+        state.waiting_for_seek.store(true, Ordering::SeqCst);
+        state.has_seek_request.store(true, Ordering::SeqCst);
+
+        assert!(!state.discard_buffer.load(Ordering::SeqCst));
+
+        let min_samples_to_resume = sr as usize * channels;
+        let buffered_samples = min_samples_to_resume + 1024;
+
+        let mut is_buffering = state.waiting_for_seek.load(Ordering::Relaxed);
+        assert!(is_buffering, "should enter buffering mode after seek");
+
+        if is_buffering {
+            if buffered_samples >= min_samples_to_resume {
+                state.waiting_for_seek.store(false, Ordering::Relaxed);
+                is_buffering = false;
+            }
+        }
+
+        assert!(
+            !is_buffering,
+            "bug: buffering cleared prematurely because old samples remain in buffer"
+        );
+
+        let samples_read = 1024usize;
+        if samples_read > 0 {
+            state
+                .current_frame
+                .fetch_add((samples_read / channels) as u64, Ordering::Relaxed);
+        }
+
+        let drifted_frame = state.current_frame.load(Ordering::Relaxed);
+        assert!(
+            drifted_frame > target_frame,
+            "BUG CONFIRMED: current_frame drifted from {target_frame} to {drifted_frame} \
+             because discard_buffer was not set in seek() — old samples were played after seek"
+        );
+        assert_eq!(
+            drifted_frame - target_frame,
+            (samples_read / channels) as u64,
+            "drift should equal samples_read / channels"
+        );
+    }
+
+    #[test]
+    fn seek_with_discard_buffer_prevents_progress_drift() {
+        let sr: u32 = 48_000;
+        let channels: usize = 2;
+        let state = create_state(sr);
+
+        state.current_frame.store(50_000, Ordering::SeqCst);
+
+        let target = Duration::from_secs(30);
+        let target_frame = (target.as_secs_f64() * sr as f64) as u64;
+
+        state.discard_buffer.store(true, Ordering::SeqCst);
+        state.current_frame.store(target_frame, Ordering::SeqCst);
+        state.waiting_for_seek.store(true, Ordering::SeqCst);
+        state.has_seek_request.store(true, Ordering::SeqCst);
+
+        if state.discard_buffer.swap(false, Ordering::SeqCst) {}
+
+        let min_samples_to_resume = sr as usize * channels;
+        let buffered_samples = 0usize;
+
+        let is_buffering = state.waiting_for_seek.load(Ordering::Relaxed);
+        assert!(is_buffering, "should still be buffering after seek");
+
+        if is_buffering {
+            if buffered_samples >= min_samples_to_resume {
+                state.waiting_for_seek.store(false, Ordering::Relaxed);
+            }
+        }
+
+        assert!(
+            state.waiting_for_seek.load(Ordering::Relaxed),
+            "fix works: stay in buffering mode because old samples were discarded"
+        );
+
+        let frame_after = state.current_frame.load(Ordering::Relaxed);
+        assert_eq!(
+            frame_after, target_frame,
+            "fix works: current_frame stays at target_frame, no drift from old samples"
+        );
     }
 }

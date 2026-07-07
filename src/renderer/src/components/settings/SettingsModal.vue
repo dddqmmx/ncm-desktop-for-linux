@@ -9,6 +9,7 @@ import ShortcutsSettingsTab from './ShortcutsSettingsTab.vue'
 import AboutSettingsTab from './AboutSettingsTab.vue'
 import SettingsSidebar from './SettingsSidebar.vue'
 import CacheSettingsTab from './CacheSettingsTab.vue'
+import DebugSettingsTab from './DebugSettingsTab.vue'
 
 type SettingsTabId =
   | 'general'
@@ -18,6 +19,7 @@ type SettingsTabId =
   | 'shortcuts'
   | 'about'
   | 'cache'
+  | 'debug'
 
 type SettingsTab = {
   id: SettingsTabId
@@ -57,6 +59,11 @@ const tabs: SettingsTab[] = [
     icon: 'M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25'
   },
   {
+    id: 'debug',
+    name: '调试',
+    icon: 'M8 2v3m8-3v3M9 9h6m-8 4H4m16 0h-3M7 17H4m16 0h-3M9 5h6a3 3 0 013 3v7a5 5 0 01-10 0V8a3 3 0 013-3z'
+  },
+  {
     id: 'about',
     name: '关于软件',
     icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
@@ -70,7 +77,8 @@ const tabComponents: Record<SettingsTabId, Component> = {
   library: LibrarySettingsTab,
   shortcuts: ShortcutsSettingsTab,
   about: AboutSettingsTab,
-  cache: CacheSettingsTab
+  cache: CacheSettingsTab,
+  debug: DebugSettingsTab
 }
 
 const activeTab = ref<SettingsTabId>('general')

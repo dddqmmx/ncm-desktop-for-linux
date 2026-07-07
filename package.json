@@ -9,6 +9,7 @@
     "format": "prettier --write .",
     "lint": "eslint --cache .",
     "test:web": "vitest run",
+    "test:native-seek": "node scripts/native-seek-regression.cjs",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",

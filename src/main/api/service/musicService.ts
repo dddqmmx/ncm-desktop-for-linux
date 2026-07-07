@@ -27,10 +27,11 @@ import {
   like,
   likelist
 } from '@neteasecloudmusicapienhanced/api'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
+import { app } from 'electron'
 import { CacheService } from './cacheService'
 
 type ServiceResult<T = APIBaseResponse> = {
@@ -64,15 +65,20 @@ const nodeRequire = createRequire(import.meta.url)
 const { getXeapiPublicKey } = nodeRequire(
   '@neteasecloudmusicapienhanced/api/util/xeapiKey'
 ) as XeapiKeyModule
-const xeapiPublicKeyPath = resolve(tmpdir(), 'xeapi_public_key')
+const xeapiPublicKeyPersistPath = resolve(app.getPath('userData'), 'xeapi_public_key')
+const xeapiPublicKeyTempPath = resolve(tmpdir(), 'xeapi_public_key')
 const XEAPI_PUBLIC_KEY_MISSING_ERROR = 'xeapi public key is missing'
 let xeapiConfigPromise: Promise<void> | null = null
 
 function readXeapiPublicKey(): XeapiPublicKey {
-  if (!existsSync(xeapiPublicKeyPath)) return {}
+  const path = existsSync(xeapiPublicKeyPersistPath)
+    ? xeapiPublicKeyPersistPath
+    : xeapiPublicKeyTempPath
+
+  if (!existsSync(path)) return {}
 
   try {
-    return JSON.parse(readFileSync(xeapiPublicKeyPath, 'utf-8')) as XeapiPublicKey
+    return JSON.parse(readFileSync(path, 'utf-8')) as XeapiPublicKey
   } catch {
     return {}
   }
@@ -94,7 +100,10 @@ function getGlobalDeviceId(): string {
 
 async function refreshXeapiPublicKey(): Promise<void> {
   const publicKey = await getXeapiPublicKey(readXeapiPublicKey(), getGlobalDeviceId())
-  writeFileSync(xeapiPublicKeyPath, JSON.stringify(publicKey), 'utf-8')
+  const data = JSON.stringify(publicKey)
+  mkdirSync(dirname(xeapiPublicKeyPersistPath), { recursive: true })
+  writeFileSync(xeapiPublicKeyPersistPath, data, 'utf-8')
+  writeFileSync(xeapiPublicKeyTempPath, data, 'utf-8')
 }
 
 function startXeapiConfigGeneration(): Promise<void> {
@@ -112,6 +121,17 @@ function startXeapiConfigGeneration(): Promise<void> {
 }
 
 async function ensureXeapiConfig(force = false): Promise<void> {
+  if (
+    existsSync(xeapiPublicKeyPersistPath) &&
+    !existsSync(xeapiPublicKeyTempPath)
+  ) {
+    writeFileSync(
+      xeapiPublicKeyTempPath,
+      readFileSync(xeapiPublicKeyPersistPath, 'utf-8'),
+      'utf-8'
+    )
+  }
+
   if (!force && hasXeapiPublicKey()) return
   await startXeapiConfigGeneration()
 }

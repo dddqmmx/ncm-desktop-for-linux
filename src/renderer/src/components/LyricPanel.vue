@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import type { Lyric } from '@renderer/types/lyric'
 import { usePlayerStore } from '@renderer/stores/playerStore'
+import { useConfigStore } from '@renderer/stores/configStore'
 
 const props = defineProps<{
   songId?: number
@@ -10,9 +11,9 @@ const props = defineProps<{
   isSeeking?: boolean
 }>()
 
-// [调试] 同步链路可视化：定位歌词延迟卡在哪一环，定位后删除
-const LYRIC_DEBUG = true
 const playerStore = usePlayerStore()
+const configStore = useConfigStore()
+const lyricDebug = computed(() => configStore.lyricDebug)
 
 // --- 配置常量 ---
 const LYRIC_OFFSET_MS = 50 // 仅补偿人眼感知延迟（~50ms），CSS 动画已拆分为快速响应阶段
@@ -175,14 +176,16 @@ const scrollActiveLyricToCenter = (behavior: 'auto' | 'smooth' = 'smooth'): void
   const activeIndex = currentLyricIndex.value
   if (activeIndex === -1) return
 
-  console.log(
-    `[LYRIC] scrollActiveLyricToCenter: index=${activeIndex}, behavior=${behavior}, time=${(props.currentTime / 1000).toFixed(2)}s`
-  )
+  if (lyricDebug.value) {
+    console.log(
+      `[LYRIC] scrollActiveLyricToCenter: index=${activeIndex}, behavior=${behavior}, time=${(props.currentTime / 1000).toFixed(2)}s`
+    )
+  }
   nextTick(() => {
     const activeEl = lineRefs.value[activeIndex]
     const scrollContainer = scrollContainerRef.value
     if (!activeEl || !scrollContainer) {
-      if (LYRIC_DEBUG)
+      if (lyricDebug.value)
         console.log(
           `[lyric] scroll skipped idx=${activeIndex} el=${!!activeEl} cont=${!!scrollContainer}`
         )
@@ -198,7 +201,7 @@ const scrollActiveLyricToCenter = (behavior: 'auto' | 'smooth' = 'smooth'): void
         block: 'center'
       })
     }
-    if (LYRIC_DEBUG)
+    if (lyricDebug.value)
       console.log(
         `[lyric] scroll(${behavior}) idx=${activeIndex} offsetTop=${activeEl.offsetTop} scrollTop=${Math.round(scrollContainer.scrollTop)}`
       )
@@ -207,9 +210,11 @@ const scrollActiveLyricToCenter = (behavior: 'auto' | 'smooth' = 'smooth'): void
 
 watch(currentLyricIndex, (newIndex, oldIndex) => {
   if (isUserScrolling.value) return
-  console.log(
-    `[LYRIC] index changed: ${oldIndex} -> ${newIndex}, time=${(props.currentTime / 1000).toFixed(2)}s, isSeeking=${props.isSeeking}`
-  )
+  if (lyricDebug.value) {
+    console.log(
+      `[LYRIC] index changed: ${oldIndex} -> ${newIndex}, time=${(props.currentTime / 1000).toFixed(2)}s, isSeeking=${props.isSeeking}`
+    )
+  }
   scrollActiveLyricToCenter()
 })
 
@@ -221,9 +226,11 @@ watch(
     lastCurrentTime = newTime
     // 超过 1 秒的跳变视为 seek 操作，立即定位
     if (delta > 1000) {
-      console.log(
-        `[LYRIC] SEEK JUMP detected: delta=${delta.toFixed(0)}ms, newTime=${newTime.toFixed(0)}ms`
-      )
+      if (lyricDebug.value) {
+        console.log(
+          `[LYRIC] SEEK JUMP detected: delta=${delta.toFixed(0)}ms, newTime=${newTime.toFixed(0)}ms`
+        )
+      }
       // 取消用户滚动锁定
       isUserScrolling.value = false
       if (userScrollTimer) {
@@ -239,9 +246,13 @@ watch(
 watch(
   () => props.isSeeking,
   (seeking, wasSeeking) => {
-    console.log(`[LYRIC] isSeeking prop: ${wasSeeking} -> ${seeking}`)
+    if (lyricDebug.value) {
+      console.log(`[LYRIC] isSeeking prop: ${wasSeeking} -> ${seeking}`)
+    }
     if (wasSeeking && !seeking) {
-      console.log(`[LYRIC] Seek ended, forcing scroll to current lyric`)
+      if (lyricDebug.value) {
+        console.log(`[LYRIC] Seek ended, forcing scroll to current lyric`)
+      }
       isUserScrolling.value = false
       scrollActiveLyricToCenter('auto')
     }
@@ -255,7 +266,7 @@ watch([showPronunciation, showTranslation], () => {
 
 <template>
   <section class="lyrics-panel" :style="themeVars">
-    <div v-if="LYRIC_DEBUG" class="lyric-debug-hud">
+    <div v-if="lyricDebug" class="lyric-debug-hud">
       <div>clock(currentTime): {{ Math.round(props.currentTime) }} ms</div>
       <div>
         backend raw: {{ playerStore.rawProgressMs }} ms (Δ

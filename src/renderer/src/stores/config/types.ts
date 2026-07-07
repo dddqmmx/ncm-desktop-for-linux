@@ -19,6 +19,7 @@ export interface PersistedSettings {
   cacheLimitMb: number
   songCacheAheadSecs: number
   songMaxCacheAheadMb: number
+  lyricDebug: boolean
 }
 
 export const STORAGE_KEY = 'app_settings'
@@ -62,7 +63,8 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
   libPaths: [],
   cacheLimitMb: DEFAULT_CACHE_LIMIT_MB,
   songCacheAheadSecs: DEFAULT_SONG_CACHE_AHEAD_SECS,
-  songMaxCacheAheadMb: DEFAULT_SONG_MAX_CACHE_AHEAD_MB
+  songMaxCacheAheadMb: DEFAULT_SONG_MAX_CACHE_AHEAD_MB,
+  lyricDebug: false
 }
 
 export type { SoundQualityType }

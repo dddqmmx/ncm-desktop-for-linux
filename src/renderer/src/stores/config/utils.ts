@@ -147,7 +147,9 @@ export function loadSettings(): PersistedSettings {
       libPaths: normalizeLibraryPaths(parsed.libPaths),
       cacheLimitMb: normalizeCacheLimitMb(parsed.cacheLimitMb),
       songCacheAheadSecs: normalizeSongCacheAheadSecs(parsed.songCacheAheadSecs),
-      songMaxCacheAheadMb: normalizeSongMaxCacheAheadMb(parsed.songMaxCacheAheadMb)
+      songMaxCacheAheadMb: normalizeSongMaxCacheAheadMb(parsed.songMaxCacheAheadMb),
+      lyricDebug:
+        typeof parsed.lyricDebug === 'boolean' ? parsed.lyricDebug : fallbackSettings.lyricDebug
     }
   } catch (error) {
     console.warn('读取设置失败，使用默认配置。', error)

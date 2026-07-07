@@ -3,6 +3,7 @@ import { watch, computed } from 'vue'
 import { useAudioConfigStore } from './config/audio'
 import { useAppearanceConfigStore } from './config/appearance'
 import { useCacheConfigStore } from './config/cache'
+import { useDebugConfigStore } from './config/debug'
 import { useGeneralConfigStore } from './config/general'
 import { loadSettings, persistSettings } from './config/utils'
 import { PersistedSettings, SoundQualityType, STORAGE_KEY } from './config/types'
@@ -14,6 +15,7 @@ export const useConfigStore = defineStore('config', () => {
   const audio = useAudioConfigStore()
   const appearance = useAppearanceConfigStore()
   const cache = useCacheConfigStore()
+  const debug = useDebugConfigStore()
   const general = useGeneralConfigStore()
 
   const snapshotSettings = (): PersistedSettings => ({
@@ -31,7 +33,8 @@ export const useConfigStore = defineStore('config', () => {
     libPaths: [...cache.libPaths],
     cacheLimitMb: cache.cacheLimitMb,
     songCacheAheadSecs: cache.songCacheAheadSecs,
-    songMaxCacheAheadMb: cache.songMaxCacheAheadMb
+    songMaxCacheAheadMb: cache.songMaxCacheAheadMb,
+    lyricDebug: debug.lyricDebug
   })
 
   let skipNextSettingsBroadcast = false
@@ -60,6 +63,7 @@ export const useConfigStore = defineStore('config', () => {
     cache.cacheLimitMb = settings.cacheLimitMb
     cache.songCacheAheadSecs = settings.songCacheAheadSecs
     cache.songMaxCacheAheadMb = settings.songMaxCacheAheadMb
+    debug.lyricDebug = settings.lyricDebug
   }
 
   const settingsChannel =
@@ -83,7 +87,8 @@ export const useConfigStore = defineStore('config', () => {
       () => cache.libPaths,
       () => cache.cacheLimitMb,
       () => cache.songCacheAheadSecs,
-      () => cache.songMaxCacheAheadMb
+      () => cache.songMaxCacheAheadMb,
+      () => debug.lyricDebug
     ],
     () => {
       if (skipNextSettingsBroadcast) {
@@ -233,6 +238,12 @@ export const useConfigStore = defineStore('config', () => {
     isUpdatingSongMaxCacheAheadBytes: computed(() => cache.isUpdatingSongMaxCacheAheadBytes),
     isClearingCache: computed(() => cache.isClearingCache),
     cacheError: computed(() => cache.cacheError),
+
+    // Debug
+    lyricDebug: computed({
+      get: () => debug.lyricDebug,
+      set: (val) => (debug.lyricDebug = val)
+    }),
 
     // Actions
     initialize,

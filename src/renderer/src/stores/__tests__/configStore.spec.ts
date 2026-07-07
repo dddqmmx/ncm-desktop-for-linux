@@ -307,7 +307,40 @@ describe('configStore output device handling', () => {
     expect(store.currentOutputDevice?.id).toBe('default')
   })
 
-  it('applies sound quality changes written by another window', async () => {
+  it('defaults lyric debug to disabled and persists explicit changes', async () => {
+    const store = useConfigStore()
+
+    expect(store.lyricDebug).toBe(false)
+    expect(readPersistedSettings(storage).lyricDebug).toBeUndefined()
+
+    store.lyricDebug = true
+    await nextTick()
+
+    expect(readPersistedSettings(storage).lyricDebug).toBe(true)
+
+    store.lyricDebug = false
+    await nextTick()
+
+    expect(readPersistedSettings(storage).lyricDebug).toBe(false)
+  })
+
+  it('loads only boolean lyric debug values from persisted settings', () => {
+    writePersistedSettings(storage, {
+      lyricDebug: 'true'
+    })
+
+    expect(useConfigStore().lyricDebug).toBe(false)
+  })
+
+  it('restores lyric debug when persisted settings enable it', () => {
+    writePersistedSettings(storage, {
+      lyricDebug: true
+    })
+
+    expect(useConfigStore().lyricDebug).toBe(true)
+  })
+
+  it('applies sound quality and debug changes written by another window', async () => {
     let storageListener: ((event: StorageEvent) => void) | undefined
 
     vi.stubGlobal('window', {
@@ -320,19 +353,23 @@ describe('configStore output device handling', () => {
     } as unknown as Window & typeof globalThis)
 
     writePersistedSettings(storage, {
-      soundQuality: 'standard'
+      soundQuality: 'standard',
+      lyricDebug: false
     })
 
     const store = useConfigStore()
     expect(store.soundQuality).toBe('standard')
+    expect(store.lyricDebug).toBe(false)
 
     writePersistedSettings(storage, {
-      soundQuality: 'jymaster'
+      soundQuality: 'jymaster',
+      lyricDebug: true
     })
 
     storageListener?.({ key: STORAGE_KEY } as StorageEvent)
     await nextTick()
 
     expect(store.soundQuality).toBe('jymaster')
+    expect(store.lyricDebug).toBe(true)
   })
 })

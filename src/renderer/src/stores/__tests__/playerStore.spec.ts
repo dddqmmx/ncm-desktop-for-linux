@@ -349,6 +349,82 @@ describe('playerStore device switch sequencing', () => {
     )
   })
 
+  it('starts native history playback from the persisted progress instead of zero', async () => {
+    storage.setItem('currentTime', '42000')
+    storage.setItem('currentSongId', '1')
+    storage.setItem(
+      'currentSong',
+      JSON.stringify({
+        id: 1,
+        name: 'Stored Song',
+        artists: [{ id: 1, name: 'Artist' }],
+        cover: 'cover',
+        duration: 180000
+      })
+    )
+
+    const playFile = vi.fn(async () => undefined)
+
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        song_detail: vi.fn(async ({ ids }: { ids: number[] }) => ({
+          body: {
+            songs: [
+              {
+                id: ids[0],
+                name: `Song ${ids[0]}`,
+                dt: 180000,
+                ar: [{ id: 1, name: 'Artist' }],
+                al: { id: 1, name: 'Album', picUrl: 'cover' },
+                h: null,
+                sq: null,
+                hr: null
+              }
+            ]
+          }
+        })),
+        song_url: vi.fn(async () => ({
+          body: {
+            data: [{ url: 'https://example.com/test.mp3', level: 'standard' }]
+          }
+        })),
+        get_output_devices: vi.fn(async () => [
+          {
+            id: 'default',
+            name: 'System Default',
+            isDefault: true,
+            isCurrent: true
+          }
+        ]),
+        switch_output_device: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        play_url: vi.fn(async () => undefined),
+        play_file: playFile,
+        prepare_cached_song_source: vi.fn(async () => ({
+          type: 'file',
+          value: '/tmp/cached-test.mp3'
+        })),
+        resume: vi.fn(async () => undefined),
+        get_progress: vi.fn(async () => 42_000),
+        is_buffering: vi.fn(async () => false),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 0 })),
+        seek: vi.fn(async () => undefined),
+        wait_finished: vi.fn(() => new Promise(() => undefined))
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+
+    expect(playerStore.currentTime).toBe(42_000)
+
+    await playerStore.togglePlay()
+
+    expect(playFile).toHaveBeenCalledWith('/tmp/cached-test.mp3', 42, false)
+    expect(playerStore.currentTime).toBe(42_000)
+  })
+
   it('keeps startup loading until native progress has actually advanced', async () => {
     let now = 1_000
     let animationFrameCallback: FrameRequestCallback | undefined
