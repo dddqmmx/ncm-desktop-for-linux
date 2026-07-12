@@ -85,6 +85,7 @@ pub struct CacheIndexData {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CacheSettingsData {
+    #[serde(default = "default_max_size_bytes")]
     pub max_size_bytes: u64,
     #[serde(default = "default_song_cache_ahead_secs")]
     pub song_cache_ahead_secs: u32,
@@ -187,6 +188,10 @@ pub fn now_unix_secs() -> u64 {
 
 fn as_i64(value: u64) -> i64 {
     value.min(i64::MAX as u64) as i64
+}
+
+fn default_max_size_bytes() -> u64 {
+    512 * 1024 * 1024
 }
 
 fn default_song_cache_ahead_secs() -> u32 {
