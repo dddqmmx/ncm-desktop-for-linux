@@ -71,6 +71,11 @@ interface CustomApi {
     expectedBytes?: number
     durationMs?: number
   }) => Promise<CachedSongSource>
+  update_song_cache_playback_position: (payload: {
+    metadataPath: string
+    playbackPositionMs: number
+  }) => Promise<boolean>
+  cancel_song_cache_download: (metadataPath: string) => Promise<boolean>
   get_cached_song_progress: (metadataPath: string) => Promise<SongCacheProgress>
   //ui相关工具方法
   open_settings_window: () => Promise<unknown>

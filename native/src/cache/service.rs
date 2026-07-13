@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -5,7 +6,7 @@ use std::time::Duration;
 
 use reqwest::header::CONTENT_TYPE;
 
-use crate::audio::player::AudioPlayer;
+use crate::audio::player::{AudioPlayer, SongCacheDownloadControl};
 use crate::cache::catalog::{CacheCatalog, CacheEntryUpsert};
 use crate::cache::error::{CacheError, CacheResult};
 use crate::cache::eviction::EvictionPlanner;
@@ -37,6 +38,7 @@ impl CacheState {
 pub struct NativeCacheService {
     files: CacheFileStore,
     state: Mutex<CacheState>,
+    active_song_downloads: Mutex<HashMap<String, Arc<SongCacheDownloadControl>>>,
     http_client: reqwest::Client,
 }
 
@@ -56,6 +58,7 @@ impl NativeCacheService {
         let service = Self {
             files,
             state: Mutex::new(CacheState { settings, catalog }),
+            active_song_downloads: Mutex::new(HashMap::new()),
             http_client,
         };
 
@@ -149,6 +152,7 @@ impl NativeCacheService {
     }
 
     pub fn clear(&self) -> CacheResult<CacheStats> {
+        self.cancel_all_song_cache_downloads();
         {
             let mut state = self.lock_state()?;
             state.catalog.clear();
@@ -378,6 +382,8 @@ impl NativeCacheService {
             .ok_or_else(|| CacheError::InvalidState("missing metadata_path".to_string()))?;
         let cache_ahead_secs = source.cache_ahead_secs.map(|value| value as u32);
         let max_cache_ahead_bytes = source.max_cache_ahead_bytes.map(|value| value as u64);
+        let download_control = Arc::new(SongCacheDownloadControl::new());
+        self_arc.register_song_cache_download(&metadata_path, Arc::clone(&download_control))?;
 
         println!(
             "[cache] 启动后台流式缓存: song_id={} quality={} cache_path={}",
@@ -400,6 +406,7 @@ impl NativeCacheService {
                 duration_ms,
                 cache_ahead_secs,
                 max_cache_ahead_bytes,
+                Arc::clone(&download_control),
             )
             .await
             {
@@ -414,6 +421,7 @@ impl NativeCacheService {
                             song_id, cleanup_err
                         );
                     }
+                    self_arc.finish_song_cache_download(&metadata_path, &download_control);
                     return;
                 }
             };
@@ -436,6 +444,7 @@ impl NativeCacheService {
                         song_id, quality_for_task, download_outcome.downloaded_bytes
                     );
                 }
+                self_arc.finish_song_cache_download(&metadata_path, &download_control);
                 return;
             }
 
@@ -453,9 +462,99 @@ impl NativeCacheService {
                     song_id, quality_for_task, download_outcome.downloaded_bytes
                 );
             }
+            self_arc.finish_song_cache_download(&metadata_path, &download_control);
         });
 
         Ok(source)
+    }
+
+    pub fn update_song_cache_playback_position(
+        &self,
+        metadata_path: &str,
+        playback_position_ms: u64,
+    ) -> CacheResult<bool> {
+        let downloads = self
+            .active_song_downloads
+            .lock()
+            .map_err(|_| CacheError::Poisoned)?;
+        let Some(control) = downloads.get(metadata_path) else {
+            return Ok(false);
+        };
+        control.update_playback_position(playback_position_ms);
+        Ok(true)
+    }
+
+    pub fn cancel_song_cache_download(&self, metadata_path: &str) -> CacheResult<bool> {
+        let control = self
+            .active_song_downloads
+            .lock()
+            .map_err(|_| CacheError::Poisoned)?
+            .remove(metadata_path);
+        let Some(control) = control else {
+            return Ok(false);
+        };
+        control.cancel();
+        control.wait_finished();
+        Ok(true)
+    }
+
+    fn register_song_cache_download(
+        &self,
+        metadata_path: &str,
+        control: Arc<SongCacheDownloadControl>,
+    ) -> CacheResult<()> {
+        let previous = self
+            .active_song_downloads
+            .lock()
+            .map_err(|_| CacheError::Poisoned)?
+            .insert(metadata_path.to_string(), control);
+        if let Some(previous) = previous {
+            previous.cancel();
+            previous.wait_finished();
+        }
+        Ok(())
+    }
+
+    fn unregister_song_cache_download(
+        &self,
+        metadata_path: &str,
+        control: &Arc<SongCacheDownloadControl>,
+    ) {
+        let Ok(mut downloads) = self.active_song_downloads.lock() else {
+            return;
+        };
+        if downloads
+            .get(metadata_path)
+            .is_some_and(|active| Arc::ptr_eq(active, control))
+        {
+            downloads.remove(metadata_path);
+        }
+    }
+
+    fn finish_song_cache_download(
+        &self,
+        metadata_path: &str,
+        control: &Arc<SongCacheDownloadControl>,
+    ) {
+        self.unregister_song_cache_download(metadata_path, control);
+        control.finish();
+    }
+
+    fn cancel_all_song_cache_downloads(&self) {
+        let downloads = self
+            .active_song_downloads
+            .lock()
+            .map(|mut downloads| {
+                downloads
+                    .drain()
+                    .map(|(_, control)| control)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for control in downloads {
+            control.cancel();
+            control.wait_finished();
+        }
     }
 
     fn mark_song_cache_complete(

@@ -3,11 +3,13 @@ use crate::audio::device_reservation::DeviceReservation;
 use cpal::traits::{HostTrait, StreamTrait};
 use ringbuf::HeapRb;
 use ringbuf::traits::{Producer, Split};
+use std::io::{Read, Seek, SeekFrom};
 use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Condvar, Mutex as StdMutex};
 use std::time::Duration;
 use stream_download::http::HttpStream;
 use stream_download::http::reqwest::Client;
@@ -37,21 +39,123 @@ static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
         .expect("Failed to build HTTP client")
 });
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CachedStreamPurpose {
-    Playback,
-    Predownload,
-}
-
 pub(crate) struct SongCacheDownloadOutcome {
     pub downloaded_bytes: u64,
     pub is_complete: bool,
 }
 
+#[derive(Clone, Copy)]
+struct SongCacheDownloadControlState {
+    playback_position_ms: u64,
+    version: u64,
+    cancelled: bool,
+    finished: bool,
+}
+
+pub(crate) struct SongCacheDownloadControl {
+    state: StdMutex<SongCacheDownloadControlState>,
+    changed: Condvar,
+    cancel_download: StdMutex<Option<Box<dyn Fn() + Send + Sync>>>,
+}
+
+impl SongCacheDownloadControl {
+    pub fn new() -> Self {
+        Self {
+            state: StdMutex::new(SongCacheDownloadControlState {
+                playback_position_ms: 0,
+                version: 0,
+                cancelled: false,
+                finished: false,
+            }),
+            changed: Condvar::new(),
+            cancel_download: StdMutex::new(None),
+        }
+    }
+
+    pub fn update_playback_position(&self, playback_position_ms: u64) {
+        if let Ok(mut state) = self.state.lock() {
+            if state.cancelled || state.playback_position_ms == playback_position_ms {
+                return;
+            }
+            state.playback_position_ms = playback_position_ms;
+            state.version = state.version.wrapping_add(1);
+            self.changed.notify_all();
+        }
+    }
+
+    pub fn cancel(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.cancelled = true;
+            state.version = state.version.wrapping_add(1);
+            self.changed.notify_all();
+        }
+        if let Ok(cancel_download) = self.cancel_download.lock()
+            && let Some(cancel_download) = cancel_download.as_ref()
+        {
+            cancel_download();
+        }
+    }
+
+    fn attach_download_canceller<F>(&self, cancel_download: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        let cancelled = self
+            .state
+            .lock()
+            .map(|state| state.cancelled)
+            .unwrap_or(true);
+        if cancelled {
+            cancel_download();
+            return;
+        }
+        if let Ok(mut slot) = self.cancel_download.lock() {
+            *slot = Some(Box::new(cancel_download));
+        }
+    }
+
+    fn wait_for_change(&self, version: u64) -> SongCacheDownloadControlState {
+        let mut state = self.state.lock().unwrap();
+        while !state.cancelled && state.version == version {
+            state = self.changed.wait(state).unwrap();
+        }
+        *state
+    }
+
+    fn wake(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.version = state.version.wrapping_add(1);
+            self.changed.notify_all();
+        }
+    }
+
+    pub fn finish(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.finished = true;
+            state.version = state.version.wrapping_add(1);
+            self.changed.notify_all();
+        }
+    }
+
+    pub fn wait_finished(&self) {
+        let mut state = self.state.lock().unwrap();
+        while !state.finished {
+            state = self.changed.wait(state).unwrap();
+        }
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.state
+            .lock()
+            .map(|state| state.cancelled)
+            .unwrap_or(true)
+    }
+}
+
 struct CachedStreamDownload {
     reader: StreamDownload<PersistentFileStorageProvider>,
     completed: Arc<AtomicBool>,
-    predownload_limit_reached: Arc<AtomicBool>,
+    tracker: SongCacheTracker,
 }
 
 async fn build_cached_stream_download(
@@ -61,7 +165,6 @@ async fn build_cached_stream_download(
     duration_ms: Option<u64>,
     cache_ahead_secs: Option<u32>,
     max_cache_ahead_bytes: Option<u64>,
-    purpose: CachedStreamPurpose,
 ) -> Result<CachedStreamDownload, Box<dyn std::error::Error>> {
     let stream = HttpStream::new(HTTP_CLIENT.clone(), url.parse()?).await?;
     let content_len = stream.content_length();
@@ -73,46 +176,49 @@ async fn build_cached_stream_download(
     let prefetch_bytes = max_cache_ahead_bytes
         .map(|max_bytes| prefetch_bytes.min(max_bytes))
         .unwrap_or(prefetch_bytes);
-    let write_ahead_limit = match purpose {
-        CachedStreamPurpose::Playback => max_cache_ahead_bytes,
-        CachedStreamPurpose::Predownload => Some(prefetch_bytes),
-    };
     let completed = Arc::new(AtomicBool::new(false));
     let completed_for_progress = Arc::clone(&completed);
-    let predownload_limit_reached = Arc::new(AtomicBool::new(false));
-    let predownload_limit_reached_for_progress = Arc::clone(&predownload_limit_reached);
+    let tracker_for_progress = tracker.clone();
+    let tracker_for_writes = tracker.clone();
 
     let reader = StreamDownload::from_stream(
         stream,
-        PersistentFileStorageProvider::new(cache_path).max_write_ahead_bytes(write_ahead_limit),
+        PersistentFileStorageProvider::new(cache_path)
+            .max_write_ahead_bytes(max_cache_ahead_bytes)
+            .on_write(move |range| tracker_for_writes.record_range(range)),
         Settings::default()
             .prefetch_bytes(prefetch_bytes)
-            .on_progress(
-                move |stream: &HttpStream<Client>, state, cancellation_token| {
-                    let is_complete = matches!(state.phase, stream_download::StreamPhase::Complete);
-                    let current_position = state.current_position;
-                    tracker.record_progress(state, stream.content_length());
-                    if is_complete {
-                        completed_for_progress.store(true, Ordering::Release);
-                    } else if purpose == CachedStreamPurpose::Predownload
-                        && current_position >= prefetch_bytes
-                    {
-                        if let Err(err) = tracker.persist() {
-                            eprintln!("[cache] failed to finalize predownload metadata: {err}");
-                        }
-                        predownload_limit_reached_for_progress.store(true, Ordering::Release);
-                        cancellation_token.cancel();
-                    }
-                },
-            ),
+            .on_progress(move |stream: &HttpStream<Client>, state, _| {
+                if matches!(state.phase, stream_download::StreamPhase::Complete) {
+                    completed_for_progress.store(true, Ordering::Release);
+                }
+                tracker_for_progress.record_progress(state, stream.content_length());
+            }),
     )
     .await?;
 
     Ok(CachedStreamDownload {
         reader,
         completed,
-        predownload_limit_reached,
+        tracker,
     })
+}
+
+fn playback_position_to_byte(
+    content_length: Option<u64>,
+    duration_ms: Option<u64>,
+    playback_position_ms: u64,
+) -> Option<u64> {
+    let content_length = content_length?;
+    let duration_ms = duration_ms.filter(|duration| *duration > 0)?;
+    if content_length == 0 {
+        return Some(0);
+    }
+
+    let position = (u128::from(content_length) * u128::from(playback_position_ms)
+        / u128::from(duration_ms))
+    .min(u128::from(content_length.saturating_sub(1))) as u64;
+    Some(position)
 }
 
 pub struct AudioPlayer {
@@ -326,7 +432,6 @@ impl AudioPlayer {
             duration_ms,
             cache_ahead_secs,
             max_cache_ahead_bytes,
-            CachedStreamPurpose::Playback,
         )
         .await?;
 
@@ -347,6 +452,7 @@ impl AudioPlayer {
         duration_ms: Option<u64>,
         cache_ahead_secs: Option<u32>,
         max_cache_ahead_bytes: Option<u64>,
+        control: Arc<SongCacheDownloadControl>,
     ) -> Result<SongCacheDownloadOutcome, Box<dyn std::error::Error>> {
         let download = build_cached_stream_download(
             url,
@@ -355,17 +461,78 @@ impl AudioPlayer {
             duration_ms,
             cache_ahead_secs,
             max_cache_ahead_bytes,
-            CachedStreamPurpose::Predownload,
         )
         .await?;
 
-        download.reader.handle().wait_for_completion().await;
+        let content_length = download.reader.content_length();
+        let cancellation_token = download.reader.cancellation_token();
+        control.attach_download_canceller(move || cancellation_token.cancel());
 
-        let completed = download.completed.load(Ordering::Acquire);
-        let predownload_limit_reached = download.predownload_limit_reached.load(Ordering::Acquire);
-        if !completed && !predownload_limit_reached {
-            return Err("song cache download ended before reaching the predownload limit".into());
+        let source_finished = Arc::new(AtomicBool::new(false));
+        let source_finished_for_waiter = Arc::clone(&source_finished);
+        let control_for_waiter = Arc::clone(&control);
+        let completion_handle = download.reader.handle();
+        tokio::spawn(async move {
+            completion_handle.wait_for_completion().await;
+            source_finished_for_waiter.store(true, Ordering::Release);
+            control_for_waiter.wake();
+        });
+
+        let completed_for_driver = Arc::clone(&download.completed);
+        let control_for_driver = Arc::clone(&control);
+        let drive_result = tokio::task::spawn_blocking(move || {
+            let mut reader = download.reader;
+            let mut version = 0;
+
+            loop {
+                if completed_for_driver.load(Ordering::Acquire) {
+                    break;
+                }
+                if source_finished.load(Ordering::Acquire) {
+                    return Err(std::io::Error::other(
+                        "song cache source ended before download completed",
+                    ));
+                }
+
+                let state = control_for_driver.wait_for_change(version);
+                version = state.version;
+                if state.cancelled {
+                    break;
+                }
+
+                let Some(target_byte) = playback_position_to_byte(
+                    content_length,
+                    duration_ms,
+                    state.playback_position_ms,
+                ) else {
+                    continue;
+                };
+
+                if let Err(err) = reader.seek(SeekFrom::Start(target_byte)) {
+                    if control_for_driver.is_cancelled() {
+                        break;
+                    }
+                    return Err(err);
+                }
+                if let Err(err) = reader.read(&mut []) {
+                    if control_for_driver.is_cancelled() {
+                        break;
+                    }
+                    return Err(err);
+                }
+            }
+
+            Ok::<(), std::io::Error>(())
+        })
+        .await?;
+
+        if let Err(err) = drive_result
+            && !control.is_cancelled()
+        {
+            return Err(err.into());
         }
+
+        download.tracker.persist()?;
 
         let raw = std::fs::read_to_string(metadata_path)?;
         let meta = serde_json::from_str::<SongStreamCacheMeta>(&raw)?;
@@ -938,9 +1105,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn background_song_cache_stops_at_max_predownload_size() {
+    async fn background_song_cache_advances_with_playback_without_exceeding_ahead_limit() {
         const MAX_PREDOWNLOAD_BYTES: u64 = 1024 * 1024;
         const CONTENT_LENGTH: usize = 3 * 1024 * 1024;
+        const PLAYBACK_ADVANCE_MS: u64 = 10_000;
+        const EXPECTED_ADVANCED_BYTES: u64 = MAX_PREDOWNLOAD_BYTES + 512 * 1024;
 
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
         let address = listener.local_addr().expect("test server address");
@@ -973,34 +1142,68 @@ mod tests {
         std::fs::create_dir_all(&test_root).expect("create test cache root");
         let cache_path = test_root.join("song.bin");
         let metadata_path = test_root.join("song.bin.meta.json");
-        let meta = SongStreamCacheMeta::new(1, "lossless", &format!("http://{address}/song"));
+        let song_url = format!("http://{address}/song");
+        let meta = SongStreamCacheMeta::new(1, "lossless", &song_url);
         std::fs::write(
             &metadata_path,
             serde_json::to_vec_pretty(&meta).expect("serialize test metadata"),
         )
         .expect("write test metadata");
 
-        let outcome = AudioPlayer::download_song_for_cache(
-            &format!("http://{address}/song"),
+        let control = Arc::new(SongCacheDownloadControl::new());
+        let download = AudioPlayer::download_song_for_cache(
+            &song_url,
             cache_path.to_str().expect("cache path"),
             metadata_path.to_str().expect("metadata path"),
             Some(60_000),
             Some(300),
             Some(MAX_PREDOWNLOAD_BYTES),
-        )
-        .await
-        .expect("predownload song cache");
+            Arc::clone(&control),
+        );
+
+        let observe_cache = async {
+            wait_for_cached_file_size(&cache_path, MAX_PREDOWNLOAD_BYTES).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert_eq!(
+                std::fs::metadata(&cache_path)
+                    .expect("paused cache metadata")
+                    .len(),
+                MAX_PREDOWNLOAD_BYTES,
+                "cache must stop advancing while playback position is unchanged"
+            );
+
+            control.update_playback_position(PLAYBACK_ADVANCE_MS);
+            wait_for_cached_file_size(&cache_path, EXPECTED_ADVANCED_BYTES).await;
+            assert_eq!(
+                std::fs::metadata(&cache_path)
+                    .expect("advanced cache metadata")
+                    .len(),
+                EXPECTED_ADVANCED_BYTES,
+                "cache should refill one ahead window after playback advances"
+            );
+            control.cancel();
+        };
+
+        let (outcome, ()) = tokio::join!(download, observe_cache);
+        let outcome = outcome.expect("cache song while following playback");
 
         assert!(!outcome.is_complete);
-        assert_eq!(outcome.downloaded_bytes, MAX_PREDOWNLOAD_BYTES);
-        assert_eq!(
-            std::fs::metadata(&cache_path)
-                .expect("cached file metadata")
-                .len(),
-            MAX_PREDOWNLOAD_BYTES
-        );
+        assert_eq!(outcome.downloaded_bytes, EXPECTED_ADVANCED_BYTES);
 
         server.join().expect("join test server");
         let _ = std::fs::remove_dir_all(test_root);
+    }
+
+    async fn wait_for_cached_file_size(path: &Path, expected_size: u64) {
+        for _ in 0..200 {
+            if std::fs::metadata(path)
+                .map(|metadata| metadata.len() >= expected_size)
+                .unwrap_or(false)
+            {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        panic!("cached file did not reach {expected_size} bytes in time");
     }
 }

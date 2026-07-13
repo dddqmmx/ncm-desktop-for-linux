@@ -1,6 +1,7 @@
 use crate::cache::song::SongStreamCacheMeta;
 use std::fs;
 use std::io;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use stream_download::{StreamPhase, StreamState};
@@ -54,6 +55,22 @@ impl SongCacheTracker {
     pub fn persist(&self) -> io::Result<()> {
         let mut state = self.inner.lock().unwrap();
         self.persist_locked(&mut state)
+    }
+
+    pub fn record_range(&self, range: Range<u64>) {
+        if let Err(err) = self.try_record_range(range) {
+            eprintln!("[cache] failed to record written song cache range: {err}");
+        }
+    }
+
+    fn try_record_range(&self, range: Range<u64>) -> io::Result<()> {
+        let mut state = self.inner.lock().unwrap();
+        state.meta.add_range(range);
+        let downloaded_bytes = state.meta.downloaded_bytes();
+        if downloaded_bytes.saturating_sub(state.last_persisted_bytes) >= Self::PERSIST_STEP_BYTES {
+            self.persist_locked(&mut state)?;
+        }
+        Ok(())
     }
 
     fn try_record_progress(

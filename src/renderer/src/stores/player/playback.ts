@@ -46,6 +46,7 @@ export const usePlaybackStore = defineStore('playback', () => {
   let lastPersistedCurrentTime = Math.floor(currentTime.value)
   let playToken = 0
   let activeCacheMetadataPath = ''
+  let lastCachePlaybackPositionMs = -1
   let loadingStartedAt = 0
   let loadingExpectedStartTime = 0
 
@@ -119,6 +120,35 @@ export const usePlaybackStore = defineStore('playback', () => {
       }
     } catch (error) {
       console.warn('读取歌曲预缓存进度失败:', error)
+    }
+  }
+
+  const syncSongCachePlaybackPosition = async (positionMs?: number): Promise<void> => {
+    if (configStore.audioEngine !== 'webapi' || !activeCacheMetadataPath) return
+    const normalizedPositionMs = Math.max(0, Math.round(positionMs ?? webAudioEngine.currentTimeMs))
+    if (normalizedPositionMs === lastCachePlaybackPositionMs) return
+
+    lastCachePlaybackPositionMs = normalizedPositionMs
+    try {
+      await window.api.update_song_cache_playback_position({
+        metadataPath: activeCacheMetadataPath,
+        playbackPositionMs: normalizedPositionMs
+      })
+    } catch (error) {
+      console.warn('更新歌曲缓存播放进度失败:', error)
+    }
+  }
+
+  const cancelActiveSongCacheDownload = async (): Promise<void> => {
+    const metadataPath = activeCacheMetadataPath
+    activeCacheMetadataPath = ''
+    lastCachePlaybackPositionMs = -1
+    if (!metadataPath) return
+
+    try {
+      await window.api.cancel_song_cache_download(metadataPath)
+    } catch (error) {
+      console.warn('停止歌曲后台缓存失败:', error)
     }
   }
 
@@ -271,9 +301,9 @@ export const usePlaybackStore = defineStore('playback', () => {
       }
       if (!progressTimer) {
         progressTimer = setInterval(() => {
-          void updateCacheProgress()
+          void Promise.all([updateCacheProgress(), syncSongCachePlaybackPosition()])
         }, CACHE_PROGRESS_POLL_INTERVAL_MS)
-        void updateCacheProgress()
+        void Promise.all([updateCacheProgress(), syncSongCachePlaybackPosition()])
       }
       return
     }
@@ -397,7 +427,9 @@ export const usePlaybackStore = defineStore('playback', () => {
     console.log(
       `[playback] preparePlaybackCache result: engine=${cache.engine}, type=${playbackSource.type}, value=${playbackSource.value}`
     )
+    await cancelActiveSongCacheDownload()
     activeCacheMetadataPath = cache.metadataPath
+    lastCachePlaybackPositionMs = -1
     bufferedPercent.value = cache.initialBufferedPercent
     await updateCacheProgress()
 
@@ -485,7 +517,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     isSwitching.value = true
     beginPlaybackLoadState(startTime)
     bufferedPercent.value = 0
-    activeCacheMetadataPath = ''
+    await cancelActiveSongCacheDownload()
 
     try {
       // 关掉 native 输出，避免两套引擎同时出声
@@ -550,6 +582,7 @@ export const usePlaybackStore = defineStore('playback', () => {
         isHistorySong.value = true
         resetPlaybackLoadState()
         stopTimer()
+        await cancelActiveSongCacheDownload()
       }
     } finally {
       if (currentToken === playToken) {
@@ -589,7 +622,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     isSwitching.value = true
     beginPlaybackLoadState(startTime)
     bufferedPercent.value = 0
-    activeCacheMetadataPath = ''
+    await cancelActiveSongCacheDownload()
 
     try {
       // 3. 继续播放逻辑：如果是同一首歌但处于暂停状态，且非历史回放，直接恢复播放
@@ -827,6 +860,7 @@ export const usePlaybackStore = defineStore('playback', () => {
       currentTime.value = clampedTime
       rawProgressMs.value = clampedTime
       isSeeking.value = false
+      void syncSongCachePlaybackPosition(clampedTime)
       return
     }
 
@@ -897,7 +931,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     lastSyncedProgressMs = 0
     lastSyncedAt = performance.now()
     ignoreDriftUntil = 0
-    activeCacheMetadataPath = ''
+    await cancelActiveSongCacheDownload()
     resetPlaybackLoadState()
     stopTimer()
   }
@@ -978,6 +1012,7 @@ export const usePlaybackStore = defineStore('playback', () => {
       if (newEngine === oldEngine) return
       if (!currentSongId.value || isSwitching.value) return
 
+      const songId = currentSongId.value
       const savedTime = currentTime.value
       stopTimer()
       webAudioEngine.stop()
@@ -986,7 +1021,10 @@ export const usePlaybackStore = defineStore('playback', () => {
       } catch {
         // ignore
       }
-      void playMusic(currentSongId.value, savedTime)
+      void (async () => {
+        await cancelActiveSongCacheDownload()
+        await playMusic(songId, savedTime)
+      })()
     }
   )
 
@@ -1000,7 +1038,10 @@ export const usePlaybackStore = defineStore('playback', () => {
       stopTimer()
       currentTime.value = duration.value
       bufferedPercent.value = 100
-      void playNext(true)
+      void (async () => {
+        await syncSongCachePlaybackPosition(duration.value)
+        await playNext(true)
+      })()
     },
     onBuffering: (buffering) => {
       if (isWebEngine.value) isBuffering.value = buffering
@@ -1016,6 +1057,7 @@ export const usePlaybackStore = defineStore('playback', () => {
       isHistorySong.value = true
       resetPlaybackLoadState()
       stopTimer()
+      void cancelActiveSongCacheDownload()
     }
   })
 

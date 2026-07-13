@@ -366,6 +366,25 @@ export const CacheService = {
     }
   },
 
+  async updateSongCachePlaybackPosition(payload: {
+    metadataPath: string
+    playbackPositionMs: number
+  }): Promise<boolean> {
+    const metadataPath = normalizeCachedPath(payload.metadataPath)
+    if (!metadataPath) return false
+
+    return getNativeCache().updateSongCachePlaybackPosition(
+      metadataPath,
+      Math.max(0, Math.round(payload.playbackPositionMs))
+    )
+  },
+
+  async cancelSongCacheDownload(metadataPath: string): Promise<boolean> {
+    const normalizedPath = normalizeCachedPath(metadataPath)
+    if (!normalizedPath) return false
+    return getNativeCache().cancelSongCacheDownload(normalizedPath)
+  },
+
   async getSongCacheProgress(metadataPath: string): Promise<SongCacheProgress> {
     const normalizedPath = normalizeCachedPath(metadataPath)
     if (!normalizedPath) {

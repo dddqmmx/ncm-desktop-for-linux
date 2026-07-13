@@ -101,6 +101,8 @@ export interface NativeCacheBinding {
     maxCacheAheadBytes?: number
     max_cache_ahead_bytes?: number
   }>
+  updateSongCachePlaybackPosition(metadataPath: string, playbackPositionMs: number): boolean
+  cancelSongCacheDownload(metadataPath: string): Promise<boolean>
   getSongCacheProgress(metadataPath: string): Promise<NativeSongCacheProgress>
 }
 

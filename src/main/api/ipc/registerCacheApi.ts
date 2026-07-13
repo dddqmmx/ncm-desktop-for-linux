@@ -31,6 +31,15 @@ export function registerCacheApi(): void {
     expectedBytes?: number
     durationMs?: number
   }>('cache:cacheSongSource', (payload) => CacheService.cacheSongSource(payload))
+  handleWithArg<{
+    metadataPath: string
+    playbackPositionMs: number
+  }>('cache:updateSongPlaybackPosition', (payload) =>
+    CacheService.updateSongCachePlaybackPosition(payload)
+  )
+  handleWithArg<string>('cache:cancelSongDownload', (metadataPath) =>
+    CacheService.cancelSongCacheDownload(metadataPath)
+  )
   handleWithArg<string>('cache:getSongCacheProgress', (v) => CacheService.getSongCacheProgress(v))
 
   console.log('Cache API registered successfully.')

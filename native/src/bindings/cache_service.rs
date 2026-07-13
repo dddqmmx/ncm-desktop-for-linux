@@ -4,8 +4,10 @@ use std::sync::Arc;
 use napi::{Error, Result};
 use napi_derive::napi;
 
-use crate::cache::{CacheBucket, CacheStats, CachedSongSource, NativeCacheService, SongCacheProgress};
 use crate::cache::error::CacheResult;
+use crate::cache::{
+    CacheBucket, CacheStats, CachedSongSource, NativeCacheService, SongCacheProgress,
+};
 use crate::runtime::native_runtime;
 
 async fn run_blocking<T, F>(service: Arc<NativeCacheService>, f: F) -> Result<T>
@@ -68,7 +70,10 @@ impl CacheService {
     #[napi]
     pub async fn set_max_size_bytes(&self, max_size_bytes: i64) -> Result<CacheStats> {
         let service = Arc::clone(&self.service);
-        run_blocking(service, move |s| s.set_max_size_bytes(max_size_bytes.max(0) as u64)).await
+        run_blocking(service, move |s| {
+            s.set_max_size_bytes(max_size_bytes.max(0) as u64)
+        })
+        .await
     }
 
     #[napi]
@@ -174,7 +179,30 @@ impl CacheService {
     }
 
     #[napi]
-    pub async fn get_song_cache_progress(&self, metadata_path: String) -> Result<SongCacheProgress> {
+    pub fn update_song_cache_playback_position(
+        &self,
+        metadata_path: String,
+        playback_position_ms: i64,
+    ) -> Result<bool> {
+        self.service
+            .update_song_cache_playback_position(&metadata_path, playback_position_ms.max(0) as u64)
+            .map_err(|err| Error::from_reason(err.to_string()))
+    }
+
+    #[napi]
+    pub async fn cancel_song_cache_download(&self, metadata_path: String) -> Result<bool> {
+        let service = Arc::clone(&self.service);
+        run_blocking(service, move |service| {
+            service.cancel_song_cache_download(&metadata_path)
+        })
+        .await
+    }
+
+    #[napi]
+    pub async fn get_song_cache_progress(
+        &self,
+        metadata_path: String,
+    ) -> Result<SongCacheProgress> {
         self.service
             .get_song_cache_progress(&metadata_path)
             .map_err(|err| Error::from_reason(err.to_string()))

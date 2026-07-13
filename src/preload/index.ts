@@ -69,6 +69,8 @@ const api = {
   resolve_cached_media_url: invoke('cache:resolveCachedMediaUrl'),
   prepare_cached_song_source: invokeArgs('cache:prepareSongSource'),
   cache_song_source: invokeArgs('cache:cacheSongSource'), // { songId, quality, url, expectedBytes?, durationMs? }
+  update_song_cache_playback_position: invokeArgs('cache:updateSongPlaybackPosition'),
+  cancel_song_cache_download: invoke('cache:cancelSongDownload'),
   get_cached_song_progress: invoke('cache:getSongCacheProgress'),
 
   //ui相关工具方法

@@ -1,5 +1,6 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex};
 use stream_download::storage::StorageProvider;
@@ -37,10 +38,13 @@ impl<R: Read + Seek + Send + Sync> MediaSource for SeekableSource<R> {
     }
 }
 
-#[derive(Clone, Debug)]
+type WriteProgressCallback = Arc<dyn Fn(Range<u64>) + Send + Sync>;
+
+#[derive(Clone)]
 pub struct PersistentFileStorageProvider {
     pub(crate) path: PathBuf,
     pub(crate) max_write_ahead_bytes: Option<u64>,
+    on_write: Option<WriteProgressCallback>,
 }
 
 impl PersistentFileStorageProvider {
@@ -48,11 +52,20 @@ impl PersistentFileStorageProvider {
         Self {
             path: path.into(),
             max_write_ahead_bytes: None,
+            on_write: None,
         }
     }
 
     pub fn max_write_ahead_bytes(mut self, max_write_ahead_bytes: Option<u64>) -> Self {
         self.max_write_ahead_bytes = max_write_ahead_bytes;
+        self
+    }
+
+    pub fn on_write<F>(mut self, on_write: F) -> Self
+    where
+        F: Fn(Range<u64>) + Send + Sync + 'static,
+    {
+        self.on_write = Some(Arc::new(on_write));
         self
     }
 }
@@ -98,6 +111,7 @@ impl StorageProvider for PersistentFileStorageProvider {
                     inner: writer,
                     shared,
                     max_write_ahead_bytes: self.max_write_ahead_bytes,
+                    on_write: self.on_write,
                 },
             )
         })
@@ -148,6 +162,7 @@ pub struct ThrottledStorageWriter {
     inner: File,
     shared: Arc<(Mutex<StorageReadState>, Condvar)>,
     max_write_ahead_bytes: Option<u64>,
+    on_write: Option<WriteProgressCallback>,
 }
 
 impl ThrottledStorageWriter {
@@ -175,14 +190,24 @@ impl ThrottledStorageWriter {
             condvar.notify_all();
         }
     }
+
+    fn record_write(&self, start: u64, end: u64) {
+        if end > start
+            && let Some(on_write) = self.on_write.as_ref()
+        {
+            on_write(start..end);
+        }
+    }
 }
 
 impl Write for ThrottledStorageWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let Some(max_write_ahead_bytes) = self.max_write_ahead_bytes else {
+            let start = self.inner.stream_position()?;
             let written = self.inner.write(buf)?;
             let position = self.inner.stream_position()?;
             self.update_position(position);
+            self.record_write(start, position);
             return Ok(written);
         };
 
@@ -197,6 +222,7 @@ impl Write for ThrottledStorageWriter {
         let written = self.inner.write(&buf[..buf.len().min(remaining)])?;
         let position = self.inner.stream_position()?;
         self.update_position(position);
+        self.record_write(writer_position, position);
         Ok(written)
     }
 
