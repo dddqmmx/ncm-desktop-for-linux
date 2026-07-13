@@ -17,7 +17,6 @@ export interface PersistedSettings {
   accentColor: string
   libPaths: string[]
   cacheLimitMb: number
-  songCacheAheadSecs: number
   songMaxCacheAheadMb: number
   lyricDebug: boolean
 }
@@ -29,9 +28,6 @@ export const DEFAULT_OUTPUT_DEVICE_NAME = '系统默认输出'
 export const DEFAULT_CACHE_LIMIT_MB = 512
 export const MIN_CACHE_LIMIT_MB = 128
 export const MAX_CACHE_LIMIT_MB = 8192
-export const DEFAULT_SONG_CACHE_AHEAD_SECS = 30
-export const MIN_SONG_CACHE_AHEAD_SECS = 10
-export const MAX_SONG_CACHE_AHEAD_SECS = 300
 export const DEFAULT_SONG_MAX_CACHE_AHEAD_MB = 16
 export const MIN_SONG_MAX_CACHE_AHEAD_MB = 1
 export const MAX_SONG_MAX_CACHE_AHEAD_MB = 128
@@ -62,7 +58,6 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
   accentColor: '#6366f1',
   libPaths: [],
   cacheLimitMb: DEFAULT_CACHE_LIMIT_MB,
-  songCacheAheadSecs: DEFAULT_SONG_CACHE_AHEAD_SECS,
   songMaxCacheAheadMb: DEFAULT_SONG_MAX_CACHE_AHEAD_MB,
   lyricDebug: false
 }

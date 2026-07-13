@@ -51,6 +51,11 @@ impl SongCacheTracker {
         }
     }
 
+    pub fn persist(&self) -> io::Result<()> {
+        let mut state = self.inner.lock().unwrap();
+        self.persist_locked(&mut state)
+    }
+
     fn try_record_progress(
         &self,
         progress: StreamState,

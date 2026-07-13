@@ -32,7 +32,6 @@ export const useConfigStore = defineStore('config', () => {
     accentColor: appearance.accentColor,
     libPaths: [...cache.libPaths],
     cacheLimitMb: cache.cacheLimitMb,
-    songCacheAheadSecs: cache.songCacheAheadSecs,
     songMaxCacheAheadMb: cache.songMaxCacheAheadMb,
     lyricDebug: debug.lyricDebug
   })
@@ -61,7 +60,6 @@ export const useConfigStore = defineStore('config', () => {
     appearance.accentColor = settings.accentColor
     cache.libPaths = [...settings.libPaths]
     cache.cacheLimitMb = settings.cacheLimitMb
-    cache.songCacheAheadSecs = settings.songCacheAheadSecs
     cache.songMaxCacheAheadMb = settings.songMaxCacheAheadMb
     debug.lyricDebug = settings.lyricDebug
   }
@@ -86,7 +84,6 @@ export const useConfigStore = defineStore('config', () => {
       () => appearance.accentColor,
       () => cache.libPaths,
       () => cache.cacheLimitMb,
-      () => cache.songCacheAheadSecs,
       () => cache.songMaxCacheAheadMb,
       () => debug.lyricDebug
     ],
@@ -222,10 +219,6 @@ export const useConfigStore = defineStore('config', () => {
       get: () => cache.cacheLimitMb,
       set: (val) => (cache.cacheLimitMb = val)
     }),
-    songCacheAheadSecs: computed({
-      get: () => cache.songCacheAheadSecs,
-      set: (val) => (cache.songCacheAheadSecs = val)
-    }),
     songMaxCacheAheadMb: computed({
       get: () => cache.songMaxCacheAheadMb,
       set: (val) => (cache.songMaxCacheAheadMb = val)
@@ -234,7 +227,6 @@ export const useConfigStore = defineStore('config', () => {
     cacheStats: computed(() => cache.cacheStats),
     isLoadingCacheStats: computed(() => cache.isLoadingCacheStats),
     isUpdatingCacheLimit: computed(() => cache.isUpdatingCacheLimit),
-    isUpdatingSongCacheAheadSecs: computed(() => cache.isUpdatingSongCacheAheadSecs),
     isUpdatingSongMaxCacheAheadBytes: computed(() => cache.isUpdatingSongMaxCacheAheadBytes),
     isClearingCache: computed(() => cache.isClearingCache),
     cacheError: computed(() => cache.cacheError),
@@ -253,7 +245,6 @@ export const useConfigStore = defineStore('config', () => {
     setSoundQuality: (quality: SoundQualityType) => (audio.soundQuality = quality),
     setOutputDevice: (deviceId: string) => audio.applyOutputDevice(deviceId, true),
     setCacheLimit: cache.setCacheLimit,
-    setSongCacheAheadTime: cache.setSongCacheAheadTime,
     setSongMaxCacheAheadSize: cache.setSongMaxCacheAheadSize,
     clearCache: cache.clearCache,
     addLibraryPath: cache.addLibraryPath,

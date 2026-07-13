@@ -212,17 +212,6 @@ export const CacheService = {
     return normalizeCacheStats(await getNativeCache().setMaxSizeBytes(Math.max(0, maxSizeBytes)))
   },
 
-  async getSongCacheAheadSecs(): Promise<number> {
-    return Math.max(5, Number(await getNativeCache().getSongCacheAheadSecs()) || 30)
-  },
-
-  async setSongCacheAheadSecs(songCacheAheadSecs: number): Promise<number> {
-    return Math.max(
-      5,
-      Number(await getNativeCache().setSongCacheAheadSecs(Math.max(5, songCacheAheadSecs))) || 30
-    )
-  },
-
   async getSongMaxCacheAheadBytes(): Promise<number> {
     return Math.max(
       1024 * 1024,

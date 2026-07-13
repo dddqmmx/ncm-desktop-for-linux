@@ -15,8 +15,6 @@ import {
   DEFAULT_OUTPUT_DEVICE_NAME,
   MAX_CACHE_LIMIT_MB,
   MIN_CACHE_LIMIT_MB,
-  MAX_SONG_CACHE_AHEAD_SECS,
-  MIN_SONG_CACHE_AHEAD_SECS,
   MAX_SONG_MAX_CACHE_AHEAD_MB,
   MIN_SONG_MAX_CACHE_AHEAD_MB
 } from './types'
@@ -76,14 +74,6 @@ export function normalizeCacheLimitMb(value: unknown): number {
   }
 
   return Math.min(MAX_CACHE_LIMIT_MB, Math.max(MIN_CACHE_LIMIT_MB, Math.round(value)))
-}
-
-export function normalizeSongCacheAheadSecs(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return DEFAULT_SETTINGS.songCacheAheadSecs
-  }
-
-  return Math.min(MAX_SONG_CACHE_AHEAD_SECS, Math.max(MIN_SONG_CACHE_AHEAD_SECS, Math.round(value)))
 }
 
 export function normalizeSongMaxCacheAheadMb(value: unknown): number {
@@ -146,7 +136,6 @@ export function loadSettings(): PersistedSettings {
           : fallbackSettings.accentColor,
       libPaths: normalizeLibraryPaths(parsed.libPaths),
       cacheLimitMb: normalizeCacheLimitMb(parsed.cacheLimitMb),
-      songCacheAheadSecs: normalizeSongCacheAheadSecs(parsed.songCacheAheadSecs),
       songMaxCacheAheadMb: normalizeSongMaxCacheAheadMb(parsed.songMaxCacheAheadMb),
       lyricDebug:
         typeof parsed.lyricDebug === 'boolean' ? parsed.lyricDebug : fallbackSettings.lyricDebug

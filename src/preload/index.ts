@@ -63,8 +63,6 @@ const api = {
   // --- Native Cache API ---
   cache_get_stats: invoke('cache:getStats'),
   cache_set_max_size: invoke('cache:setMaxSizeBytes'),
-  cache_get_song_cache_ahead_secs: invoke('cache:getSongCacheAheadSecs'),
-  cache_set_song_cache_ahead_secs: invoke('cache:setSongCacheAheadSecs'),
   cache_get_song_max_cache_ahead_bytes: invoke('cache:getSongMaxCacheAheadBytes'),
   cache_set_song_max_cache_ahead_bytes: invoke('cache:setSongMaxCacheAheadBytes'),
   cache_clear: invoke('cache:clear'),

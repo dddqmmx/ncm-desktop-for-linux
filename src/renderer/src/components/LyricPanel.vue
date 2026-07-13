@@ -108,7 +108,11 @@ const fetchLyrics = async (id: number): Promise<void> => {
   } finally {
     if (requestId === lyricRequestId) {
       loading.value = false
-      scrollActiveLyricToCenter('auto')
+      nextTick(() => {
+        requestAnimationFrame(() => {
+          scrollActiveLyricToCenter('auto')
+        })
+      })
     }
   }
 }

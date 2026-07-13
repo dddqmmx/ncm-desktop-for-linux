@@ -54,8 +54,6 @@ interface CustomApi {
   song_url_and_wait: (url: string, startSecs?: number) => Promise<unknown>
   cache_get_stats: () => Promise<CacheStats>
   cache_set_max_size: (maxSizeBytes: number) => Promise<CacheStats>
-  cache_get_song_cache_ahead_secs: () => Promise<number>
-  cache_set_song_cache_ahead_secs: (songCacheAheadSecs: number) => Promise<number>
   cache_get_song_max_cache_ahead_bytes: () => Promise<number>
   cache_set_song_max_cache_ahead_bytes: (songMaxCacheAheadBytes: number) => Promise<number>
   cache_clear: () => Promise<CacheStats>

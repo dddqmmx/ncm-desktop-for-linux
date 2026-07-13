@@ -393,7 +393,7 @@ impl NativeCacheService {
                 song_id, quality_for_task
             );
 
-            if let Err(err) = AudioPlayer::download_song_for_cache(
+            let download_outcome = match AudioPlayer::download_song_for_cache(
                 &url_for_task,
                 &cache_path_for_task,
                 &metadata_path,
@@ -403,41 +403,54 @@ impl NativeCacheService {
             )
             .await
             {
-                eprintln!("[cache] 后台下载失败: song_id={} err={}", song_id, err);
-                if let Err(cleanup_err) =
-                    self_arc.remove_song_cache_entry(song_id, &quality_for_task)
-                {
+                Ok(outcome) => outcome,
+                Err(err) => {
+                    eprintln!("[cache] 后台下载失败: song_id={} err={}", song_id, err);
+                    if let Err(cleanup_err) =
+                        self_arc.remove_song_cache_entry(song_id, &quality_for_task)
+                    {
+                        eprintln!(
+                            "[cache] 清理失败缓存条目失败: song_id={} err={}",
+                            song_id, cleanup_err
+                        );
+                    }
+                    return;
+                }
+            };
+
+            if !download_outcome.is_complete {
+                if let Err(err) = self_arc.mark_song_cache_partial(
+                    song_id,
+                    &quality_for_task,
+                    &cache_path_for_task,
+                    download_outcome.downloaded_bytes,
+                    &url_for_task,
+                ) {
                     eprintln!(
-                        "[cache] 清理失败缓存条目失败: song_id={} err={}",
-                        song_id, cleanup_err
+                        "[cache] 记录歌曲预下载失败: song_id={} err={}",
+                        song_id, err
+                    );
+                } else {
+                    println!(
+                        "[cache] 歌曲预下载完成: song_id={} quality={} size={}",
+                        song_id, quality_for_task, download_outcome.downloaded_bytes
                     );
                 }
                 return;
             }
 
-            let file_size = match std::fs::metadata(&cache_path_for_task) {
-                Ok(metadata) => metadata.len(),
-                Err(err) => {
-                    eprintln!(
-                        "[cache] 获取缓存文件大小失败: song_id={} err={}",
-                        song_id, err
-                    );
-                    return;
-                }
-            };
-
             if let Err(err) = self_arc.mark_song_cache_complete(
                 song_id,
                 &quality_for_task,
                 &cache_path_for_task,
-                file_size,
+                download_outcome.downloaded_bytes,
                 &url_for_task,
             ) {
                 eprintln!("[cache] 标记缓存完成失败: song_id={} err={}", song_id, err);
             } else {
                 println!(
                     "[cache] 后台下载完成: song_id={} quality={} size={}",
-                    song_id, quality_for_task, file_size
+                    song_id, quality_for_task, download_outcome.downloaded_bytes
                 );
             }
         });
@@ -477,6 +490,47 @@ impl NativeCacheService {
         })?;
         state.catalog.persist()?;
         Ok(())
+    }
+
+    fn mark_song_cache_partial(
+        &self,
+        song_id: i64,
+        normalized_quality: &str,
+        cache_path: &str,
+        downloaded_bytes: u64,
+        url: &str,
+    ) -> CacheResult<()> {
+        let cache_key = song_stream_key(song_id, normalized_quality);
+        let cache_path_buf = PathBuf::from(cache_path);
+        let relative_path = self
+            .files
+            .relative_path(&cache_path_buf)
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| cache_path.to_string());
+        let content_length = self
+            .files
+            .read_song_meta(&relative_path)?
+            .and_then(|meta| meta.content_length);
+
+        {
+            let mut state = self.lock_state()?;
+            state.catalog.upsert(CacheEntryUpsert {
+                bucket: CacheBucket::Song,
+                key: &cache_key,
+                relative_path,
+                size_bytes: downloaded_bytes,
+                source_url: Some(url.to_string()),
+                mime_type: None,
+                song_id: Some(song_id),
+                quality: Some(normalized_quality.to_string()),
+                content_length,
+                is_complete: false,
+                ttl_secs: None,
+            })?;
+            state.catalog.persist()?;
+        }
+
+        self.enforce_limit()
     }
 
     fn remove_song_cache_entry(&self, song_id: i64, normalized_quality: &str) -> CacheResult<()> {

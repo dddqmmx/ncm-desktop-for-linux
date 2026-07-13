@@ -12,8 +12,6 @@ function handleWithArg<T>(channel: string, fn: (arg: T) => Promise<unknown>): vo
 export function registerCacheApi(): void {
   handle('cache:getStats', () => CacheService.getStats())
   handleWithArg<number>('cache:setMaxSizeBytes', (v) => CacheService.setMaxSizeBytes(v))
-  handle('cache:getSongCacheAheadSecs', () => CacheService.getSongCacheAheadSecs())
-  handleWithArg<number>('cache:setSongCacheAheadSecs', (v) => CacheService.setSongCacheAheadSecs(v))
   handle('cache:getSongMaxCacheAheadBytes', () => CacheService.getSongMaxCacheAheadBytes())
   handleWithArg<number>('cache:setSongMaxCacheAheadBytes', (v) =>
     CacheService.setSongMaxCacheAheadBytes(v)

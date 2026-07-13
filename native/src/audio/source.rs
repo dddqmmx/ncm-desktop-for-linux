@@ -2,7 +2,6 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::{Duration, Instant};
 use stream_download::storage::StorageProvider;
 use symphonia::core::io::MediaSource;
 
@@ -85,7 +84,6 @@ impl StorageProvider for PersistentFileStorageProvider {
                 reader_position: 0,
                 writer_position,
                 throttle_anchor_position: 0,
-                content_length: _content_length,
             }),
             Condvar::new(),
         ));
@@ -111,7 +109,6 @@ struct StorageReadState {
     reader_position: u64,
     writer_position: u64,
     throttle_anchor_position: u64,
-    content_length: Option<u64>,
 }
 
 pub struct ThrottledStorageReader {
@@ -132,42 +129,10 @@ impl ThrottledStorageReader {
 
 impl Read for ThrottledStorageReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut eof_wait_started: Option<Instant> = None;
-
-        loop {
-            let read = self.inner.read(buf)?;
-            let position = self.inner.stream_position()?;
-            self.update_position(position);
-
-            if read > 0 {
-                return Ok(read);
-            }
-
-            let (lock, condvar) = &*self.shared;
-            let state = lock.lock().unwrap();
-            let is_complete = state
-                .content_length
-                .map_or(false, |content_length| position >= content_length);
-            if is_complete {
-                return Ok(0);
-            }
-
-            if state.writer_position > position {
-                drop(state);
-                continue;
-            }
-
-            if state.content_length.is_none() {
-                let started = eof_wait_started.get_or_insert_with(Instant::now);
-                if started.elapsed() >= Duration::from_secs(5) {
-                    return Ok(0);
-                }
-            }
-
-            let _ = condvar
-                .wait_timeout(state, Duration::from_millis(50))
-                .unwrap();
-        }
+        let read = self.inner.read(buf)?;
+        let position = self.inner.stream_position()?;
+        self.update_position(position);
+        Ok(read)
     }
 }
 
@@ -224,7 +189,6 @@ impl Write for ThrottledStorageWriter {
         let writer_position = self.inner.stream_position()?;
         let read_position = self.read_position();
         let allowed_until = read_position.saturating_add(max_write_ahead_bytes);
-
         if writer_position >= allowed_until {
             return Ok(0);
         }
@@ -244,7 +208,11 @@ impl Write for ThrottledStorageWriter {
 impl Seek for ThrottledStorageWriter {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let position = self.inner.seek(pos)?;
-        self.update_seek_position(position);
+        if matches!(pos, SeekFrom::Current(0)) {
+            self.update_position(position);
+        } else {
+            self.update_seek_position(position);
+        }
         Ok(position)
     }
 }
@@ -280,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn persistent_file_reader_waits_for_more_cached_bytes_before_eof() {
+    fn persistent_file_reader_returns_at_cache_eof_and_can_read_later_bytes() {
         let path = std::env::temp_dir().join(format!(
             "stream-cache-wait-{}-{}.bin",
             std::process::id(),
@@ -297,17 +265,15 @@ mod tests {
         reader.read_exact(&mut first).unwrap();
         assert_eq!(&first, b"abc");
 
-        let reader_thread = thread::spawn(move || {
-            let mut second = [0u8; 3];
-            reader.read_exact(&mut second).unwrap();
-            second
-        });
+        let mut at_eof = [0u8; 3];
+        assert_eq!(reader.read(&mut at_eof).unwrap(), 0);
 
-        thread::sleep(Duration::from_millis(100));
         writer.write_all(b"def").unwrap();
         writer.flush().unwrap();
 
-        assert_eq!(&reader_thread.join().unwrap(), b"def");
+        let mut second = [0u8; 3];
+        reader.read_exact(&mut second).unwrap();
+        assert_eq!(&second, b"def");
         let _ = std::fs::remove_file(path);
     }
 
@@ -359,11 +325,31 @@ mod tests {
             let _ = tx.send(result);
         });
 
-        let result = rx.recv_timeout(Duration::from_millis(300)).expect(
-            "prefetch writes must return Ok(0) at the write-ahead limit instead of waiting for a reader that does not exist yet",
-        );
+        let result = rx
+            .recv_timeout(Duration::from_millis(300))
+            .expect("prefetch writes must return instead of waiting for a reader");
         assert_eq!(result.unwrap(), 0);
         writer_thread.join().unwrap();
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn querying_writer_position_does_not_advance_write_ahead_limit() {
+        let path = std::env::temp_dir().join(format!(
+            "stream-cache-position-throttle-{}-{}-{}.bin",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test"),
+            crate::cache::types::now_unix_secs()
+        ));
+        let (_reader, mut writer) = PersistentFileStorageProvider::new(&path)
+            .max_write_ahead_bytes(Some(4))
+            .into_reader_writer(Some(256))
+            .unwrap();
+
+        assert_eq!(writer.write(b"abcd").unwrap(), 4);
+        assert_eq!(writer.stream_position().unwrap(), 4);
+        assert_eq!(writer.write(b"efgh").unwrap(), 0);
 
         let _ = std::fs::remove_file(path);
     }

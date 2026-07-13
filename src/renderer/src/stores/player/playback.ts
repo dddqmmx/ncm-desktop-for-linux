@@ -695,7 +695,7 @@ export const usePlaybackStore = defineStore('playback', () => {
             playbackSource.cachePath,
             playbackSource.metadataPath,
             song.dt,
-            playbackSource.cacheAheadSecs ?? configStore.songCacheAheadSecs,
+            playbackSource.cacheAheadSecs ?? 30,
             playbackSource.maxCacheAheadBytes ?? configStore.songMaxCacheAheadBytes,
             startTimeInSeconds,
             configStore.strictBitPerfect

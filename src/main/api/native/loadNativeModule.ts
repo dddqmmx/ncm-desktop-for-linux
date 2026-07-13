@@ -62,8 +62,6 @@ export interface NativeCacheBinding {
   getJson(bucket: string, key: string): Promise<string | null | undefined>
   putJson(bucket: string, key: string, value: string): Promise<NativeCacheStats>
   setMaxSizeBytes(maxSizeBytes: number): Promise<NativeCacheStats>
-  getSongCacheAheadSecs(): Promise<number>
-  setSongCacheAheadSecs(songCacheAheadSecs: number): Promise<number>
   getSongMaxCacheAheadBytes(): Promise<number>
   setSongMaxCacheAheadBytes(songMaxCacheAheadBytes: number): Promise<number>
   clear(): Promise<NativeCacheStats>

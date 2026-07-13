@@ -9,27 +9,20 @@ const {
   cacheStats,
   isLoadingCacheStats,
   isUpdatingCacheLimit,
-  isUpdatingSongCacheAheadSecs,
   isUpdatingSongMaxCacheAheadBytes,
   isClearingCache,
   cacheError,
   cacheLimitMb,
-  songCacheAheadSecs,
   songMaxCacheAheadMb
 } = storeToRefs(configStore)
 
 const message = ref('')
 const messageType = ref<'success' | 'error'>('success')
 const cacheLimitDraft = ref(cacheLimitMb.value)
-const songCacheAheadDraft = ref(songCacheAheadSecs.value)
 const songMaxCacheAheadDraft = ref(songMaxCacheAheadMb.value)
 
 watch(cacheLimitMb, (value) => {
   cacheLimitDraft.value = value
-})
-
-watch(songCacheAheadSecs, (value) => {
-  songCacheAheadDraft.value = value
 })
 
 watch(songMaxCacheAheadMb, (value) => {
@@ -40,11 +33,6 @@ watch(songMaxCacheAheadMb, (value) => {
 const cacheLimitPercent = computed(() => {
   const val = Number(cacheLimitDraft.value) || 128
   return Math.max(0, Math.min(100, ((val - 128) / (8192 - 128)) * 100))
-})
-
-const songCacheAheadPercent = computed(() => {
-  const val = Number(songCacheAheadDraft.value) || 10
-  return Math.max(0, Math.min(100, ((val - 10) / (300 - 10)) * 100))
 })
 
 const songMaxCacheAheadPercent = computed(() => {
@@ -104,12 +92,6 @@ const applyCacheLimit = async (): Promise<void> => {
   const applied = await configStore.setCacheLimit(cacheLimitDraft.value)
   messageType.value = applied ? 'success' : 'error'
   message.value = applied ? '缓存上限已更新。' : '缓存上限更新失败。'
-}
-
-const applySongCacheAhead = async (): Promise<void> => {
-  const applied = await configStore.setSongCacheAheadTime(songCacheAheadDraft.value)
-  messageType.value = applied ? 'success' : 'error'
-  message.value = applied ? '歌曲预缓存时长已更新。' : '歌曲预缓存时长更新失败。'
 }
 
 const applySongMaxCacheAhead = async (): Promise<void> => {
@@ -186,48 +168,6 @@ const clearCache = async (): Promise<void> => {
               @click="applyCacheLimit"
             >
               {{ isUpdatingCacheLimit ? '应用中...' : '应用' }}
-            </button>
-          </div>
-        </div>
-
-        <div class="cache-limit-row">
-          <label class="cache-limit-label" for="song-cache-ahead-range">歌曲预缓存时长</label>
-          <div class="cache-limit-controls">
-            <!-- === 修改为 DIV 模拟视觉 + input 隐藏交互 === -->
-            <div class="custom-slider-wrapper">
-              <div class="custom-slider-track">
-                <div
-                  class="custom-slider-fill"
-                  :style="{ width: songCacheAheadPercent + '%' }"
-                ></div>
-              </div>
-              <input
-                id="song-cache-ahead-range"
-                v-model.number="songCacheAheadDraft"
-                class="custom-slider-input"
-                type="range"
-                min="10"
-                max="300"
-                step="10"
-              />
-            </div>
-            <!-- ======================================= -->
-
-            <input
-              v-model.number="songCacheAheadDraft"
-              class="cache-number-input"
-              type="number"
-              min="10"
-              max="300"
-              step="10"
-            />
-            <span class="cache-unit">秒</span>
-            <button
-              class="settings-action-btn"
-              :disabled="isUpdatingSongCacheAheadSecs || isLoadingCacheStats"
-              @click="applySongCacheAhead"
-            >
-              {{ isUpdatingSongCacheAheadSecs ? '应用中...' : '应用' }}
             </button>
           </div>
         </div>
