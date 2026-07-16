@@ -3,6 +3,7 @@ use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
 use stream_download::storage::StorageProvider;
 use symphonia::core::io::MediaSource;
 
@@ -76,7 +77,7 @@ impl StorageProvider for PersistentFileStorageProvider {
 
     fn into_reader_writer(
         self,
-        _content_length: Option<u64>,
+        content_length: Option<u64>,
     ) -> io::Result<(Self::Reader, Self::Writer)> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
@@ -97,6 +98,8 @@ impl StorageProvider for PersistentFileStorageProvider {
                 reader_position: 0,
                 writer_position,
                 throttle_anchor_position: 0,
+                content_length,
+                writer_closed: false,
             }),
             Condvar::new(),
         ));
@@ -123,6 +126,8 @@ struct StorageReadState {
     reader_position: u64,
     writer_position: u64,
     throttle_anchor_position: u64,
+    content_length: Option<u64>,
+    writer_closed: bool,
 }
 
 pub struct ThrottledStorageReader {
@@ -143,10 +148,41 @@ impl ThrottledStorageReader {
 
 impl Read for ThrottledStorageReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let read = self.inner.read(buf)?;
-        let position = self.inner.stream_position()?;
-        self.update_position(position);
-        Ok(read)
+        if buf.is_empty() {
+            let read = self.inner.read(buf)?;
+            let position = self.inner.stream_position()?;
+            self.update_position(position);
+            return Ok(read);
+        }
+
+        loop {
+            let read = self.inner.read(buf)?;
+            let position = self.inner.stream_position()?;
+            self.update_position(position);
+            if read > 0 {
+                return Ok(read);
+            }
+
+            let (lock, condvar) = &*self.shared;
+            let state = lock.lock().unwrap();
+            if state
+                .content_length
+                .is_some_and(|length| position >= length)
+            {
+                return Ok(0);
+            }
+            if state.writer_closed {
+                return Ok(0);
+            }
+            if state.writer_position > position {
+                drop(state);
+                continue;
+            }
+
+            let _ = condvar
+                .wait_timeout(state, Duration::from_millis(50))
+                .unwrap();
+        }
     }
 }
 
@@ -243,6 +279,16 @@ impl Seek for ThrottledStorageWriter {
     }
 }
 
+impl Drop for ThrottledStorageWriter {
+    fn drop(&mut self) {
+        let (lock, condvar) = &*self.shared;
+        if let Ok(mut state) = lock.lock() {
+            state.writer_closed = true;
+            condvar.notify_all();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn persistent_file_reader_returns_at_cache_eof_and_can_read_later_bytes() {
+    fn persistent_file_reader_waits_for_more_cached_bytes_before_eof() {
         let path = std::env::temp_dir().join(format!(
             "stream-cache-wait-{}-{}.bin",
             std::process::id(),
@@ -291,15 +337,66 @@ mod tests {
         reader.read_exact(&mut first).unwrap();
         assert_eq!(&first, b"abc");
 
-        let mut at_eof = [0u8; 3];
-        assert_eq!(reader.read(&mut at_eof).unwrap(), 0);
+        let reader_thread = thread::spawn(move || {
+            let mut second = [0u8; 3];
+            reader.read_exact(&mut second).unwrap();
+            second
+        });
 
+        thread::sleep(Duration::from_millis(100));
         writer.write_all(b"def").unwrap();
         writer.flush().unwrap();
 
-        let mut second = [0u8; 3];
-        reader.read_exact(&mut second).unwrap();
-        assert_eq!(&second, b"def");
+        assert_eq!(&reader_thread.join().unwrap(), b"def");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn persistent_file_reader_returns_eof_when_download_ends_early() {
+        let path = std::env::temp_dir().join(format!(
+            "stream-cache-early-eof-{}-{}.bin",
+            std::process::id(),
+            crate::cache::types::now_unix_secs()
+        ));
+        let (mut reader, mut writer) = PersistentFileStorageProvider::new(&path)
+            .into_reader_writer(Some(6))
+            .unwrap();
+
+        writer.write_all(b"abc").unwrap();
+        writer.flush().unwrap();
+
+        let reader_thread = thread::spawn(move || {
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).unwrap();
+            bytes
+        });
+
+        thread::sleep(Duration::from_millis(100));
+        drop(writer);
+
+        assert_eq!(reader_thread.join().unwrap(), b"abc");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn persistent_file_reader_returns_eof_for_unknown_length_after_writer_closes() {
+        let path = std::env::temp_dir().join(format!(
+            "stream-cache-unknown-length-{}-{}.bin",
+            std::process::id(),
+            crate::cache::types::now_unix_secs()
+        ));
+        let (mut reader, mut writer) = PersistentFileStorageProvider::new(&path)
+            .into_reader_writer(None)
+            .unwrap();
+
+        writer.write_all(b"abc").unwrap();
+        writer.flush().unwrap();
+        drop(writer);
+
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).unwrap();
+
+        assert_eq!(bytes, b"abc");
         let _ = std::fs::remove_file(path);
     }
 

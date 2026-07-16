@@ -47,6 +47,8 @@ export const usePlaybackStore = defineStore('playback', () => {
   let playToken = 0
   let activeCacheMetadataPath = ''
   let lastCachePlaybackPositionMs = -1
+  let pendingCachePlaybackPositionMs: number | null = null
+  let cachePlaybackPositionSync: Promise<void> | null = null
   let loadingStartedAt = 0
   let loadingExpectedStartTime = 0
 
@@ -126,23 +128,64 @@ export const usePlaybackStore = defineStore('playback', () => {
   const syncSongCachePlaybackPosition = async (positionMs?: number): Promise<void> => {
     if (configStore.audioEngine !== 'webapi' || !activeCacheMetadataPath) return
     const normalizedPositionMs = Math.max(0, Math.round(positionMs ?? webAudioEngine.currentTimeMs))
-    if (normalizedPositionMs === lastCachePlaybackPositionMs) return
+    pendingCachePlaybackPositionMs = normalizedPositionMs
 
-    lastCachePlaybackPositionMs = normalizedPositionMs
-    try {
-      await window.api.update_song_cache_playback_position({
-        metadataPath: activeCacheMetadataPath,
-        playbackPositionMs: normalizedPositionMs
-      })
-    } catch (error) {
-      console.warn('更新歌曲缓存播放进度失败:', error)
+    // 100ms 定时器可能在上一次 IPC 尚未返回时再次触发。把更新串行化并只保留
+    // 最新位置，避免旧请求晚返回后把 native 的缓存窗口退回到更早的位置。
+    if (cachePlaybackPositionSync) {
+      return cachePlaybackPositionSync
     }
+
+    cachePlaybackPositionSync = (async () => {
+      while (pendingCachePlaybackPositionMs !== null) {
+        const nextPositionMs = pendingCachePlaybackPositionMs
+        pendingCachePlaybackPositionMs = null
+
+        if (nextPositionMs === lastCachePlaybackPositionMs) continue
+
+        const metadataPath = activeCacheMetadataPath
+        if (!metadataPath || configStore.audioEngine !== 'webapi') break
+
+        try {
+          const accepted = await window.api.update_song_cache_playback_position({
+            metadataPath,
+            playbackPositionMs: nextPositionMs
+          })
+
+          // 切歌期间旧请求仍可能在途，绝不能让它污染新任务的确认位置。
+          if (metadataPath !== activeCacheMetadataPath) continue
+
+          if (accepted === true) {
+            lastCachePlaybackPositionMs = nextPositionMs
+          } else {
+            // active download 尚未注册或刚好正在重建时会返回 false。不要提前
+            // 去重；保留该位置，让下一个定时 tick 重试，避免在 waiting 状态下
+            // audio.currentTime 不再变化后形成“播放不动、缓存也不再推进”的死锁。
+            if (pendingCachePlaybackPositionMs === null) {
+              pendingCachePlaybackPositionMs = nextPositionMs
+            }
+            break
+          }
+        } catch (error) {
+          console.warn('更新歌曲缓存播放进度失败:', error)
+          if (metadataPath === activeCacheMetadataPath && pendingCachePlaybackPositionMs === null) {
+            pendingCachePlaybackPositionMs = nextPositionMs
+          }
+          break
+        }
+      }
+    })().finally(() => {
+      cachePlaybackPositionSync = null
+    })
+
+    return cachePlaybackPositionSync
   }
 
   const cancelActiveSongCacheDownload = async (): Promise<void> => {
     const metadataPath = activeCacheMetadataPath
     activeCacheMetadataPath = ''
     lastCachePlaybackPositionMs = -1
+    pendingCachePlaybackPositionMs = null
     if (!metadataPath) return
 
     try {

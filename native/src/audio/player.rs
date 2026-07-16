@@ -1194,6 +1194,85 @@ mod tests {
         let _ = std::fs::remove_dir_all(test_root);
     }
 
+    #[tokio::test]
+    async fn cached_stream_reader_continues_across_the_predownload_boundary() {
+        const MAX_PREDOWNLOAD_BYTES: u64 = 1024 * 1024;
+        const CONTENT_LENGTH: usize = 2 * 1024 * 1024;
+        const READ_TARGET: usize = MAX_PREDOWNLOAD_BYTES as usize + 256 * 1024;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let address = listener.local_addr().expect("test server address");
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().expect("accept test request");
+            let mut request = [0u8; 4096];
+            let _ = socket.read(&mut request);
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {CONTENT_LENGTH}\r\nConnection: close\r\n\r\n"
+            )
+            .expect("write test response headers");
+
+            let chunk = [0x5A; 64 * 1024];
+            let mut remaining = CONTENT_LENGTH;
+            while remaining > 0 {
+                let write_len = remaining.min(chunk.len());
+                if socket.write_all(&chunk[..write_len]).is_err() {
+                    break;
+                }
+                remaining -= write_len;
+            }
+        });
+
+        let test_root = std::env::temp_dir().join(format!(
+            "song-cache-read-boundary-{}-{}",
+            std::process::id(),
+            crate::cache::types::now_unix_secs()
+        ));
+        std::fs::create_dir_all(&test_root).expect("create test cache root");
+        let cache_path = test_root.join("song.bin");
+        let metadata_path = test_root.join("song.bin.meta.json");
+        let song_url = format!("http://{address}/song");
+        let meta = SongStreamCacheMeta::new(2, "lossless", &song_url);
+        std::fs::write(
+            &metadata_path,
+            serde_json::to_vec_pretty(&meta).expect("serialize test metadata"),
+        )
+        .expect("write test metadata");
+
+        let download = build_cached_stream_download(
+            &song_url,
+            cache_path.to_str().expect("cache path"),
+            metadata_path.to_str().expect("metadata path"),
+            Some(60_000),
+            Some(300),
+            Some(MAX_PREDOWNLOAD_BYTES),
+        )
+        .await
+        .expect("build cached stream");
+
+        let read_task = tokio::task::spawn_blocking(move || {
+            let mut reader = download.reader;
+            let mut total = 0usize;
+            let mut chunk = [0u8; 32 * 1024];
+            while total < READ_TARGET {
+                let read = reader.read(&mut chunk).expect("read cached stream");
+                assert!(read > 0, "cached stream returned EOF before content end");
+                assert!(chunk[..read].iter().all(|byte| *byte == 0x5A));
+                total += read;
+            }
+            total
+        });
+
+        let read_total = tokio::time::timeout(Duration::from_secs(3), read_task)
+            .await
+            .expect("cached stream stalled at the predownload boundary")
+            .expect("join cached stream reader");
+        assert!(read_total >= READ_TARGET);
+
+        server.join().expect("join test server");
+        let _ = std::fs::remove_dir_all(test_root);
+    }
+
     async fn wait_for_cached_file_size(path: &Path, expected_size: u64) {
         for _ in 0..200 {
             if std::fs::metadata(path)

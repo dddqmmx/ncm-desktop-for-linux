@@ -491,4 +491,133 @@ describe('playerStore device switch sequencing', () => {
 
     expect(playerStore.currentTime).toBe(0)
   })
+
+  it('retries an unaccepted WebAPI cache position without requiring currentTime to advance', async () => {
+    storage.setItem(
+      SETTINGS_KEY,
+      JSON.stringify({
+        audioEngine: 'webapi',
+        soundQuality: 'standard'
+      })
+    )
+
+    let progressTimer: (() => void) | undefined
+    const updatePlaybackPosition = vi
+      .fn<() => Promise<boolean>>()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValue(true)
+
+    class FakeAudio {
+      preload = ''
+      src = ''
+      currentTime = 12
+      duration = 180
+      paused = true
+      readyState = 1
+      error: MediaError | null = null
+      private readonly listeners = new Map<string, Array<() => void>>()
+
+      addEventListener(name: string, callback: () => void): void {
+        const callbacks = this.listeners.get(name) ?? []
+        callbacks.push(callback)
+        this.listeners.set(name, callbacks)
+      }
+
+      load(): void {}
+
+      async play(): Promise<void> {
+        this.paused = false
+        this.listeners.get('play')?.forEach((callback) => callback())
+      }
+
+      pause(): void {
+        this.paused = true
+        this.listeners.get('pause')?.forEach((callback) => callback())
+      }
+
+      removeAttribute(): void {
+        this.src = ''
+      }
+    }
+
+    vi.stubGlobal('Audio', FakeAudio)
+    vi.stubGlobal(
+      'setInterval',
+      vi.fn((callback: () => void) => {
+        progressTimer = callback
+        return 1 as unknown as ReturnType<typeof setInterval>
+      })
+    )
+    vi.stubGlobal('clearInterval', vi.fn())
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        song_detail: vi.fn(async ({ ids }: { ids: number[] }) => ({
+          body: {
+            songs: [
+              {
+                id: ids[0],
+                name: `Song ${ids[0]}`,
+                dt: 180000,
+                ar: [{ id: 1, name: 'Artist' }],
+                al: { id: 1, name: 'Album', picUrl: 'cover' },
+                h: null,
+                sq: null,
+                hr: null
+              }
+            ]
+          }
+        })),
+        song_url: vi.fn(async () => ({
+          body: {
+            data: [
+              {
+                url: 'https://example.com/test.mp3',
+                level: 'standard',
+                size: 3 * 1024 * 1024
+              }
+            ]
+          }
+        })),
+        stop: vi.fn(async () => undefined),
+        prepare_cached_song_source: vi.fn(async () => ({
+          type: 'url',
+          value: 'https://example.com/test.mp3',
+          cachePath: '/tmp/test.mp3',
+          metadataPath: '/tmp/test.mp3.meta.json'
+        })),
+        cache_song_source: vi.fn(async () => ({
+          type: 'url',
+          value: 'https://example.com/test.mp3',
+          cachePath: '/tmp/test.mp3',
+          metadataPath: '/tmp/test.mp3.meta.json'
+        })),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 0 })),
+        update_song_cache_playback_position: updatePlaybackPosition,
+        cancel_song_cache_download: vi.fn(async () => true)
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+    await playerStore.playMusic(1)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(updatePlaybackPosition).toHaveBeenCalledTimes(1)
+    expect(updatePlaybackPosition).toHaveBeenLastCalledWith({
+      metadataPath: '/tmp/test.mp3.meta.json',
+      playbackPositionMs: 12_000
+    })
+
+    // 模拟 audio 进入 waiting 后 currentTime 固定在 12s；即使位置没有变化，
+    // 前一次 native 返回 false 也必须再次发送，不能被 last-position 去重吞掉。
+    await progressTimer?.()
+
+    expect(updatePlaybackPosition).toHaveBeenCalledTimes(2)
+    expect(updatePlaybackPosition).toHaveBeenLastCalledWith({
+      metadataPath: '/tmp/test.mp3.meta.json',
+      playbackPositionMs: 12_000
+    })
+  })
 })
