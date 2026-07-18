@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import AppIcon from '../AppIcon.vue'
+import noiseSvg from '@renderer/assets/icons/noise.svg?url'
 import { computed, ref, type Component } from 'vue'
+
+const noiseBg = `url(${noiseSvg})`
 import '@renderer/assets/settings.css'
 import GeneralSettingsTab from './GeneralSettingsTab.vue'
 import AudioSettingsTab from './AudioSettingsTab.vue'
@@ -31,42 +35,42 @@ const tabs: SettingsTab[] = [
   {
     id: 'general',
     name: '通用',
-    icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4'
+    icon: 'settings-general'
   },
   {
     id: 'audio',
     name: '音频输出',
-    icon: 'M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z'
+    icon: 'settings-audio'
   },
   {
     id: 'appearance',
     name: '外观个性化',
-    icon: 'M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-3'
+    icon: 'settings-appearance'
   },
   {
     id: 'library',
     name: '曲库管理',
-    icon: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z'
+    icon: 'settings-library'
   },
   {
     id: 'cache',
     name: '缓存',
-    icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4'
+    icon: 'settings-cache'
   },
   {
     id: 'shortcuts',
     name: '快捷键',
-    icon: 'M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25'
+    icon: 'settings-shortcuts'
   },
   {
     id: 'debug',
     name: '调试',
-    icon: 'M8 2v3m8-3v3M9 9h6m-8 4H4m16 0h-3M7 17H4m16 0h-3M9 5h6a3 3 0 013 3v7a5 5 0 01-10 0V8a3 3 0 013-3z'
+    icon: 'settings-debug'
   },
   {
     id: 'about',
     name: '关于软件',
-    icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
+    icon: 'settings-about'
   }
 ]
 
@@ -103,17 +107,7 @@ const closeSettingsWindow = (): void => {
         <header class="main-header">
           <h2>{{ activeTabTitle }}</h2>
           <button class="close-btn" aria-label="关闭设置" @click="closeSettingsWindow">
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-            >
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
+            <AppIcon name="close" :size="18" />
           </button>
         </header>
 
@@ -167,7 +161,7 @@ const closeSettingsWindow = (): void => {
 .liquid-glass {
   /* 优化2：提高基础白色的不透明度(0.85/0.75)；加入极其微弱的噪点纹理增加物理质感 */
   background:
-    url('data:image/svg+xml;utf8,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="noiseFilter"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23noiseFilter)" opacity="0.04"/%3E%3C/svg%3E'),
+    v-bind(noiseBg),
     linear-gradient(135deg, var(--sys-surface-strong) 0%, var(--sys-surface) 100%);
 
   backdrop-filter: blur(60px) saturate(200%);

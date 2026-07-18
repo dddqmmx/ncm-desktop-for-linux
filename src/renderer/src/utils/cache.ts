@@ -140,7 +140,7 @@ export async function preparePlaybackCache(
     request.expectedBytes
   )
   const backgroundCacheRequest =
-    request.engine === 'webapi' && source.type === 'url' && source.value
+    source.type === 'url' && source.value
       ? {
           songId: request.songId,
           quality: request.quality,
@@ -149,10 +149,14 @@ export async function preparePlaybackCache(
           ...(request.durationMs !== undefined ? { durationMs: request.durationMs } : {})
         }
       : undefined
+  const playbackSource =
+    request.engine === 'native' && source.type === 'url'
+      ? { type: 'url' as const, value: source.value }
+      : source
 
   return {
     engine: request.engine,
-    source,
+    source: playbackSource,
     metadataPath: source.metadataPath ?? '',
     initialBufferedPercent: source.type === 'file' ? 100 : 0,
     ...(backgroundCacheRequest ? { backgroundCacheRequest } : {})

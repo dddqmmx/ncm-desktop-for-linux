@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import { formatCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
+import AppIcon from './AppIcon.vue'
+import { formatCurrentSongArtists, isLocalSong, usePlayerStore } from '@renderer/stores/playerStore'
 import { ref, computed, onMounted } from 'vue'
 // 1. 必须导入新设计的播放列表组件
 import PlaylistOverlay from './PlaylistOverlay.vue'
 import SongCover from './SongCover.vue'
+import AddToPlaylistModal from './AddToPlaylistModal.vue'
 import { useFavoriteStore } from '@renderer/stores/favoriteStore'
 
 const playerStore = usePlayerStore()
 const favoriteStore = useFavoriteStore()
+const isAddToPlaylistVisible = ref(false)
 
 // --- UI 显示绑定 ---
 const displayTrack = computed(() => ({
   title: playerStore.currentSong?.name || '未在播放',
   artist: formatCurrentSongArtists(playerStore.currentSong?.artists)
 }))
+const isCurrentSongLocal = computed(() => isLocalSong(playerStore.currentSong))
 
 // --- 进度条逻辑 ---
 const isDragging = ref(false)
@@ -59,8 +63,13 @@ const togglePlaylist = (): void => {
 }
 
 const toggleCurrentFavorite = (): void => {
-  if (!playerStore.currentSong) return
+  if (!playerStore.currentSong || isCurrentSongLocal.value) return
   void favoriteStore.toggleFavorite(playerStore.currentSong)
+}
+
+const openAddToPlaylist = (): void => {
+  if (!playerStore.currentSong || isCurrentSongLocal.value) return
+  isAddToPlaylistVisible.value = true
 }
 
 onMounted(() => {
@@ -95,30 +104,26 @@ onMounted(() => {
             <button
               class="icon-btn sm shuffle favorite-current-btn"
               :class="{ active: favoriteStore.isFavorite(playerStore.currentSongId) }"
-              :disabled="!playerStore.currentSong"
-              :title="favoriteStore.isFavorite(playerStore.currentSongId) ? '取消喜欢' : '喜欢'"
+              :disabled="!playerStore.currentSong || isCurrentSongLocal"
+              :title="
+                isCurrentSongLocal
+                  ? '本地音乐'
+                  : favoriteStore.isFavorite(playerStore.currentSongId)
+                    ? '取消喜欢'
+                    : '喜欢'
+              "
               @click="toggleCurrentFavorite"
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path
-                  d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"
-                />
-              </svg>
+              <AppIcon
+                :name="
+                  favoriteStore.isFavorite(playerStore.currentSongId) ? 'heart-fill' : 'heart'
+                "
+                :size="14"
+              />
             </button>
 
             <button class="icon-btn prev" @click="playerStore.playPrev()">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
-              </svg>
+              <AppIcon name="prev" :size="22" />
             </button>
 
             <button
@@ -129,52 +134,24 @@ onMounted(() => {
             >
               <div class="inner-glow" :class="{ active: playerStore.isPlaying }"></div>
               <div v-if="playerStore.isLoading" class="loading-spinner"></div>
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
-                <path v-if="playerStore.isPlaying" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-                <path v-else d="M8 5v14l11-7z" />
-              </svg>
+              <AppIcon :name="playerStore.isPlaying ? 'pause' : 'play'" :size="26" />
             </button>
 
             <button class="icon-btn next" @click="playerStore.playNext()">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
-              </svg>
+              <AppIcon name="next" :size="22" />
             </button>
 
             <button class="icon-btn sm loop" @click="playerStore.togglePlayMode()">
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <g v-if="playerStore.playMode == 'loop'" class="icon-loop">
-                  <path d="M17 2l4 4-4 4" />
-                  <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                  <path d="M7 22l-4-4 4-4" />
-                  <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                </g>
-
-                <g v-if="playerStore.playMode == 'random'" class="icon-random">
-                  <path d="M16 3h5v5" />
-                  <path d="M4 20L21 3" />
-                  <path d="M21 16v5h-5" />
-                  <path d="M15 15l6 6" />
-                  <path d="M4 4l5 5" />
-                </g>
-
-                <g v-if="playerStore.playMode == 'single'" class="icon-single">
-                  <path d="M17 2l4 4-4 4" />
-                  <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                  <path d="M7 22l-4-4 4-4" />
-                  <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                  <path d="M11 10h1v4" stroke-width="2" />
-                </g>
-              </svg>
+              <AppIcon
+                :name="
+                  playerStore.playMode === 'random'
+                    ? 'shuffle'
+                    : playerStore.playMode === 'single'
+                      ? 'single'
+                      : 'loop'
+                "
+                :size="16"
+              />
             </button>
           </div>
 
@@ -208,33 +185,26 @@ onMounted(() => {
             :class="{ active: isPlaylistVisible }"
             @click="togglePlaylist"
           >
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-            >
-              <line x1="8" y1="6" x2="21" y2="6" />
-              <line x1="8" y1="12" x2="21" y2="12" />
-              <line x1="8" y1="18" x2="21" y2="18" />
-              <circle cx="3" cy="6" r="1" />
-              <circle cx="3" cy="12" r="1" />
-              <circle cx="3" cy="18" r="1" />
-            </svg>
+            <AppIcon name="playlist" :size="20" />
           </button>
-          <button class="icon-btn more-btn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="5" cy="12" r="2" />
-              <circle cx="12" cy="12" r="2" />
-              <circle cx="19" cy="12" r="2" />
-            </svg>
+          <button
+            class="icon-btn more-btn"
+            :disabled="!playerStore.currentSong || isCurrentSongLocal"
+            :title="isCurrentSongLocal ? '本地音乐无法添加到网易云歌单' : '添加到歌单'"
+            @click="openAddToPlaylist"
+          >
+            <AppIcon name="more-fill" :size="20" />
           </button>
         </div>
       </div>
     </div>
+
+    <AddToPlaylistModal
+      v-if="isAddToPlaylistVisible && playerStore.currentSong && !isCurrentSongLocal"
+      :song-id="playerStore.currentSong.id"
+      :song-name="playerStore.currentSong.name"
+      @close="isAddToPlaylistVisible = false"
+    />
   </div>
 </template>
 

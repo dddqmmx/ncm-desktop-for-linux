@@ -82,13 +82,29 @@ export const normalizeCurrentSongArtists = (
 export const normalizeCurrentSong = (song: PersistedCurrentSong): CurrentSong | null => {
   if (typeof song.id !== 'number' || !Number.isFinite(song.id)) return null
 
+  const filePath = typeof song.filePath === 'string' ? song.filePath.trim() : ''
+  const isLocal = song.source === 'local' && filePath.length > 0
+
   return {
     id: song.id,
     name: typeof song.name === 'string' ? song.name : '未知歌曲',
     artists: normalizeCurrentSongArtists(song.artists ?? song.artist),
     cover: typeof song.cover === 'string' ? song.cover : '',
     duration:
-      typeof song.duration === 'number' && Number.isFinite(song.duration) ? song.duration : 0
+      typeof song.duration === 'number' && Number.isFinite(song.duration) ? song.duration : 0,
+    ...(isLocal
+      ? {
+          source: 'local' as const,
+          filePath,
+          fileName:
+            typeof song.fileName === 'string' && song.fileName.trim()
+              ? song.fileName.trim()
+              : song.name || '未知歌曲',
+          ...(typeof song.album === 'string' && song.album.trim()
+            ? { album: song.album.trim() }
+            : {})
+        }
+      : {})
   }
 }
 

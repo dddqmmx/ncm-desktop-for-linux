@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './AppIcon.vue'
 import { ref, computed, watch, nextTick } from 'vue'
 import type { Lyric } from '@renderer/types/lyric'
 import { usePlayerStore } from '@renderer/stores/playerStore'
@@ -294,13 +295,7 @@ watch([showPronunciation, showTranslation], () => {
         :aria-label="showPronunciation ? '隐藏发音' : '显示发音'"
         @click="showPronunciation = !showPronunciation"
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 10v4" />
-          <path d="M8 7v10" />
-          <path d="M12 4v16" />
-          <path d="M16 7v10" />
-          <path d="M20 10v4" />
-        </svg>
+        <AppIcon name="equalizer" :size="18" />
       </button>
       <button
         v-if="hasTranslation"
@@ -311,14 +306,7 @@ watch([showPronunciation, showTranslation], () => {
         :aria-label="showTranslation ? '隐藏翻译' : '显示翻译'"
         @click="showTranslation = !showTranslation"
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 5h9" />
-          <path d="M8.5 3v2" />
-          <path d="M10.5 5c-.9 3.2-2.8 5.5-5.5 7" />
-          <path d="M6 8c1.2 1.9 2.8 3.2 4.8 4" />
-          <path d="M14 19l3.5-8 3.5 8" />
-          <path d="M15.2 16h4.6" />
-        </svg>
+        <AppIcon name="translate" :size="18" />
       </button>
     </div>
     <div v-if="loading" class="lyric-status">加载中...</div>

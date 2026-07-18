@@ -1003,6 +1003,30 @@ async function runAudioProbeCase(player, audioCase) {
   await sleep(900)
   await runStartAtPlaybackCase(player, audioCase)
   await runCachedUrlStartAtCase(player, audioCase)
+
+  // cached-url 用例结束后会关掉 range server 并删掉缓存文件；后续 seek 必须
+  // 重新用本地文件开播，否则仍挂在已死的 StreamDownload 上。
+  try {
+    await withNativeCallTimeout(
+      `${audioCase.label} replay playFile before seeks`,
+      player.playFile(audioCase.path, 0, false),
+      { audioCase }
+    )
+  } catch (error) {
+    fail(`Native audio probe could not restart local playback for ${audioCase.label}.`, {
+      error: error.message,
+      audioCase
+    })
+  }
+  await waitFor(`${audioCase.label} replay playback progress`, 3_000, SAMPLE_MS, () => {
+    const current = sample(player, `${audioCase.label}:replay`)
+    return {
+      ok: current.progressMs >= 250 && current.isBuffering === false,
+      detail: current
+    }
+  })
+  await sleep(400)
+
   await runSeekCase(player, `${audioCase.label}:forward-seek-after-buffer-fill`, 24_000)
   await runSeekCase(player, `${audioCase.label}:backward-seek`, 6_000)
   await runRapidSeekCase(player, `${audioCase.label}:rapid-overwrite`)

@@ -1,15 +1,18 @@
 <script setup lang="ts">
+import AppIcon from '@renderer/components/AppIcon.vue'
 import { useRoute } from 'vue-router'
 import { ref, computed, watch } from 'vue'
 import { PlaylistDetail, Track } from '@renderer/types/playlistDetail'
 import { Song } from '@renderer/types/songDetail'
 import { CurrentSong, createCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
+import { useUserStore } from '@renderer/stores/userStore'
 import MediaDetailLayout from '../components/MediaDetailLayout.vue'
 import SongList from '../components/SongList.vue'
 import UserAvatar from '../components/UserAvatar.vue'
 
 const route = useRoute()
 const playerStore = usePlayerStore()
+const userStore = useUserStore()
 
 // --- 响应式数据 ---
 const detail = ref<PlaylistDetail | null>(null)
@@ -63,6 +66,12 @@ const handlePlaySong = (song: Song): void => {
   void playerStore.playMusic(song.id)
 }
 
+const handleTrackRemoved = (songId: number): void => {
+  if (!detail.value) return
+  detail.value.playlist.tracks = detail.value.playlist.tracks.filter((t) => t.id !== songId)
+  detail.value.playlist.trackCount -= 1
+}
+
 watch(
   () => route.params.id,
   (playlistId) => {
@@ -74,6 +83,10 @@ watch(
 
 const playlist = computed(() => detail.value?.playlist)
 const tracks = computed(() => detail.value?.playlist.tracks || [])
+const isOwnPlaylist = computed(
+  () => !!playlist.value && playlist.value.creator.userId === userStore.userInfo?.account.id
+)
+const ownPlaylistId = computed(() => (isOwnPlaylist.value ? playlist.value?.id : undefined))
 
 const filteredTracks = computed(() => {
   if (!searchQuery.value.trim()) {
@@ -121,20 +134,7 @@ const filteredTracks = computed(() => {
     <template #actions>
       <!-- 将创建时间放到 meta 里，或者通过 slot 调整 -->
       <button v-if="playlist" class="secondary-btn">
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path
-            d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.5 4.04 3 5.5l7 7 7-7z"
-          ></path>
-        </svg>
+        <AppIcon name="heart" :size="18" />
         {{ formatCount(playlist.subscribedCount) }}
       </button>
     </template>
@@ -143,7 +143,9 @@ const filteredTracks = computed(() => {
       :songs="filteredTracks"
       :search-query="searchQuery"
       :fallback-cover="playlist?.coverImgUrl"
+      :playlist-id="ownPlaylistId"
       @play="handlePlaySong"
+      @removed="handleTrackRemoved"
     />
   </MediaDetailLayout>
 </template>

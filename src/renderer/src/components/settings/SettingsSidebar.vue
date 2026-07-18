@@ -15,15 +15,7 @@
         :class="{ active: activeTab === tab.id }"
         @click="$emit('update:activeTab', tab.id)"
       >
-        <svg
-          class="nav-icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" :d="tab.icon" />
-        </svg>
+        <AppIcon :name="tab.icon" class="nav-icon" :size="18" />
         {{ tab.name }}
       </button>
     </nav>
@@ -31,6 +23,7 @@
 </template>
 
 <script setup lang="ts">
+import AppIcon from '../AppIcon.vue'
 import { computed } from 'vue'
 
 type SettingsTab = {

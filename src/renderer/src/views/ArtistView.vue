@@ -44,9 +44,7 @@
                   :disabled="!topSongs.length"
                   @click="handlePlayAll"
                 >
-                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                    <path d="M7.5 5.5v13l10-6.5-10-6.5Z" fill="currentColor" />
-                  </svg>
+                  <AppIcon name="play-alt" :size="18" />
                   播放
                 </button>
                 <button
@@ -55,24 +53,7 @@
                   :disabled="!topSongs.length"
                   @click="handleShufflePlay"
                 >
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="18"
-                    height="18"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <g>
-                      <path d="M16 3h5v5" />
-                      <path d="M4 20L21 3" />
-                      <path d="M21 16v5h-5" />
-                      <path d="M15 15l6 6" />
-                      <path d="M4 4l5 5" />
-                    </g>
-                  </svg>
+                  <AppIcon name="shuffle" :size="18" />
                   随机播放
                 </button>
               </div>
@@ -207,9 +188,7 @@
                 <div class="tile-img-wrap-wrapper mv-img-wrap-wrapper">
                   <LazyImage :id="mv.cover" :alt="mv.title" param="540y304" />
                   <div class="mv-play-btn" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" width="22" height="22">
-                      <path d="M8 6.5v11l9-5.5-9-5.5Z" fill="currentColor" />
-                    </svg>
+                    <AppIcon name="play-mv" :size="22" />
                   </div>
                 </div>
                 <p class="tile-type">Music Video</p>
@@ -225,6 +204,8 @@
 </template>
 
 <script setup lang="ts">
+import AppIcon from '@renderer/components/AppIcon.vue'
+import artistFallback from '@renderer/assets/icons/artist-fallback.svg?url'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { CurrentSong, createCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
@@ -270,9 +251,7 @@ interface MediaItem {
   cover: string
 }
 
-const FALLBACK_COVER = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240"><rect width="240" height="240" rx="28" fill="#f3f4f6"/><circle cx="120" cy="88" r="34" fill="#d1d5db"/><path d="M56 188c12-32 44-52 64-52s52 20 64 52" fill="#d1d5db"/></svg>'
-)}`
+const FALLBACK_COVER = artistFallback
 
 const route = useRoute()
 const playerStore = usePlayerStore()

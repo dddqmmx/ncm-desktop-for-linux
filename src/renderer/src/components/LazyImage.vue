@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import imagePlaceholder from '@renderer/assets/icons/image-placeholder.svg?url'
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { resolveCachedMediaUrl } from '@renderer/utils/cache'
+
+const placeholderMask = `url(${imagePlaceholder}) no-repeat center`
 
 /**
  * 真正意义上的懒加载图片组件
@@ -217,10 +220,8 @@ const onImgError = (): void => {
   height: 32px;
   opacity: 0.15;
   background: currentColor;
-  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>')
-    no-repeat center;
-  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>')
-    no-repeat center;
+  mask: v-bind(placeholderMask);
+  -webkit-mask: v-bind(placeholderMask);
 }
 
 .lazy-image-error {

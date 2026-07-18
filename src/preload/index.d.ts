@@ -82,6 +82,7 @@ interface CustomApi {
   close_settings_window: () => Promise<unknown>
   open_dialog_window: (options: DialogWindowOptions) => Promise<boolean>
   get_app_info: () => Promise<AppInfo>
+  get_path_for_file: (file: File) => string
 }
 
 interface DialogWindowOptions {

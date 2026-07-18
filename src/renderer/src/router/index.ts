@@ -6,6 +6,7 @@ import PlaylistView from '@renderer/views/PlaylistView.vue'
 import ArtistView from '@renderer/views/ArtistView.vue'
 import AlbumView from '@renderer/views/AlbumView.vue'
 import FavoriteView from '@renderer/views/FavoriteView.vue'
+import LocalMusicView from '@renderer/views/LocalMusicView.vue'
 import SettingsModal from '@renderer/components/settings/SettingsModal.vue'
 
 const router = createRouter({
@@ -43,6 +44,11 @@ const router = createRouter({
           path: 'favorites',
           name: 'favorites',
           component: FavoriteView
+        },
+        {
+          path: 'local-music',
+          name: 'local-music',
+          component: LocalMusicView
         },
         {
           path: 'new',

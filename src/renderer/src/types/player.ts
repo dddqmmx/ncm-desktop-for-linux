@@ -11,6 +11,10 @@ export interface CurrentSong {
   artists: CurrentSongArtist[]
   cover: string
   duration: number
+  source?: 'local'
+  filePath?: string
+  fileName?: string
+  album?: string
 }
 
 export interface PersistedCurrentSong {
@@ -20,6 +24,20 @@ export interface PersistedCurrentSong {
   artists?: CurrentSongArtist[] | CurrentSongArtist | string | null
   cover?: string
   duration?: number
+  source?: 'local'
+  filePath?: string
+  fileName?: string
+  album?: string
+}
+
+export interface LocalSong extends CurrentSong {
+  source: 'local'
+  filePath: string
+  fileName: string
+}
+
+export const isLocalSong = (song: CurrentSong | null | undefined): song is LocalSong => {
+  return song?.source === 'local' && typeof song.filePath === 'string' && song.filePath.length > 0
 }
 
 export interface Privilege {

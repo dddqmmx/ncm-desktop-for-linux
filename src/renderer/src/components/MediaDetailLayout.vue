@@ -1,14 +1,23 @@
 <script setup lang="ts">
+import AppIcon from './AppIcon.vue'
 import AlbumCover from './AlbumCover.vue'
 
-defineProps<{
-  loading: boolean
-  coverUrl?: string
-  title?: string
-  description?: string | null
-  meta?: string[]
-  searchPlaceholder?: string
-}>()
+withDefaults(
+  defineProps<{
+    loading: boolean
+    coverUrl?: string
+    title?: string
+    description?: string | null
+    meta?: string[]
+    searchPlaceholder?: string
+    playDisabled?: boolean
+    showMore?: boolean
+  }>(),
+  {
+    playDisabled: false,
+    showMore: true
+  }
+)
 
 const searchQuery = defineModel<string>('searchQuery', { default: '' })
 
@@ -29,7 +38,14 @@ defineEmits<{
       <header class="playlist-header">
         <!-- 左侧：封面 -->
         <div class="cover-wrapper">
-          <AlbumCover :id="coverUrl" :key="coverUrl || 'placeholder'" :alt="title" size="400y400" />
+          <slot name="cover">
+            <AlbumCover
+              :id="coverUrl"
+              :key="coverUrl || 'placeholder'"
+              :alt="title"
+              size="400y400"
+            />
+          </slot>
         </div>
 
         <!-- 右侧：详情与操作 -->
@@ -58,26 +74,13 @@ defineEmits<{
 
           <!-- 操作栏：自动对齐到底部 -->
           <div class="action-bar">
-            <button class="play-main-btn" @click="$emit('playAll')">
-              <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                <path d="M8 5v14l11-7z" />
-              </svg>
+            <button class="play-main-btn" :disabled="playDisabled" @click="$emit('playAll')">
+              <AppIcon name="play" :size="20" />
               播放全部
             </button>
 
             <div class="search-box-container">
-              <svg
-                class="search-icon"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-              >
-                <circle cx="11" cy="11" r="8" />
-                <path d="m21 21-4.3-4.3" />
-              </svg>
+              <AppIcon name="search-alt" class="search-icon" :size="16" />
               <input
                 v-model="searchQuery"
                 type="text"
@@ -85,34 +88,14 @@ defineEmits<{
                 class="search-input"
               />
               <button v-if="searchQuery" class="clear-btn" @click="searchQuery = ''">
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path d="M18 6L6 18M6 6l12 12" />
-                </svg>
+                <AppIcon name="close" :size="14" />
               </button>
             </div>
 
             <slot name="actions"></slot>
 
-            <button class="icon-btn" title="更多">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <circle cx="12" cy="12" r="1.5" />
-                <circle cx="19" cy="12" r="1.5" />
-                <circle cx="5" cy="12" r="1.5" />
-              </svg>
+            <button v-if="showMore" class="icon-btn" title="更多">
+              <AppIcon name="more" :size="20" />
             </button>
           </div>
         </div>
@@ -268,6 +251,12 @@ defineEmits<{
 .play-main-btn:hover {
   transform: scale(1.04);
   background: var(--theme-color-strong);
+}
+
+.play-main-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+  transform: none;
 }
 
 /* 搜索框风格与播放按钮统一 */

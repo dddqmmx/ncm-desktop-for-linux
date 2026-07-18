@@ -6,7 +6,11 @@ describe('playback cache helpers', () => {
     vi.unstubAllGlobals()
   })
 
-  it('prepares native cache sources without starting a background cache request', async () => {
+  it('plays native network sources directly while caching them in the background', async () => {
+    const cacheSongSource = vi.fn(async () => ({
+      type: 'file',
+      value: '/cache/song.flac'
+    }))
     vi.stubGlobal('window', {
       api: {
         prepare_cached_song_source: vi.fn(async () => ({
@@ -14,7 +18,8 @@ describe('playback cache helpers', () => {
           value: 'https://example.com/song.flac',
           cachePath: '/cache/song.flac.part',
           metadataPath: '/cache/song.flac.json'
-        }))
+        })),
+        cache_song_source: cacheSongSource
       }
     } as unknown as Window & typeof globalThis)
 
@@ -28,10 +33,20 @@ describe('playback cache helpers', () => {
     })
 
     expect(cache.source.type).toBe('url')
+    expect(cache.source).toEqual({ type: 'url', value: 'https://example.com/song.flac' })
     expect(cache.metadataPath).toBe('/cache/song.flac.json')
     expect(cache.initialBufferedPercent).toBe(0)
-    expect(cache.backgroundCacheRequest).toBeUndefined()
-    expect(startPlaybackBackgroundCache(cache)).toBeNull()
+    await expect(startPlaybackBackgroundCache(cache)).resolves.toEqual({
+      type: 'file',
+      value: '/cache/song.flac'
+    })
+    expect(cacheSongSource).toHaveBeenCalledWith({
+      songId: 1,
+      quality: 'lossless',
+      url: 'https://example.com/song.flac',
+      expectedBytes: 1024,
+      durationMs: 180000
+    })
   })
 
   it('creates a background cache request for WebAPI network sources', async () => {

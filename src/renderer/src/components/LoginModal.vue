@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './AppIcon.vue'
 import { ref, reactive, onUnmounted, watch } from 'vue'
 import { useUserStore } from '../stores/userStore'
 import type { LoginQrCheck, LoginQrCreate, LoginQrKey } from '../types/loginQr'
@@ -200,34 +201,10 @@ const handleLogin = async (): Promise<void> => {
         <div class="card-face face-front">
           <div class="card-top-bar">
             <button class="icon-btn qr-btn" title="扫码登录" @click="toggleLoginMode">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
-              </svg>
+              <AppIcon name="qr" :size="20" />
             </button>
             <button class="icon-btn close-btn" title="关闭" @click="handleClose">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
+              <AppIcon name="close" :size="20" />
             </button>
           </div>
 
@@ -283,18 +260,7 @@ const handleLogin = async (): Promise<void> => {
                   <label for="pwd-phone">手机号码</label>
                 </div>
                 <div class="icon-suffix">
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <path
-                      d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"
-                    ></path>
-                  </svg>
+                  <AppIcon name="phone" :size="18" />
                 </div>
               </div>
               <div class="input-field">
@@ -308,17 +274,7 @@ const handleLogin = async (): Promise<void> => {
                 />
                 <label for="pwd-input">密码</label>
                 <div class="icon-suffix">
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                  </svg>
+                  <AppIcon name="lock" :size="18" />
                 </div>
               </div>
             </div>
@@ -342,18 +298,7 @@ const handleLogin = async (): Promise<void> => {
                   <label for="code-phone">手机号码</label>
                 </div>
                 <div class="icon-suffix">
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <path
-                      d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"
-                    ></path>
-                  </svg>
+                  <AppIcon name="phone" :size="18" />
                 </div>
               </div>
               <div class="input-field">
@@ -400,33 +345,10 @@ const handleLogin = async (): Promise<void> => {
         <div class="card-face face-back">
           <div class="card-top-bar">
             <button class="icon-btn pc-btn" title="密码登录" @click="toggleLoginMode">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                <line x1="8" y1="21" x2="16" y2="21"></line>
-                <line x1="12" y1="17" x2="12" y2="21"></line>
-              </svg>
+              <AppIcon name="monitor" :size="20" />
             </button>
             <button class="icon-btn close-btn" @click="handleClose">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
+              <AppIcon name="close" :size="20" />
             </button>
           </div>
 

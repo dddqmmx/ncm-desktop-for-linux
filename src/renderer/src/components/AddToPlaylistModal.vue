@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './AppIcon.vue'
 import { ref, onMounted, reactive } from 'vue'
 import { useUserStore } from '@renderer/stores/userStore'
 import type { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist'
@@ -98,15 +99,7 @@ const formatCount = (num: number): string => {
             <span class="subtitle">「{{ songName }}」</span>
           </div>
           <button class="close-btn" @click="emit('close')">
-            <svg viewBox="0 0 24 24" width="20" height="20">
-              <path
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                d="M18 6L6 18M6 6l12 12"
-              />
-            </svg>
+            <AppIcon name="close" :size="20" />
           </button>
         </div>
 
@@ -149,27 +142,10 @@ const formatCount = (num: number): string => {
             <div v-if="addingToPlaylist === pl.id" class="adding-spinner"></div>
             <div v-else-if="isPlaylistContains(pl.id) === null" class="checking-spinner"></div>
             <template v-else-if="isPlaylistContains(pl.id) === true">
-              <svg class="check-icon" viewBox="0 0 24 24" width="18" height="18">
-                <path
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M20 6L9 17l-5-5"
-                />
-              </svg>
+              <AppIcon name="check" class="check-icon" :size="18" />
               <span class="added-label">已添加</span>
             </template>
-            <svg v-else class="add-icon" viewBox="0 0 24 24" width="20" height="20">
-              <path
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                d="M12 5v14M5 12h14"
-              />
-            </svg>
+            <AppIcon v-else name="plus" class="add-icon" :size="20" />
           </div>
         </div>
 

@@ -1,5 +1,5 @@
 import { electronAPI } from '@electron-toolkit/preload'
-import { ipcRenderer } from 'electron'
+import { ipcRenderer, webUtils } from 'electron'
 import { contextBridge } from 'electron/renderer'
 
 /**
@@ -77,7 +77,10 @@ const api = {
   open_settings_window: invoke('ui:openSettingsWindow'),
   close_settings_window: invoke('ui:closeSettingsWindow'),
   open_dialog_window: invoke('ui:openDialogWindow'),
-  get_app_info: invoke('ui:getAppInfo')
+  get_app_info: invoke('ui:getAppInfo'),
+
+  // 将用户在文件输入框中选择的 File 转换为原生路径。
+  get_path_for_file: (file: File): string => webUtils.getPathForFile(file)
 }
 
 // 保持不变

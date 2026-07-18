@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './AppIcon.vue'
 defineProps<{
   title?: string
   subtitle?: string
@@ -32,9 +33,7 @@ defineProps<{
       </div>
       <!-- 只有第一个卡片显示播放按钮 -->
       <button v-if="isFirst" class="play-btn-circle">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-          <path d="M8 5v14l11-7z" />
-        </svg>
+        <AppIcon name="play" :size="20" />
       </button>
     </div>
   </div>

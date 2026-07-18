@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from '@renderer/components/AppIcon.vue'
 import { usePlayerStore } from '@renderer/stores/playerStore'
 import { SongDetailResult } from '@renderer/types/songDetail'
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
@@ -7,6 +8,7 @@ import type { SearchResult, Song as SearchSong } from '@renderer/types/search'
 import { resolveCachedMediaUrl } from '@renderer/utils/cache'
 import { useFavoriteStore } from '@renderer/stores/favoriteStore'
 import { CurrentSong, createCurrentSongArtists } from '@renderer/stores/playerStore'
+import SongContextMenu from '@renderer/components/SongContextMenu.vue'
 
 const searchQuery = ref('')
 const searchResults = ref<SearchResult | null>(null)
@@ -214,6 +216,8 @@ const mapSearchSongToCurrentSong = (song: SearchSong): CurrentSong => ({
 const toggleFavorite = (song: SearchSong): void => {
   void favoriteStore.toggleFavorite(mapSearchSongToCurrentSong(song))
 }
+
+const openMenuSongId = ref<number | null>(null)
 </script>
 
 <template>
@@ -229,16 +233,7 @@ const toggleFavorite = (song: SearchSong): void => {
       <h1 class="page-title">搜索</h1>
 
       <div class="search-bar-wrapper">
-        <svg
-          class="search-icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <circle cx="11" cy="11" r="8"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
+        <AppIcon name="search-line" class="search-icon" :size="20" />
         <input
           v-model="searchQuery"
           type="text"
@@ -247,10 +242,7 @@ const toggleFavorite = (song: SearchSong): void => {
           @keyup.enter="handleSearch"
         />
         <button v-if="searchQuery" class="clear-btn" @click="clearSearch">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
+          <AppIcon name="close" :size="20" />
         </button>
       </div>
     </header>
@@ -310,18 +302,31 @@ const toggleFavorite = (song: SearchSong): void => {
                 :title="favoriteStore.isFavorite(song.id) ? '取消喜欢' : '喜欢'"
                 @click.stop="toggleFavorite(song)"
               >
-                <svg viewBox="0 0 24 24" width="16" height="16">
-                  <path
-                    d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7 7-7Z"
-                  />
-                </svg>
+                <AppIcon
+                  :name="favoriteStore.isFavorite(song.id) ? 'heart-fill' : 'heart'"
+                  :size="16"
+                />
               </button>
               <span class="song-duration">
                 {{ Math.floor(song.duration / 60000) }}:{{
                   String(Math.floor((song.duration % 60000) / 1000)).padStart(2, '0')
                 }}
               </span>
-              <button class="more-btn">•••</button>
+              <div class="more-btn-wrapper">
+                <button
+                  class="more-btn"
+                  :class="{ 'menu-open': openMenuSongId === song.id }"
+                  @click.stop="openMenuSongId = openMenuSongId === song.id ? null : song.id"
+                >
+                  •••
+                </button>
+                <SongContextMenu
+                  v-if="openMenuSongId === song.id"
+                  :song-id="song.id"
+                  :song-name="song.name"
+                  @close="openMenuSongId = null"
+                />
+              </div>
             </div>
           </div>
           <div v-if="searchResults?.songs.length === 0" class="empty-tips">No songs found</div>
@@ -613,11 +618,18 @@ const toggleFavorite = (song: SearchSong): void => {
 .song-row:hover .favorite-btn {
   opacity: 1;
 }
+.more-btn-wrapper {
+  position: relative;
+  display: flex;
+}
 .more-btn {
   border: none;
   background: none;
   color: var(--sys-text-tertiary);
   cursor: pointer;
+}
+.more-btn.menu-open {
+  color: var(--sys-text);
 }
 
 .fade-in {

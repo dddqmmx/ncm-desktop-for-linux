@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './AppIcon.vue'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useUserStore } from '@renderer/stores/userStore'
 import type { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist'
@@ -119,27 +120,9 @@ onUnmounted(() => {
         :class="{ expanded: showPlaylistSubmenu }"
         @click="showPlaylistSubmenu = !showPlaylistSubmenu"
       >
-        <svg viewBox="0 0 24 24" width="14" height="14" class="menu-icon">
-          <path
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M12 5v14M5 12h14"
-          />
-        </svg>
+        <AppIcon name="plus" class="menu-icon" :size="14" />
         <span>添加到歌单</span>
-        <svg viewBox="0 0 24 24" width="12" height="12" class="arrow-icon">
-          <path
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M9 18l6-6-6-6"
-          />
-        </svg>
+        <AppIcon name="chevron-right" class="arrow-icon" :size="12" />
       </div>
 
       <div v-if="showPlaylistSubmenu" class="playlist-submenu">
@@ -164,16 +147,7 @@ onUnmounted(() => {
         :class="{ loading: removingSong }"
         @click="removeFromPlaylist"
       >
-        <svg viewBox="0 0 24 24" width="14" height="14" class="menu-icon">
-          <path
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
-          />
-        </svg>
+        <AppIcon name="trash-outline" class="menu-icon" :size="14" />
         <span>从歌单删除</span>
       </div>
 

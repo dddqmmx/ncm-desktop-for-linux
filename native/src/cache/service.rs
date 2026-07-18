@@ -493,8 +493,10 @@ impl NativeCacheService {
         let Some(control) = control else {
             return Ok(false);
         };
+        // 只发取消信号，不等待后台任务收尾。下载线程若卡在 stream-download
+        // 内部阻塞点，wait_finished 会拖死切歌/loading 整条链路。
         control.cancel();
-        control.wait_finished();
+        control.finish();
         Ok(true)
     }
 
@@ -510,7 +512,7 @@ impl NativeCacheService {
             .insert(metadata_path.to_string(), control);
         if let Some(previous) = previous {
             previous.cancel();
-            previous.wait_finished();
+            previous.finish();
         }
         Ok(())
     }
@@ -553,7 +555,7 @@ impl NativeCacheService {
             .unwrap_or_default();
         for control in downloads {
             control.cancel();
-            control.wait_finished();
+            control.finish();
         }
     }
 
@@ -967,8 +969,10 @@ impl NativeCacheService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::player::SongCacheDownloadControl;
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Duration;
 
     static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -1015,6 +1019,38 @@ mod tests {
     fn read_meta(path: &str) -> SongStreamCacheMeta {
         serde_json::from_str(&fs::read_to_string(path).expect("read song meta"))
             .expect("parse song meta")
+    }
+
+    #[test]
+    fn cancel_song_cache_download_returns_promptly_even_if_download_is_stuck() {
+        let root = TestCacheRoot::new("cancel_prompt");
+        let service =
+            Arc::new(NativeCacheService::new(&root.path, 1024 * 1024).expect("create service"));
+
+        // 注册一个永远不会 finish 的假下载控制，模拟卡在 stream-download 的 cancel。
+        let stuck = Arc::new(SongCacheDownloadControl::new());
+        let metadata_path = root.path.join("stuck.meta.json");
+        fs::write(&metadata_path, b"{}").expect("write metadata path marker");
+        let meta_key = metadata_path.to_string_lossy().into_owned();
+        service
+            .register_song_cache_download(&meta_key, Arc::clone(&stuck))
+            .expect("register stuck download");
+
+        let started = std::time::Instant::now();
+        let cancelled = service
+            .cancel_song_cache_download(&meta_key)
+            .expect("cancel stuck download");
+        let elapsed = started.elapsed();
+
+        assert!(cancelled, "cancel should report an active download was cancelled");
+        assert!(
+            elapsed < Duration::from_millis(300),
+            "cancel_song_cache_download must not block on stuck downloads (elapsed={elapsed:?})"
+        );
+        // 再次 cancel 应返回 false（已移除）
+        assert!(!service
+            .cancel_song_cache_download(&meta_key)
+            .expect("second cancel"));
     }
 
     #[test]

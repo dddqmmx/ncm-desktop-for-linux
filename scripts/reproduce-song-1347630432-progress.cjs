@@ -4,16 +4,20 @@ const path = require('node:path')
 const { setTimeout: sleep } = require('node:timers/promises')
 const fs = require('node:fs')
 const os = require('node:os')
-const { lyric_new, song_detail, song_url_v1 } = require('NeteaseCloudMusicApi')
-const { PlayerService } = require('../native/index.node')
+const { lyric_new, song_detail, song_url_v1 } = require('@neteasecloudmusicapienhanced/api')
+const { CacheService, PlayerService } = require('../native/index.node')
 
-const SONG_ID = 1347630432
+const SONG_ID = Number(process.env.SONG_ID ?? 1347630432)
 const START_SECS = Number(process.env.START_SECS ?? 0)
 const SAMPLE_MS = Number(process.env.SAMPLE_MS ?? 100)
 const DURATION_SECS = Number(process.env.DURATION_SECS ?? 70)
 const QUALITY = process.env.QUALITY ?? 'standard'
-const MODE = process.env.MODE ?? 'cached'
+const MODE = process.env.MODE ?? 'split'
+const EXPECT_FINISH = process.env.EXPECT_FINISH === '1'
+const OUTPUT_DEVICE_ID = process.env.OUTPUT_DEVICE_ID?.trim() || ''
 const JUMP_THRESHOLD_MS = Number(process.env.JUMP_THRESHOLD_MS ?? 900)
+const STALL_THRESHOLD_MS = Number(process.env.STALL_THRESHOLD_MS ?? 10_000)
+const END_TOLERANCE_MS = Number(process.env.END_TOLERANCE_MS ?? 2_500)
 const LYRIC_OFFSET_MS = 400
 const LOCAL_STORAGE_DIRS = [
   process.env.ELECTRON_LOCAL_STORAGE_DIR,
@@ -144,7 +148,7 @@ function resolveCookie() {
 async function main() {
   console.log(
     `Reproducing song ${SONG_ID} from ${START_SECS}s for ${DURATION_SECS}s ` +
-      `(mode=${MODE}, quality=${QUALITY})`
+      `(mode=${MODE}, quality=${QUALITY}, expectFinish=${EXPECT_FINISH})`
   )
 
   const cookie = resolveCookie()
@@ -179,25 +183,58 @@ async function main() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `ncm-song-${SONG_ID}-`))
   const cachePath = path.join(tempDir, `${SONG_ID}.audio`)
   const metadataPath = path.join(tempDir, `${SONG_ID}.json`)
-  fs.writeFileSync(cachePath, '')
-  fs.writeFileSync(
-    metadataPath,
-    JSON.stringify({
-      song_id: SONG_ID,
-      quality: QUALITY,
-      source_url: songUrl,
-      content_length: urlBody?.data?.[0]?.size ?? null,
-      downloaded_ranges: [],
-      is_complete: false,
-      updated_at: Math.floor(Date.now() / 1000)
-    })
-  )
+  let backgroundCache = null
+  let backgroundCacheMetadataPath = ''
+  let backgroundCacheProgress = null
+  let backgroundCacheError = ''
+
+  if (MODE === 'cached') {
+    fs.writeFileSync(cachePath, '')
+    fs.writeFileSync(
+      metadataPath,
+      JSON.stringify({
+        song_id: SONG_ID,
+        quality: QUALITY,
+        source_url: songUrl,
+        content_length: urlBody?.data?.[0]?.size ?? null,
+        downloaded_ranges: [],
+        is_complete: false,
+        updated_at: Math.floor(Date.now() / 1000)
+      })
+    )
+  } else if (MODE === 'split') {
+    backgroundCache = new CacheService(path.join(tempDir, 'cache'), 512 * 1024 * 1024)
+    await backgroundCache.setSongMaxCacheAheadBytes(16 * 1024 * 1024)
+    const prepared = await backgroundCache.prepareSongSource(
+      SONG_ID,
+      QUALITY,
+      songUrl,
+      urlData?.size
+    )
+    backgroundCacheMetadataPath = prepared.metadataPath ?? ''
+    void backgroundCache
+      .cacheSongSource(SONG_ID, QUALITY, songUrl, urlData?.size, songDuration)
+      .catch((error) => {
+        backgroundCacheError = error instanceof Error ? error.message : String(error)
+      })
+    console.log(`Background cache metadata: ${backgroundCacheMetadataPath}`)
+  }
   const samples = []
   const anomalies = []
+  const stalls = []
   let lastProgress = null
   let lastWallMs = null
+  let lastAdvanceWallMs = 0
+  let stallReported = false
+  let endedNaturally = false
+  let maxProgress = 0
 
   try {
+    if (OUTPUT_DEVICE_ID) {
+      await player.switchOutputDevice(OUTPUT_DEVICE_ID)
+      console.log(`Output device: ${OUTPUT_DEVICE_ID}`)
+    }
+
     if (MODE === 'cached') {
       player.playUrlCached(
         songUrl,
@@ -217,11 +254,18 @@ async function main() {
     while (Date.now() - startedAt <= DURATION_SECS * 1000) {
       const wallMs = Date.now() - startedAt
       const progress = player.progressMs
+      if (backgroundCache && backgroundCacheMetadataPath) {
+        backgroundCache.updateSongCachePlaybackPosition(backgroundCacheMetadataPath, progress)
+      }
+      const isPlaying = player.isPlaying
+      const isBuffering = player.isBuffering
       const lyricIndex = findActiveLyricIndex(lyrics, progress)
       const lyric = lyricIndex >= 0 ? lyrics[lyricIndex] : undefined
       const sample = {
         wallMs,
         progress,
+        isPlaying,
+        isBuffering,
         lyricIndex,
         lyricTime: lyric?.time,
         lyricText: lyric?.text ?? ''
@@ -230,6 +274,27 @@ async function main() {
       if (lastProgress !== null && lastWallMs !== null) {
         const progressDelta = progress - lastProgress
         const wallDelta = wallMs - lastWallMs
+        if (progressDelta > 0) {
+          lastAdvanceWallMs = wallMs
+          stallReported = false
+        } else if (
+          isPlaying &&
+          wallMs - lastAdvanceWallMs >= STALL_THRESHOLD_MS &&
+          !stallReported
+        ) {
+          const stall = {
+            atWallMs: wallMs,
+            progress,
+            stalledForMs: wallMs - lastAdvanceWallMs,
+            isBuffering
+          }
+          stalls.push(stall)
+          stallReported = true
+          console.log(
+            `STALL wall=${wallMs}ms progress=${progress}ms ` +
+              `stalledFor=${stall.stalledForMs}ms buffering=${isBuffering}`
+          )
+        }
         if (progressDelta < -200 || progressDelta - wallDelta > JUMP_THRESHOLD_MS) {
           const anomaly = {
             atWallMs: wallMs,
@@ -256,16 +321,41 @@ async function main() {
       }
 
       samples.push(sample)
+      maxProgress = Math.max(maxProgress, progress)
       lastProgress = progress
       lastWallMs = wallMs
+
+      if (
+        !isPlaying &&
+        songDuration > 0 &&
+        progress >= Math.max(0, songDuration - END_TOLERANCE_MS)
+      ) {
+        endedNaturally = true
+        console.log(`ENDED wall=${wallMs}ms progress=${progress}ms`)
+        break
+      }
       await sleep(SAMPLE_MS)
     }
 
-    const maxProgress = samples.reduce((max, sample) => Math.max(max, sample.progress), 0)
     if (maxProgress < Math.max(1_000, START_SECS * 1000 + 1_000)) {
       throw new Error(`Playback did not start; max observed progress was ${maxProgress}ms`)
     }
   } finally {
+    if (backgroundCache && backgroundCacheMetadataPath) {
+      try {
+        backgroundCache.updateSongCachePlaybackPosition(
+          backgroundCacheMetadataPath,
+          endedNaturally ? songDuration : maxProgress
+        )
+        await sleep(250)
+        backgroundCacheProgress = await backgroundCache.getSongCacheProgress(
+          backgroundCacheMetadataPath
+        )
+        await backgroundCache.cancelSongCacheDownload(backgroundCacheMetadataPath)
+      } catch (error) {
+        backgroundCacheError = error instanceof Error ? error.message : String(error)
+      }
+    }
     try {
       player.stop()
     } catch {
@@ -283,7 +373,13 @@ async function main() {
         sampleMs: SAMPLE_MS,
         durationSecs: DURATION_SECS,
         quality: QUALITY,
+        expectedSongDurationMs: songDuration,
+        endedNaturally,
+        maxProgress,
+        backgroundCacheProgress,
+        backgroundCacheError,
         anomalies,
+        stalls,
         samples
       },
       null,
@@ -293,7 +389,20 @@ async function main() {
 
   console.log(`Report: ${reportPath}`)
   console.log(`Temp cache: ${tempDir}`)
-  if (anomalies.length > 0) {
+  console.log(
+    `Result: endedNaturally=${endedNaturally}, maxProgress=${maxProgress}ms, ` +
+      `stalls=${stalls.length}, anomalies=${anomalies.length}`
+  )
+  if (backgroundCacheProgress) {
+    console.log(`Background cache: ${JSON.stringify(backgroundCacheProgress)}`)
+  }
+  if (backgroundCacheError) {
+    console.error(`Background cache error: ${backgroundCacheError}`)
+  }
+  if (EXPECT_FINISH && !endedNaturally) {
+    console.error(`Playback did not finish naturally within ${DURATION_SECS}s`)
+    process.exitCode = 1
+  } else if (stalls.length > 0 || anomalies.length > 0) {
     process.exitCode = 2
   }
 }

@@ -349,6 +349,99 @@ describe('playerStore device switch sequencing', () => {
     )
   })
 
+  it('keeps native playback independent from the position-limited background cache', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(1_000)
+    vi.stubGlobal(
+      'setInterval',
+      vi.fn(() => 1 as unknown as ReturnType<typeof setInterval>)
+    )
+    vi.stubGlobal('clearInterval', vi.fn())
+
+    const playUrl = vi.fn(async () => undefined)
+    const playUrlCached = vi.fn(async () => undefined)
+    const cacheSongSource = vi.fn(() => new Promise(() => undefined))
+    const updatePlaybackPosition = vi.fn(async () => true)
+
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        song_detail: vi.fn(async ({ ids }: { ids: number[] }) => ({
+          body: {
+            songs: [
+              {
+                id: ids[0],
+                name: `Song ${ids[0]}`,
+                dt: 180000,
+                ar: [{ id: 1, name: 'Artist' }],
+                al: { id: 1, name: 'Album', picUrl: 'cover' },
+                h: null,
+                sq: null,
+                hr: null
+              }
+            ]
+          }
+        })),
+        song_url: vi.fn(async () => ({
+          body: {
+            data: [
+              {
+                url: 'https://example.com/test.flac',
+                level: 'standard',
+                size: 3 * 1024 * 1024
+              }
+            ]
+          }
+        })),
+        get_output_devices: vi.fn(async () => [
+          {
+            id: 'default',
+            name: 'System Default',
+            isDefault: true,
+            isCurrent: true
+          }
+        ]),
+        switch_output_device: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        play_url: playUrl,
+        play_url_cached: playUrlCached,
+        prepare_cached_song_source: vi.fn(async () => ({
+          type: 'url',
+          value: 'https://example.com/test.flac',
+          cachePath: '/tmp/test.flac',
+          metadataPath: '/tmp/test.flac.meta.json'
+        })),
+        cache_song_source: cacheSongSource,
+        get_progress: vi.fn(async () => 12_000),
+        is_buffering: vi.fn(async () => false),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 10 })),
+        update_song_cache_playback_position: updatePlaybackPosition,
+        cancel_song_cache_download: vi.fn(async () => true),
+        wait_finished: vi.fn(() => new Promise(() => undefined))
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+    await playerStore.playMusic(1)
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(playUrl).toHaveBeenCalledWith('https://example.com/test.flac', 0, false)
+    expect(playUrlCached).not.toHaveBeenCalled()
+    expect(cacheSongSource).toHaveBeenCalledWith({
+      songId: 1,
+      quality: 'standard',
+      url: 'https://example.com/test.flac',
+      expectedBytes: 3 * 1024 * 1024,
+      durationMs: 180000
+    })
+    expect(updatePlaybackPosition).toHaveBeenCalledWith({
+      metadataPath: '/tmp/test.flac.meta.json',
+      playbackPositionMs: 12_000
+    })
+  })
+
   it('starts native history playback from the persisted progress instead of zero', async () => {
     storage.setItem('currentTime', '42000')
     storage.setItem('currentSongId', '1')
@@ -492,6 +585,144 @@ describe('playerStore device switch sequencing', () => {
     expect(playerStore.currentTime).toBe(0)
   })
 
+  it('shows loading immediately for a new network song and keeps cancel non-blocking', async () => {
+    let cancelCalls = 0
+    let resolveStuckCancel: ((value: boolean) => void) | undefined
+    const cancelStarted = vi.fn()
+    const songDetail = vi.fn(async ({ ids }: { ids: number[] }) => ({
+      body: {
+        songs: [
+          {
+            id: ids[0],
+            name: `Song ${ids[0]}`,
+            dt: 180000,
+            ar: [{ id: 1, name: 'Artist' }],
+            al: { id: 1, name: 'Album', picUrl: 'cover' },
+            h: null,
+            sq: null,
+            hr: null
+          }
+        ]
+      }
+    }))
+    const songUrl = vi.fn(async ({ id }: { id: number }) => ({
+      body: {
+        data: [
+          {
+            url: `https://example.com/${id}.mp3`,
+            level: 'standard',
+            size: 1024
+          }
+        ]
+      }
+    }))
+    const playUrl = vi.fn(async () => undefined)
+
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        song_detail: songDetail,
+        song_url: songUrl,
+        get_output_devices: vi.fn(async () => [
+          {
+            id: 'default',
+            name: 'System Default',
+            isDefault: true,
+            isCurrent: true
+          }
+        ]),
+        switch_output_device: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        play_url: playUrl,
+        prepare_cached_song_source: vi.fn(async ({ songId }: { songId: number }) => ({
+          type: 'url',
+          value: `https://example.com/${songId}.mp3`,
+          cachePath: `/tmp/${songId}.cache`,
+          metadataPath: `/tmp/${songId}.meta.json`
+        })),
+        cache_song_source: vi.fn(async ({ songId }: { songId: number }) => ({
+          type: 'url',
+          value: `https://example.com/${songId}.mp3`,
+          metadataPath: `/tmp/${songId}.meta.json`
+        })),
+        cancel_song_cache_download: vi.fn(async (metadataPath: string) => {
+          cancelCalls += 1
+          cancelStarted(metadataPath)
+          // 切走第一首时模拟 cancel 卡住（旧逻辑会拖死整条 playMusic）
+          if (String(metadataPath).includes('/1.meta.json')) {
+            return await new Promise<boolean>((resolve) => {
+              resolveStuckCancel = resolve
+            })
+          }
+          return true
+        }),
+        update_song_cache_playback_position: vi.fn(async () => true),
+        get_progress: vi.fn(async () => 1_000),
+        is_buffering: vi.fn(async () => false),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 10 })),
+        seek: vi.fn(async () => undefined),
+        wait_finished: vi.fn(() => new Promise(() => undefined))
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+
+    // 先播第一首，建立 activeCacheMetadataPath
+    await playerStore.playMusic(1, 0, true)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(playerStore.isLoading).toBe(true)
+
+    // 再切第二首：应立刻进入 loading，cancel 卡住也不能拖死整条 playMusic
+    const playNextPromise = playerStore.playMusic(2, 0, true)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(playerStore.isLoading).toBe(true)
+
+    // 放行卡住的 cancel（或等前端 1.5s 超时兜底）
+    resolveStuckCancel?.(true)
+    await playNextPromise
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(songDetail).toHaveBeenCalled()
+    expect(songUrl).toHaveBeenCalled()
+    expect(playUrl).toHaveBeenCalled()
+    // 关键是 cancel 卡住也不会阻断新歌启动；loading 会在后续 progress 同步后清除
+    expect(cancelStarted).toHaveBeenCalled()
+  })
+
+  it('allows pause while loading so the play button is not dead during stuck startup', async () => {
+    const pause = vi.fn(async () => undefined)
+
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        pause,
+        resume: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        get_progress: vi.fn(async () => 1_000),
+        is_buffering: vi.fn(async () => false),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 0 })),
+        seek: vi.fn(async () => undefined),
+        wait_finished: vi.fn(() => new Promise(() => undefined))
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+    playerStore.isPlaying = true
+    playerStore.isLoading = true
+    playerStore.isHistorySong = false
+    playerStore.currentSongId = 99
+
+    await playerStore.togglePlay()
+
+    expect(pause).toHaveBeenCalled()
+    expect(playerStore.isPlaying).toBe(false)
+  })
+
   it('retries an unaccepted WebAPI cache position without requiring currentTime to advance', async () => {
     storage.setItem(
       SETTINGS_KEY,
@@ -523,7 +754,9 @@ describe('playerStore device switch sequencing', () => {
         this.listeners.set(name, callbacks)
       }
 
-      load(): void {}
+      load(): void {
+        // No media loading is needed for this timer-focused test.
+      }
 
       async play(): Promise<void> {
         this.paused = false
@@ -619,5 +852,51 @@ describe('playerStore device switch sequencing', () => {
       metadataPath: '/tmp/test.mp3.meta.json',
       playbackPositionMs: 12_000
     })
+  })
+
+  it('plays a local queue item directly without requesting cloud song data', async () => {
+    const songDetail = vi.fn()
+    const playFile = vi.fn(async () => undefined)
+
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        song_detail: songDetail,
+        get_output_devices: vi.fn(async () => [
+          {
+            id: 'default',
+            name: 'System Default',
+            isDefault: true,
+            isCurrent: true
+          }
+        ]),
+        switch_output_device: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        play_file: playFile,
+        get_progress: vi.fn(async () => 42_000),
+        is_buffering: vi.fn(async () => false),
+        wait_finished: vi.fn(() => new Promise(() => undefined))
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+    const localSong = {
+      id: -100,
+      name: 'Local Track',
+      artists: [{ id: 0, name: 'Local Artist' }],
+      cover: '',
+      duration: 180_000,
+      source: 'local' as const,
+      filePath: '/music/local-track.flac',
+      fileName: 'local-track.flac'
+    }
+
+    await playerStore.playAll([localSong])
+
+    expect(songDetail).not.toHaveBeenCalled()
+    expect(playFile).toHaveBeenCalledWith('/music/local-track.flac', 0, false)
+    expect(playerStore.currentSong).toEqual(localSong)
+    expect(playerStore.isPlaying).toBe(true)
   })
 })

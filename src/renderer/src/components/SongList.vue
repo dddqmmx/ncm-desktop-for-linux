@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import AppIcon from './AppIcon.vue'
+import { computed, ref } from 'vue'
 import { usePlayerStore } from '@renderer/stores/playerStore'
 import SongCover from './SongCover.vue'
+import SongContextMenu from './SongContextMenu.vue'
 import { Song } from '@renderer/types/songDetail'
 import { CurrentSong, createCurrentSongArtists } from '@renderer/stores/playerStore'
 import { useFavoriteStore } from '@renderer/stores/favoriteStore'
@@ -9,16 +12,22 @@ const props = defineProps<{
   songs: Song[]
   searchQuery?: string
   fallbackCover?: string
+  playlistId?: number
+  variant?: 'cloud' | 'local'
 }>()
 
 const emit = defineEmits<{
   (e: 'play', song: Song): void
+  (e: 'removed', songId: number): void
 }>()
 
 const playerStore = usePlayerStore()
 const favoriteStore = useFavoriteStore()
+const openMenuSongId = ref<number | null>(null)
+const isLocalVariant = computed(() => props.variant === 'local')
 
 const formatDuration = (ms: number): string => {
+  if (!Number.isFinite(ms) || ms <= 0) return '--:--'
   const totalSeconds = Math.floor(ms / 1000)
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
@@ -48,19 +57,9 @@ const toggleFavorite = (song: Song): void => {
       <div class="list-header-content">
         <div class="col-index">#</div>
         <div class="col-title">标题</div>
-        <div class="col-album">专辑</div>
+        <div class="col-album">{{ isLocalVariant ? '文件' : '专辑' }}</div>
         <div class="col-time">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <polyline points="12 6 12 12 16 14" />
-          </svg>
+          <AppIcon name="clock" :size="14" />
         </div>
       </div>
     </div>
@@ -75,14 +74,15 @@ const toggleFavorite = (song: Song): void => {
       >
         <div class="col-index">
           <span class="index-num">{{ (index + 1).toString().padStart(2, '0') }}</span>
-          <svg class="play-icon" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M8 5v14l11-7z" />
-          </svg>
+          <AppIcon name="play" class="play-icon" :size="16" />
         </div>
 
         <div class="col-title">
           <div class="mini-cover-wrapper">
-            <SongCover :id="track.al?.picUrl || fallbackCover" size="80y80" />
+            <div v-if="isLocalVariant" class="local-cover-icon" aria-hidden="true">
+              <AppIcon name="music" :size="20" />
+            </div>
+            <SongCover v-else :id="track.al?.picUrl || fallbackCover" size="80y80" />
           </div>
           <div class="song-info">
             <span class="song-name">{{ track.name }}</span>
@@ -93,38 +93,54 @@ const toggleFavorite = (song: Song): void => {
         </div>
 
         <div class="col-album">
-          <router-link :to="`/album/${track.al?.id}`" class="album-name">
+          <span v-if="isLocalVariant" class="album-name" :title="track.al?.name">
+            {{ track.al?.name }}
+          </span>
+          <router-link v-else :to="`/album/${track.al?.id}`" class="album-name">
             {{ track.al?.name }}
           </router-link>
         </div>
 
         <div class="col-time">
           <button
+            v-if="!isLocalVariant"
             class="favorite-btn"
             :class="{ active: favoriteStore.isFavorite(track.id) }"
             :title="favoriteStore.isFavorite(track.id) ? '取消喜欢' : '喜欢'"
             @click.stop="toggleFavorite(track)"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16">
-              <path
-                d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7 7-7Z"
-              />
-            </svg>
+            <AppIcon
+              :name="favoriteStore.isFavorite(track.id) ? 'heart-fill' : 'heart'"
+              :size="16"
+            />
           </button>
           <span class="duration-text">{{ formatDuration(track.dt) }}</span>
-          <button class="row-more">
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
+          <div v-if="!isLocalVariant" class="row-more-wrapper">
+            <button
+              class="row-more"
+              :class="{ 'menu-open': openMenuSongId === track.id }"
+              @click.stop="openMenuSongId = openMenuSongId === track.id ? null : track.id"
             >
-              <circle cx="12" cy="12" r="1" />
-              <circle cx="19" cy="12" r="1" />
-              <circle cx="5" cy="12" r="1" />
-            </svg>
+              <AppIcon name="more-dots" :size="16" />
+            </button>
+            <SongContextMenu
+              v-if="openMenuSongId === track.id"
+              :song-id="track.id"
+              :song-name="track.name"
+              :playlist-id="playlistId"
+              :show-remove="playlistId !== undefined"
+              @close="openMenuSongId = null"
+              @removed="emit('removed', track.id)"
+            />
+          </div>
+          <button
+            v-else
+            class="remove-local-btn"
+            type="button"
+            :title="`将 ${track.name} 移出曲库`"
+            @click.stop="emit('removed', track.id)"
+          >
+            <AppIcon name="trash" :size="16" />
           </button>
         </div>
       </div>
@@ -236,6 +252,24 @@ const toggleFavorite = (song: Song): void => {
   flex-shrink: 0;
 }
 
+.local-cover-icon {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--theme-color-strong);
+}
+
+.local-cover-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .song-info {
   display: flex;
   flex-direction: column;
@@ -261,12 +295,47 @@ const toggleFavorite = (song: Song): void => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.row-more-wrapper {
+  position: relative;
+  display: flex;
+}
 .row-more {
   display: none;
   background: none;
   border: none;
   color: var(--sys-text-disabled);
   cursor: pointer;
+}
+.row-more.menu-open {
+  display: block;
+  color: var(--sys-text);
+}
+.remove-local-btn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sys-text-disabled);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    color 0.2s,
+    opacity 0.2s,
+    background 0.2s;
+}
+.remove-local-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.remove-local-btn:hover {
+  background: var(--sys-danger-soft);
+  color: var(--sys-danger);
 }
 .favorite-btn {
   width: 28px;
@@ -308,6 +377,10 @@ const toggleFavorite = (song: Song): void => {
 }
 .track-row:hover .row-more {
   display: block;
+}
+.track-row:hover .remove-local-btn,
+.remove-local-btn:focus-visible {
+  opacity: 1;
 }
 
 .no-results {

@@ -484,6 +484,13 @@ where
             return;
         }
 
+        // 暂停时输出回调不再消费 ringbuf。若这里仍死等“有空位”，
+        // 解码线程会在 pause 期间永久阻塞，resume/seek/切歌都可能卡住。
+        if state.is_paused.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+
         let n = producer.push_slice(&samples[written..]);
         if n > 0 {
             written += n;
@@ -531,6 +538,47 @@ mod tests {
             buffered_frames: AtomicU64::new(12_000),
             waiting_for_seek: AtomicBool::new(true),
         }
+    }
+
+    #[test]
+    fn push_samples_blocking_does_not_hang_while_paused_on_full_buffer() {
+        use ringbuf::HeapRb;
+        use ringbuf::traits::{Producer, Split};
+        use std::sync::atomic::Ordering;
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let state = Arc::new(create_state());
+        state.has_seek_request.store(false, Ordering::SeqCst);
+        state.is_paused.store(true, Ordering::SeqCst);
+
+        // 填满 ringbuf，模拟 pause 后输出侧停止消费、解码侧缓冲区已满。
+        let rb = HeapRb::<i16>::new(8);
+        let (mut producer, _consumer) = rb.split();
+        assert_eq!(producer.push_slice(&[1, 2, 3, 4, 5, 6, 7, 8]), 8);
+
+        let state_for_push = Arc::clone(&state);
+        let push_thread = thread::spawn(move || {
+            // 旧逻辑会在 buffer full 上永久 sleep 重试，且 pause 期间输出不消费，
+            // 导致解码线程卡死。修复后 pause 时会主动让出并响应 terminating。
+            push_samples_blocking(&mut producer, &[9i16; 16], &state_for_push);
+        });
+
+        thread::sleep(Duration::from_millis(40));
+        assert!(
+            !push_thread.is_finished(),
+            "paused decode push should wait, but must remain interruptible"
+        );
+
+        state.is_terminating.store(true, Ordering::SeqCst);
+        let started = Instant::now();
+        push_thread
+            .join()
+            .expect("push thread panicked while paused on full buffer");
+        assert!(
+            started.elapsed() < Duration::from_millis(300),
+            "push_samples_blocking must exit promptly when terminating during pause"
+        );
     }
 
     #[test]

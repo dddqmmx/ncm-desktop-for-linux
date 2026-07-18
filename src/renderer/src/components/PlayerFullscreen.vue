@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { formatCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
+import AppIcon from './AppIcon.vue'
+import { formatCurrentSongArtists, isLocalSong, usePlayerStore } from '@renderer/stores/playerStore'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import LyricPanel from './LyricPanel.vue'
@@ -36,6 +37,7 @@ const formatTime = (ms: number, showMillis = false): string => {
 
 const progressPercent = computed(() => playerStore.progressPercent)
 const currentArtists = computed(() => playerStore.currentSong?.artists ?? [])
+const isCurrentSongLocal = computed(() => isLocalSong(playerStore.currentSong))
 
 const beginSeek = (): void => {
   if (!isDragging.value) isDragging.value = true
@@ -152,16 +154,7 @@ const onImageLoad = (): void => {
       <!-- 顶部栏 -->
       <header class="top-bar">
         <button class="back-btn" @click="playerStore.toggleFullScreen">
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.5"
-          >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
+          <AppIcon name="chevron-down" :size="24" />
         </button>
         <div class="empty-space"></div>
       </header>
@@ -238,9 +231,7 @@ const onImageLoad = (): void => {
             <!-- 控制按钮 -->
             <div class="btns-row">
               <button class="icon-btn secondary" @click="playerStore.playPrev()">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
-                </svg>
+                <AppIcon name="prev" :size="24" />
               </button>
 
               <button
@@ -250,24 +241,12 @@ const onImageLoad = (): void => {
                 @click="playerStore.togglePlay"
               >
                 <div v-if="playerStore.isLoading" class="loading-spinner"></div>
-                <svg
-                  v-if="playerStore.isPlaying"
-                  width="32"
-                  height="32"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-                </svg>
-                <svg v-else width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
+                <AppIcon v-if="playerStore.isPlaying" name="pause" :size="32" />
+                <AppIcon v-else name="play" :size="32" />
               </button>
 
               <button class="icon-btn secondary" @click="playerStore.playNext()">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
-                </svg>
+                <AppIcon name="next" :size="24" />
               </button>
             </div>
           </div>
@@ -275,11 +254,17 @@ const onImageLoad = (): void => {
 
         <!-- 右侧：歌词面板 -->
         <LyricPanel
+          v-if="!isCurrentSongLocal"
           :song-id="playerStore.currentSong?.id"
           :current-time="playerStore.currentTime"
           :is-dark="theme.isDark"
           :is-seeking="playerStore.isSeeking"
         />
+        <section v-else class="local-file-panel">
+          <AppIcon name="music" :size="48" />
+          <strong>本地音乐</strong>
+          <span>{{ playerStore.currentSong?.fileName }}</span>
+        </section>
       </main>
     </div>
   </div>
@@ -358,11 +343,43 @@ const onImageLoad = (): void => {
 
 /* 防止子项被撑开 */
 .visual-panel,
-.lyric-section {
+.lyric-section,
+.local-file-panel {
   min-width: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.local-file-panel {
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+  opacity: 0.74;
+}
+
+.local-file-panel svg {
+  width: 64px;
+  height: 64px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.local-file-panel strong {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.local-file-panel span {
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
 }
 
 /* 左侧内容/封面 */
