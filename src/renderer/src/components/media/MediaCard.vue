@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import AppIcon from './AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 defineProps<{
   title?: string
   subtitle?: string

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import AppDialog from '@renderer/components/AppDialog.vue'
+import AppDialog from '@renderer/components/common/AppDialog.vue'
 // const ipcHandle = (): void => window.electron.ipcRenderer.send('ping')
 </script>
 

@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import AppIcon from './AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { computed, ref, watch } from 'vue'
-import LoginModal from './LoginModal.vue'
+import LoginModal from '@renderer/components/overlays/LoginModal.vue'
 import { useUserStore } from '@renderer/stores/userStore'
 import { useFavoriteStore } from '@renderer/stores/favoriteStore'
 import { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist'
-import SongCover from './SongCover.vue'
-import UserAvatar from './UserAvatar.vue'
+import SongCover from '@renderer/components/media/SongCover.vue'
+import UserAvatar from '@renderer/components/media/UserAvatar.vue'
 
 const userStore = useUserStore()
 const favoriteStore = useFavoriteStore()

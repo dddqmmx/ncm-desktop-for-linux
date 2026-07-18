@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import AppIcon from './AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { ref, computed, watch, nextTick } from 'vue'
 import type { Lyric } from '@renderer/types/lyric'
 import { usePlayerStore } from '@renderer/stores/playerStore'

@@ -151,7 +151,7 @@ export const UiService = {
       height: 800,
       minWidth: 1000,
       minHeight: 800,
-      opacity: 0,
+      opacity: 1,
       transparent: true,
       show: false,
       frame: false,

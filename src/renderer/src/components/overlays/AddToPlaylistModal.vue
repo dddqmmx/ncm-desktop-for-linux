@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import AppIcon from './AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { ref, onMounted, reactive } from 'vue'
 import { useUserStore } from '@renderer/stores/userStore'
 import type { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist'

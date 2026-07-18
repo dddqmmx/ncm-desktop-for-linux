@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import AppIcon from './AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { ref, reactive, onUnmounted, watch } from 'vue'
-import { useUserStore } from '../stores/userStore'
-import type { LoginQrCheck, LoginQrCreate, LoginQrKey } from '../types/loginQr'
+import { useUserStore } from '@renderer/stores/userStore'
+import type { LoginQrCheck, LoginQrCreate, LoginQrKey } from '@renderer/types/loginQr'
 
 const emit = defineEmits(['login-success', 'close'])
 const userStore = useUserStore()

@@ -204,7 +204,7 @@
 </template>
 
 <script setup lang="ts">
-import AppIcon from '@renderer/components/AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 import artistFallback from '@renderer/assets/icons/artist-fallback.svg?url'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -219,10 +219,10 @@ import type {
   ArtistSong,
   ArtistTopSongResponse
 } from '@renderer/types/artist'
-import AlbumCover from '../components/AlbumCover.vue'
-import SongCover from '../components/SongCover.vue'
-import UserAvatar from '../components/UserAvatar.vue'
-import LazyImage from '../components/LazyImage.vue'
+import AlbumCover from '@renderer/components/media/AlbumCover.vue'
+import SongCover from '@renderer/components/media/SongCover.vue'
+import UserAvatar from '@renderer/components/media/UserAvatar.vue'
+import LazyImage from '@renderer/components/common/LazyImage.vue'
 
 interface ServiceResponse<T> {
   body?: T | null

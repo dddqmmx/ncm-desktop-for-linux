@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import AppIcon from './AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { formatCurrentSongArtists, isLocalSong, usePlayerStore } from '@renderer/stores/playerStore'
 import { ref, computed, onMounted } from 'vue'
 // 1. 必须导入新设计的播放列表组件
 import PlaylistOverlay from './PlaylistOverlay.vue'
-import SongCover from './SongCover.vue'
-import AddToPlaylistModal from './AddToPlaylistModal.vue'
+import SongCover from '@renderer/components/media/SongCover.vue'
+import AddToPlaylistModal from '@renderer/components/overlays/AddToPlaylistModal.vue'
 import { useFavoriteStore } from '@renderer/stores/favoriteStore'
 
 const playerStore = usePlayerStore()
@@ -18,6 +18,7 @@ const displayTrack = computed(() => ({
   artist: formatCurrentSongArtists(playerStore.currentSong?.artists)
 }))
 const isCurrentSongLocal = computed(() => isLocalSong(playerStore.currentSong))
+const hasCurrentSongCover = computed(() => Boolean(playerStore.currentSong?.cover?.trim()))
 
 // --- 进度条逻辑 ---
 const isDragging = ref(false)
@@ -90,7 +91,14 @@ onMounted(() => {
         <!-- 1. 左侧：歌曲信息 -->
         <div class="section-left" @click="playerStore.toggleFullScreen">
           <div class="cover-wrapper">
-            <SongCover :id="playerStore.currentSong?.cover" size="100y100" />
+            <div
+              v-if="isCurrentSongLocal && !hasCurrentSongCover"
+              class="local-cover-icon"
+              aria-hidden="true"
+            >
+              <AppIcon name="music" :size="24" />
+            </div>
+            <SongCover v-else :id="playerStore.currentSong?.cover" size="100y100" />
           </div>
           <div class="track-metadata">
             <div class="track-title">{{ displayTrack.title }}</div>
@@ -115,9 +123,7 @@ onMounted(() => {
               @click="toggleCurrentFavorite"
             >
               <AppIcon
-                :name="
-                  favoriteStore.isFavorite(playerStore.currentSongId) ? 'heart-fill' : 'heart'
-                "
+                :name="favoriteStore.isFavorite(playerStore.currentSongId) ? 'heart-fill' : 'heart'"
                 :size="14"
               />
             </button>
@@ -134,7 +140,7 @@ onMounted(() => {
             >
               <div class="inner-glow" :class="{ active: playerStore.isPlaying }"></div>
               <div v-if="playerStore.isLoading" class="loading-spinner"></div>
-              <AppIcon :name="playerStore.isPlaying ? 'pause' : 'play'" :size="26" />
+              <AppIcon v-else :name="playerStore.isPlaying ? 'pause' : 'play'" :size="26" />
             </button>
 
             <button class="icon-btn next" @click="playerStore.playNext()">
@@ -312,6 +318,25 @@ onMounted(() => {
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   -webkit-app-region: no-drag;
+}
+
+.local-cover-icon {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: var(--sys-control);
+  color: var(--theme-color-strong);
+}
+
+.local-cover-icon svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .track-metadata {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import MediaDetailLayout from '../components/MediaDetailLayout.vue'
-import SongList from '../components/SongList.vue'
+import MediaDetailLayout from '@renderer/components/media/MediaDetailLayout.vue'
+import SongList from '@renderer/components/media/SongList.vue'
 import { useFavoriteStore } from '@renderer/stores/favoriteStore'
 import { CurrentSong, usePlayerStore } from '@renderer/stores/playerStore'
 import type { Song } from '@renderer/types/songDetail'

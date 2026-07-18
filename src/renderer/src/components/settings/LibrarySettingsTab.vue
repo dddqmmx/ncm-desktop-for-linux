@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import AppIcon from '../AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import SettingGroup from '@renderer/components/settings/SettingGroup.vue'

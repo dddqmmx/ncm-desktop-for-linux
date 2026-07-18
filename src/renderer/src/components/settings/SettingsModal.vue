@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import AppIcon from '../AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 import noiseSvg from '@renderer/assets/icons/noise.svg?url'
 import { computed, ref, type Component } from 'vue'
 
@@ -161,8 +161,7 @@ const closeSettingsWindow = (): void => {
 .liquid-glass {
   /* 优化2：提高基础白色的不透明度(0.85/0.75)；加入极其微弱的噪点纹理增加物理质感 */
   background:
-    v-bind(noiseBg),
-    linear-gradient(135deg, var(--sys-surface-strong) 0%, var(--sys-surface) 100%);
+    v-bind(noiseBg), linear-gradient(135deg, var(--sys-surface-strong) 0%, var(--sys-surface) 100%);
 
   backdrop-filter: blur(60px) saturate(200%);
   -webkit-backdrop-filter: blur(60px) saturate(200%);
@@ -175,8 +174,7 @@ const closeSettingsWindow = (): void => {
 /* 侧边栏区域隔离线 */
 .sidebar-area {
   border-right: 1px solid var(--sys-border);
-  /* 稍微提高一点白底，与整体匹配 */
-  background: var(--sys-surface-muted);
+  background: var(--sys-surface);
 }
 
 /* 右侧主内容区 */
@@ -185,8 +183,7 @@ const closeSettingsWindow = (): void => {
   display: flex;
   flex-direction: column;
   position: relative;
-  /* 优化4：右侧内容区提高白底比例(0.6)，保证文字、表单清晰度不受底层背景干扰 */
-  background: var(--sys-surface-muted);
+  background: var(--sys-surface);
   min-width: 0;
 }
 

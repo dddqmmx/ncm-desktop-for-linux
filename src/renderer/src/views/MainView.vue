@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import SideNavBar from '../components/SideNavBar.vue'
-import MusicPlayer from '../components/PlayerBar.vue'
+import SideNavBar from '@renderer/components/navigation/SideNavBar.vue'
+import MusicPlayer from '@renderer/components/player/PlayerBar.vue'
 import { onMounted } from 'vue'
 import { useUserStore } from '@renderer/stores/userStore'
-import PlayerFullscreen from '@renderer/components/PlayerFullscreen.vue'
+import PlayerFullscreen from '@renderer/components/player/PlayerFullscreen.vue'
 import { usePlayerStore } from '@renderer/stores/playerStore'
 import { useFavoriteStore } from '@renderer/stores/favoriteStore'
 import { ref, watch } from 'vue'

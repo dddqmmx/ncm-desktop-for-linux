@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import AppIcon from './AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { computed, ref } from 'vue'
 import { usePlayerStore } from '@renderer/stores/playerStore'
 import SongCover from './SongCover.vue'
@@ -79,7 +79,11 @@ const toggleFavorite = (song: Song): void => {
 
         <div class="col-title">
           <div class="mini-cover-wrapper">
-            <div v-if="isLocalVariant" class="local-cover-icon" aria-hidden="true">
+            <div
+              v-if="isLocalVariant && !track.al?.picUrl?.trim()"
+              class="local-cover-icon"
+              aria-hidden="true"
+            >
               <AppIcon name="music" :size="20" />
             </div>
             <SongCover v-else :id="track.al?.picUrl || fallbackCover" size="80y80" />
@@ -138,9 +142,10 @@ const toggleFavorite = (song: Song): void => {
             class="remove-local-btn"
             type="button"
             :title="`将 ${track.name} 移出曲库`"
+            :aria-label="`将 ${track.name} 移出曲库`"
             @click.stop="emit('removed', track.id)"
           >
-            <AppIcon name="trash" :size="16" />
+            <AppIcon name="close-fill" :size="16" />
           </button>
         </div>
       </div>
@@ -311,31 +316,38 @@ const toggleFavorite = (song: Song): void => {
   color: var(--sys-text);
 }
 .remove-local-btn {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
-  border: none;
-  border-radius: 50%;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background: transparent;
   color: var(--sys-text-disabled);
   cursor: pointer;
   opacity: 0;
+  transform: scale(0.9);
   transition:
     color 0.2s,
     opacity 0.2s,
-    background 0.2s;
+    background 0.2s,
+    border-color 0.2s,
+    transform 0.2s;
 }
 .remove-local-btn svg {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  stroke: none;
 }
 .remove-local-btn:hover {
   background: var(--sys-danger-soft);
+  border-color: var(--sys-danger);
   color: var(--sys-danger);
+}
+.remove-local-btn:focus-visible {
+  outline: 2px solid var(--theme-color);
+  outline-offset: 2px;
 }
 .favorite-btn {
   width: 28px;
@@ -381,6 +393,11 @@ const toggleFavorite = (song: Song): void => {
 .track-row:hover .remove-local-btn,
 .remove-local-btn:focus-visible {
   opacity: 1;
+  transform: scale(1);
+}
+.track-row:hover .remove-local-btn:active,
+.remove-local-btn:focus-visible:active {
+  transform: scale(0.94);
 }
 
 .no-results {

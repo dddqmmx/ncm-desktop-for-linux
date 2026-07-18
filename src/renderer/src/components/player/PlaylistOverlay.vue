@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import AppIcon from './AppIcon.vue'
-import { formatCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
+import { formatCurrentSongArtists, isLocalSong, usePlayerStore } from '@renderer/stores/playerStore'
 import { ref, nextTick, watch, onBeforeUnmount } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
-import SongCover from './SongCover.vue'
+import SongCover from '@renderer/components/media/SongCover.vue'
 
 const playerStore = usePlayerStore()
 const listRef = ref<HTMLElement | null>(null)
@@ -120,7 +120,14 @@ const onDragEnd = (): void => {
             </div>
 
             <div class="item-cover">
-              <SongCover :id="song.cover" size="80y80" />
+              <div
+                v-if="isLocalSong(song) && !song.cover.trim()"
+                class="local-cover-icon"
+                aria-hidden="true"
+              >
+                <AppIcon name="music" :size="20" />
+              </div>
+              <SongCover v-else :id="song.cover" size="80y80" />
             </div>
 
             <div class="item-info">
@@ -284,7 +291,24 @@ const onDragEnd = (): void => {
   height: 40px;
   border-radius: 10px;
   overflow: hidden;
+  background: var(--sys-control);
   flex-shrink: 0;
+}
+.local-cover-icon {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--theme-color-strong);
+}
+.local-cover-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .item-info {
   flex: 1;

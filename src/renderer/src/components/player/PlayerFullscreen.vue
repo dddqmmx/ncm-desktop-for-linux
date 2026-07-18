@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import AppIcon from './AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { formatCurrentSongArtists, isLocalSong, usePlayerStore } from '@renderer/stores/playerStore'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -7,7 +7,7 @@ import LyricPanel from './LyricPanel.vue'
 import { colord } from 'colord'
 import { extractColors } from 'extract-colors'
 import { useResolvedMediaUrl } from '@renderer/composables/useResolvedMediaUrl'
-import SongCover from './SongCover.vue'
+import SongCover from '@renderer/components/media/SongCover.vue'
 
 const playerStore = usePlayerStore()
 const router = useRouter()
@@ -38,6 +38,7 @@ const formatTime = (ms: number, showMillis = false): string => {
 const progressPercent = computed(() => playerStore.progressPercent)
 const currentArtists = computed(() => playerStore.currentSong?.artists ?? [])
 const isCurrentSongLocal = computed(() => isLocalSong(playerStore.currentSong))
+const hasCurrentSongCover = computed(() => Boolean(playerStore.currentSong?.cover?.trim()))
 
 const beginSeek = (): void => {
   if (!isDragging.value) isDragging.value = true
@@ -163,13 +164,23 @@ const onImageLoad = (): void => {
         <!-- 左侧：封面与控制器 -->
         <section class="visual-panel">
           <div class="cover-wrapper">
+            <div
+              v-if="isCurrentSongLocal && !hasCurrentSongCover"
+              class="main-cover-component local-cover-display"
+              :class="{ playing: playerStore.isPlaying }"
+              aria-hidden="true"
+            >
+              <AppIcon name="music" :size="128" />
+            </div>
             <SongCover
+              v-else
               :id="playerStore.currentSong?.cover"
               size="500y500"
               class="main-cover-component"
               :class="{ playing: playerStore.isPlaying }"
             />
             <img
+              v-if="hasCurrentSongCover && resolvedCover"
               ref="imgRef"
               :src="resolvedCover"
               class="main-cover-hidden"
@@ -408,6 +419,23 @@ const onImageLoad = (): void => {
 
 .main-cover-component.playing {
   transform: scale(1.02);
+}
+
+.local-cover-display {
+  display: grid;
+  place-items: center;
+  background: var(--sys-control);
+  color: var(--theme-color-strong);
+}
+
+.local-cover-display svg {
+  width: 128px;
+  height: 128px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .main-cover-hidden {

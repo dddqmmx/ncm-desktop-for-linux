@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import LazyImage from './LazyImage.vue'
+import LazyImage from '@renderer/components/common/LazyImage.vue'
 
 interface Props {
   /** 用户头像 URL (avatarUrl) */

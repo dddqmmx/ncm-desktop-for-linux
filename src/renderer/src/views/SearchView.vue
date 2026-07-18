@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import AppIcon from '@renderer/components/AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { usePlayerStore } from '@renderer/stores/playerStore'
 import { SongDetailResult } from '@renderer/types/songDetail'
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
@@ -8,7 +8,7 @@ import type { SearchResult, Song as SearchSong } from '@renderer/types/search'
 import { resolveCachedMediaUrl } from '@renderer/utils/cache'
 import { useFavoriteStore } from '@renderer/stores/favoriteStore'
 import { CurrentSong, createCurrentSongArtists } from '@renderer/stores/playerStore'
-import SongContextMenu from '@renderer/components/SongContextMenu.vue'
+import SongContextMenu from '@renderer/components/media/SongContextMenu.vue'
 
 const searchQuery = ref('')
 const searchResults = ref<SearchResult | null>(null)

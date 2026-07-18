@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import MediaCard from '../components/MediaCard.vue'
-import AlbumItem from '../components/AlbumItem.vue'
+import MediaCard from '@renderer/components/media/MediaCard.vue'
+import AlbumItem from '@renderer/components/media/AlbumItem.vue'
 import { onMounted, ref } from 'vue'
 import { useUserStore } from '@renderer/stores/userStore'
 import { RecommendResource, RecommendItem } from '@renderer/types/recommendResource'

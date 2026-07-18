@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import AppIcon from '@renderer/components/AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { useRoute } from 'vue-router'
 import { ref, computed, watch } from 'vue'
 import { PlaylistDetail, Track } from '@renderer/types/playlistDetail'
 import { Song } from '@renderer/types/songDetail'
 import { CurrentSong, createCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
 import { useUserStore } from '@renderer/stores/userStore'
-import MediaDetailLayout from '../components/MediaDetailLayout.vue'
-import SongList from '../components/SongList.vue'
-import UserAvatar from '../components/UserAvatar.vue'
+import MediaDetailLayout from '@renderer/components/media/MediaDetailLayout.vue'
+import SongList from '@renderer/components/media/SongList.vue'
+import UserAvatar from '@renderer/components/media/UserAvatar.vue'
 
 const route = useRoute()
 const playerStore = usePlayerStore()

@@ -4,8 +4,8 @@ import { ref, computed, watch } from 'vue'
 import { CurrentSong, createCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
 import { AlbumDetail, AlbumDetailInfo } from '@renderer/types/album'
 import { Song } from '@renderer/types/songDetail'
-import MediaDetailLayout from '../components/MediaDetailLayout.vue'
-import SongList from '../components/SongList.vue'
+import MediaDetailLayout from '@renderer/components/media/MediaDetailLayout.vue'
+import SongList from '@renderer/components/media/SongList.vue'
 
 const route = useRoute()
 const playerStore = usePlayerStore()

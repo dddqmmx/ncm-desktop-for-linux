@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import AppIcon from '@renderer/components/AppIcon.vue'
+import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { computed, onBeforeUnmount, ref } from 'vue'
-import MediaDetailLayout from '@renderer/components/MediaDetailLayout.vue'
-import SongList from '@renderer/components/SongList.vue'
+import MediaDetailLayout from '@renderer/components/media/MediaDetailLayout.vue'
+import SongList from '@renderer/components/media/SongList.vue'
 import { useDialogStore } from '@renderer/stores/dialogStore'
 import { useLocalMusicStore } from '@renderer/stores/localMusicStore'
 import { formatCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
@@ -38,7 +38,7 @@ const mapLocalSongToSong = (song: LocalSong): Song => ({
   al: {
     id: 0,
     name: song.fileName,
-    picUrl: ''
+    picUrl: song.cover
   }
 })
 
@@ -165,9 +165,10 @@ onBeforeUnmount(() => {
           class="local-icon-button"
           type="button"
           title="清空本地曲库"
+          aria-label="清空本地曲库"
           @click="clearLibrary"
         >
-          <AppIcon name="trash" :size="16" />
+          <AppIcon name="trash-outline" :size="18" />
         </button>
       </template>
 
@@ -240,8 +241,14 @@ onBeforeUnmount(() => {
 }
 
 .local-icon-button {
-  width: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    color 0.2s,
+    transform 0.2s;
 }
 
 .local-action-button svg,
@@ -268,6 +275,16 @@ onBeforeUnmount(() => {
 
 .local-icon-button:hover {
   background: var(--sys-danger-soft);
+  border-color: var(--sys-danger);
   color: var(--sys-danger);
+}
+
+.local-icon-button:active {
+  transform: scale(0.94);
+}
+
+.local-icon-button:focus-visible {
+  outline: 2px solid var(--theme-color);
+  outline-offset: 2px;
 }
 </style>

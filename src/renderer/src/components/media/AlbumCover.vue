@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import LazyImage from './LazyImage.vue'
+import LazyImage from '@renderer/components/common/LazyImage.vue'
 
 interface Props {
   /** 专辑封面 URL (picUrl) */
