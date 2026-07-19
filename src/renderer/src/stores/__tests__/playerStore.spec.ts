@@ -1,6 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { useConfigStore } from '../configStore'
+import { usePlaybackStore } from '../player/playback'
 import { usePlayerStore } from '../playerStore'
 
 class MemoryStorage implements Storage {
@@ -712,9 +713,9 @@ describe('playerStore device switch sequencing', () => {
     } as unknown as Window & typeof globalThis)
 
     const playerStore = usePlayerStore()
+    const playbackStore = usePlaybackStore()
     playerStore.isPlaying = true
-    playerStore.isLoading = true
-    playerStore.isHistorySong = false
+    playbackStore.isLoading = true
     playerStore.currentSongId = 99
 
     await playerStore.togglePlay()
