@@ -170,7 +170,7 @@ const onImageLoad = (): void => {
               :class="{ playing: playerStore.isPlaying }"
               aria-hidden="true"
             >
-              <AppIcon name="music" :size="128" />
+              <AppIcon name="music" class="local-cover-glyph" />
             </div>
             <SongCover
               v-else
@@ -271,11 +271,7 @@ const onImageLoad = (): void => {
           :is-dark="theme.isDark"
           :is-seeking="playerStore.isSeeking"
         />
-        <section v-else class="local-file-panel">
-          <AppIcon name="music" :size="48" />
-          <strong>本地音乐</strong>
-          <span>{{ playerStore.currentSong?.fileName }}</span>
-        </section>
+        <section v-else class="local-file-panel" />
       </main>
     </div>
   </div>
@@ -362,37 +358,6 @@ const onImageLoad = (): void => {
   flex-direction: column;
 }
 
-.local-file-panel {
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  text-align: center;
-  opacity: 0.74;
-}
-
-.local-file-panel svg {
-  width: 64px;
-  height: 64px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.local-file-panel strong {
-  font-size: 22px;
-  font-weight: 700;
-}
-
-.local-file-panel span {
-  max-width: 420px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
-}
-
 /* 左侧内容/封面 */
 .visual-panel {
   justify-content: center;
@@ -428,14 +393,11 @@ const onImageLoad = (): void => {
   color: var(--theme-color-strong);
 }
 
-.local-cover-display svg {
-  width: 128px;
-  height: 128px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.local-cover-display :deep(.local-cover-glyph) {
+  width: 100% !important;
+  height: 100% !important;
+  padding: 28%;
+  box-sizing: border-box;
 }
 
 .main-cover-hidden {

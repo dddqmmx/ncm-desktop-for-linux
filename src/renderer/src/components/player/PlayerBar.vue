@@ -96,7 +96,7 @@ onMounted(() => {
               class="local-cover-icon"
               aria-hidden="true"
             >
-              <AppIcon name="music" :size="24" />
+              <AppIcon name="music" class="local-cover-glyph" />
             </div>
             <SongCover v-else :id="playerStore.currentSong?.cover" size="100y100" />
           </div>
@@ -329,14 +329,11 @@ onMounted(() => {
   color: var(--theme-color-strong);
 }
 
-.local-cover-icon svg {
-  width: 24px;
-  height: 24px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.local-cover-icon :deep(.local-cover-glyph) {
+  width: 100% !important;
+  height: 100% !important;
+  padding: 22%;
+  box-sizing: border-box;
 }
 
 .track-metadata {

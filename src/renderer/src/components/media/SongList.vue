@@ -84,7 +84,7 @@ const toggleFavorite = (song: Song): void => {
               class="local-cover-icon"
               aria-hidden="true"
             >
-              <AppIcon name="music" :size="20" />
+              <AppIcon name="music" class="local-cover-glyph" />
             </div>
             <SongCover v-else :id="track.al?.picUrl || fallbackCover" size="80y80" />
           </div>
@@ -265,14 +265,11 @@ const toggleFavorite = (song: Song): void => {
   color: var(--theme-color-strong);
 }
 
-.local-cover-icon svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.local-cover-icon :deep(.local-cover-glyph) {
+  width: 100% !important;
+  height: 100% !important;
+  padding: 22%;
+  box-sizing: border-box;
 }
 
 .song-info {

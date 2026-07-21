@@ -216,12 +216,18 @@ const onImgError = (): void => {
 }
 
 .placeholder-content {
-  width: 32px;
-  height: 32px;
-  opacity: 0.15;
+  width: 100%;
+  height: 100%;
+  opacity: 0.22;
   background: currentColor;
   mask: v-bind(placeholderMask);
   -webkit-mask: v-bind(placeholderMask);
+  mask-size: cover;
+  -webkit-mask-size: cover;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-position: center;
+  -webkit-mask-position: center;
 }
 
 .lazy-image-error {
@@ -236,8 +242,9 @@ const onImgError = (): void => {
 }
 
 .error-msg {
-  font-size: 20px;
+  font-size: clamp(12px, 18%, 28px);
   font-weight: bold;
+  line-height: 1;
 }
 
 /* 渐显过渡动画 */
