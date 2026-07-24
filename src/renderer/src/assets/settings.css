@@ -123,8 +123,8 @@
 }
 
 .settings-status.success {
-  color: var(--sys-success);
-  background: var(--sys-success-soft);
+  color: var(--sys-text-secondary);
+  background: var(--sys-surface-muted);
 }
 
 .settings-path-list {
