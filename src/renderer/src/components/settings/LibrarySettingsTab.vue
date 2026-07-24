@@ -4,30 +4,108 @@ import { ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import SettingGroup from '@renderer/components/settings/SettingGroup.vue'
 import { useConfigStore } from '@renderer/stores/configStore'
+import { useLocalMusicStore } from '@renderer/stores/localMusicStore'
 
 const configStore = useConfigStore()
+const localMusicStore = useLocalMusicStore()
 const { libPaths } = storeToRefs(configStore)
 
 const message = ref('')
 const messageType = ref<'success' | 'error'>('success')
+const isBusy = ref(false)
 
-const addLibraryPath = (): void => {
-  const input = window.prompt('请输入本地音乐文件夹路径')
-  const path = input?.trim()
+const setMessage = (type: 'success' | 'error', text: string): void => {
+  messageType.value = type
+  message.value = text
+}
 
-  if (!path) {
+const scanAndImport = async (paths: string[]): Promise<void> => {
+  const scanResult = await window.api.scan_library_folders(paths)
+  if (scanResult.files.length === 0) {
+    setMessage('error', '未在所选文件夹中找到可导入的音频文件。')
     return
   }
 
-  const added = configStore.addLibraryPath(path)
-  messageType.value = added ? 'success' : 'error'
-  message.value = added ? '文件夹已加入曲库列表。' : '路径为空或已经存在。'
+  const importResult = await localMusicStore.importPaths(
+    scanResult.files.map((file) => ({
+      filePath: file.filePath,
+      fileName: file.fileName,
+      duration: file.duration
+    }))
+  )
+
+  const parts = [`扫描 ${scanResult.files.length} 首`, `新增 ${importResult.imported} 首`]
+  if (importResult.skipped > 0) parts.push(`跳过 ${importResult.skipped} 首`)
+  if (importResult.failed.length > 0) parts.push(`失败 ${importResult.failed.length} 首`)
+  if (scanResult.truncated) parts.push('结果已截断')
+
+  setMessage(
+    importResult.imported > 0 || importResult.skipped > 0 ? 'success' : 'error',
+    `${parts.join('，')}。`
+  )
 }
 
-const removeLibraryPath = (path: string): void => {
-  configStore.removeLibraryPath(path)
-  messageType.value = 'success'
-  message.value = '文件夹已从曲库列表移除。'
+const formatError = (error: unknown): string => {
+  if (error instanceof Error && error.message) return error.message
+  return String(error || '未知错误')
+}
+
+const addLibraryPath = async (): Promise<void> => {
+  if (isBusy.value || localMusicStore.isImporting) return
+
+  if (typeof window.api?.select_library_folder !== 'function') {
+    setMessage('error', '曲库接口未就绪，请重启应用后再试。')
+    return
+  }
+
+  isBusy.value = true
+  try {
+    const selected = await window.api.select_library_folder()
+    if (!selected) return
+
+    const added = configStore.addLibraryPath(selected)
+    if (!added) {
+      setMessage('error', '路径为空或已经存在。')
+      return
+    }
+
+    await scanAndImport([selected])
+  } catch (error) {
+    console.error('添加曲库文件夹失败', error)
+    setMessage('error', `添加曲库文件夹失败：${formatError(error)}`)
+  } finally {
+    isBusy.value = false
+  }
+}
+
+const rescanLibraryPath = async (path: string): Promise<void> => {
+  if (isBusy.value || localMusicStore.isImporting) return
+
+  isBusy.value = true
+  try {
+    await scanAndImport([path])
+  } catch (error) {
+    console.error('重新扫描曲库失败', error)
+    setMessage('error', '重新扫描失败。')
+  } finally {
+    isBusy.value = false
+  }
+}
+
+const removeLibraryPath = async (path: string): Promise<void> => {
+  if (isBusy.value) return
+
+  isBusy.value = true
+  try {
+    configStore.removeLibraryPath(path)
+    const removed = localMusicStore.removeSongsUnderPath(path)
+    setMessage(
+      'success',
+      removed > 0 ? `文件夹已移除，并清理 ${removed} 首本地音乐。` : '文件夹已从曲库列表移除。'
+    )
+  } finally {
+    isBusy.value = false
+  }
 }
 </script>
 
@@ -35,7 +113,7 @@ const removeLibraryPath = (path: string): void => {
   <div class="settings-tab">
     <SettingGroup
       title="本地文件夹"
-      tip="当前版本暂未接入系统目录选择器，点击按钮后可手动输入绝对路径。"
+      tip="添加文件夹后会自动递归扫描音频并加入本地音乐列表；移除文件夹会同步清理对应歌曲。"
       no-card
     >
       <div class="settings-path-list">
@@ -46,10 +124,33 @@ const removeLibraryPath = (path: string): void => {
         <div v-for="path in libPaths" :key="path" class="settings-path-item">
           <AppIcon name="folder" :size="16" />
           <span class="settings-path-label">{{ path }}</span>
-          <button class="settings-remove-path" @click="removeLibraryPath(path)">移除</button>
+          <button
+            class="settings-inline-action-btn"
+            :disabled="isBusy || localMusicStore.isImporting"
+            @click="rescanLibraryPath(path)"
+          >
+            重新扫描
+          </button>
+          <button
+            class="settings-remove-path"
+            :disabled="isBusy"
+            @click="removeLibraryPath(path)"
+          >
+            移除
+          </button>
         </div>
 
-        <button class="settings-add-path-btn" @click="addLibraryPath">+ 添加文件夹</button>
+        <button
+          class="settings-add-path-btn"
+          :disabled="isBusy || localMusicStore.isImporting"
+          @click="addLibraryPath"
+        >
+          {{ isBusy || localMusicStore.isImporting ? '正在处理...' : '+ 添加文件夹' }}
+        </button>
+
+        <p v-if="message" class="settings-status" :class="messageType">
+          {{ message }}
+        </p>
       </div>
     </SettingGroup>
   </div>

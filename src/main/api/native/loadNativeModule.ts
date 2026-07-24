@@ -38,6 +38,7 @@ export interface NativePlayerBinding {
     strictBitPerfect?: boolean
   ): Promise<void>
   playFile(filePath: string, startSecs?: number, strictBitPerfect?: boolean): Promise<void>
+  getFileDurationMs(filePath: string): Promise<number>
   pause(): void
   resume(): void
   stop(): void

@@ -1,5 +1,6 @@
 use crate::audio::state::{NO_TRIM_FRAME, SharedState};
 use ringbuf::traits::Producer;
+use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use symphonia::core::audio::SampleBuffer;
@@ -31,6 +32,93 @@ pub(crate) async fn spawn_probe_task(
     tokio::task::spawn_blocking(move || probe_source(source, extension))
         .await?
         .map_err(|e| e as Box<dyn std::error::Error>)
+}
+
+pub(crate) async fn probe_file_duration_ms(
+    path: String,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    tokio::task::spawn_blocking(move || probe_file_duration_ms_blocking(&path))
+        .await?
+        .map_err(|err| err as Box<dyn std::error::Error>)
+}
+
+fn probe_file_duration_ms_blocking(
+    file_path: &str,
+) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+    let path = Path::new(file_path);
+    let file = std::fs::File::open(path)?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(extension) = path.extension().and_then(|value| value.to_str()) {
+        hint.with_extension(extension);
+    }
+
+    let probed = symphonia::default::get_probe().format(
+        &hint,
+        mss,
+        &FormatOptions::default(),
+        &MetadataOptions::default(),
+    )?;
+    let mut format = probed.format;
+    let track = format
+        .tracks()
+        .iter()
+        .find(|track| track.codec_params.codec != CODEC_TYPE_NULL)
+        .ok_or("No audio track")?;
+    let track_id = track.id;
+    let time_base = track.codec_params.time_base;
+    let sample_rate = track.codec_params.sample_rate;
+    let start_ts = track.codec_params.start_ts;
+
+    if let Some(frames) = track.codec_params.n_frames
+        && let Some(duration_ms) = duration_ticks_to_ms(frames, time_base, sample_rate)
+    {
+        return Ok(duration_ms);
+    }
+
+    // Some containers do not publish n_frames in their headers. Reading packet headers to EOF
+    // obtains the full duration without decoding PCM samples.
+    let mut end_ts = start_ts;
+    loop {
+        match format.next_packet() {
+            Ok(packet) if packet.track_id() == track_id => {
+                end_ts = end_ts.max(packet.ts().saturating_add(packet.dur()));
+            }
+            Ok(_) => {}
+            Err(SymphoniaError::IoError(error))
+                if error.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                break;
+            }
+            Err(SymphoniaError::ResetRequired) => continue,
+            Err(error) => return Err(Box::new(error)),
+        }
+    }
+
+    duration_ticks_to_ms(end_ts.saturating_sub(start_ts), time_base, sample_rate)
+        .ok_or_else(|| "Audio duration is unavailable".into())
+}
+
+fn duration_ticks_to_ms(
+    ticks: u64,
+    time_base: Option<TimeBase>,
+    sample_rate: Option<u32>,
+) -> Option<u64> {
+    if ticks == 0 {
+        return None;
+    }
+
+    if let Some(time_base) = time_base {
+        let time = time_base.calc_time(ticks);
+        let millis = u128::from(time.seconds)
+            .saturating_mul(1_000)
+            .saturating_add((time.frac * 1_000.0).round() as u128);
+        return Some(millis.min(u128::from(u64::MAX)) as u64);
+    }
+
+    sample_rate.filter(|rate| *rate > 0).map(|rate| {
+        ((u128::from(ticks) * 1_000) / u128::from(rate)).min(u128::from(u64::MAX)) as u64
+    })
 }
 
 fn probe_source(
@@ -519,6 +607,19 @@ mod tests {
     use std::time::Instant;
     use symphonia::core::audio::{AudioBuffer, AudioBufferRef, Channels, Signal, SignalSpec};
     use tokio::sync::Notify;
+
+    #[test]
+    fn converts_track_ticks_to_milliseconds() {
+        assert_eq!(
+            duration_ticks_to_ms(8_000, Some(TimeBase::new(1, 8_000)), Some(8_000)),
+            Some(1_000)
+        );
+        assert_eq!(duration_ticks_to_ms(22_050, None, Some(44_100)), Some(500));
+        assert_eq!(
+            duration_ticks_to_ms(0, Some(TimeBase::new(1, 1_000)), None),
+            None
+        );
+    }
 
     fn create_state() -> SharedState {
         SharedState {

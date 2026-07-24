@@ -49,6 +49,7 @@ const api = {
   play_url: invokeArgs('player:playUrl'),
   play_url_cached: invokeArgs('player:playUrlCached'),
   play_file: invokeArgs('player:playFile'),
+  get_file_duration: invoke('player:getFileDuration'),
   pause: invoke('player:pause'),
   resume: invoke('player:resume'),
   stop: invoke('player:stop'),
@@ -78,6 +79,15 @@ const api = {
   close_settings_window: invoke('ui:closeSettingsWindow'),
   open_dialog_window: invoke('ui:openDialogWindow'),
   get_app_info: invoke('ui:getAppInfo'),
+
+  // 本地曲库
+  select_library_folder: (): Promise<unknown> => ipcRenderer.invoke('library:selectFolder'),
+  scan_library_folders: (paths: string[]): Promise<unknown> =>
+    ipcRenderer.invoke('library:scanFolders', paths),
+  check_library_files: (paths: string[]): Promise<unknown> =>
+    ipcRenderer.invoke('library:checkFiles', paths),
+  get_library_file_durations: (paths: string[]): Promise<unknown> =>
+    ipcRenderer.invoke('library:getFileDurations', paths),
 
   // 将用户在文件输入框中选择的 File 转换为原生路径。
   get_path_for_file: (file: File): string => webUtils.getPathForFile(file)

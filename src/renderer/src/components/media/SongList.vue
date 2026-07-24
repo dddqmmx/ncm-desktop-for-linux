@@ -317,8 +317,8 @@ const toggleFavorite = (song: Song): void => {
   height: 30px;
   display: grid;
   place-items: center;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  border: none;
+  border-radius: 50%;
   background: transparent;
   color: var(--sys-text-disabled);
   cursor: pointer;
@@ -328,7 +328,6 @@ const toggleFavorite = (song: Song): void => {
     color 0.2s,
     opacity 0.2s,
     background 0.2s,
-    border-color 0.2s,
     transform 0.2s;
 }
 .remove-local-btn svg {
@@ -338,9 +337,8 @@ const toggleFavorite = (song: Song): void => {
   stroke: none;
 }
 .remove-local-btn:hover {
-  background: var(--sys-danger-soft);
-  border-color: var(--sys-danger);
-  color: var(--sys-danger);
+  background: var(--sys-control-hover);
+  color: var(--sys-text-secondary);
 }
 .remove-local-btn:focus-visible {
   outline: 2px solid var(--theme-color);

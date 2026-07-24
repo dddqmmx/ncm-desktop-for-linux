@@ -307,6 +307,67 @@ describe('configStore output device handling', () => {
     expect(store.currentOutputDevice?.id).toBe('default')
   })
 
+  it('prevents software volume while strict BitPerfect is enabled', async () => {
+    const store = useConfigStore()
+
+    store.softwareVolume = true
+    expect(store.softwareVolume).toBe(true)
+
+    store.strictBitPerfect = true
+    expect(store.strictBitPerfect).toBe(true)
+    expect(store.exclusiveMode).toBe(true)
+    expect(store.softwareVolume).toBe(false)
+
+    store.softwareVolume = true
+    expect(store.softwareVolume).toBe(false)
+
+    await nextTick()
+    expect(readPersistedSettings(storage)).toMatchObject({
+      strictBitPerfect: true,
+      exclusiveMode: true,
+      softwareVolume: false
+    })
+  })
+
+  it('disables strict BitPerfect and exclusive output for the WebAPI engine', async () => {
+    const store = useConfigStore()
+
+    store.strictBitPerfect = true
+    expect(store.exclusiveMode).toBe(true)
+
+    store.audioEngine = 'webapi'
+    expect(store.strictBitPerfect).toBe(false)
+    expect(store.exclusiveMode).toBe(false)
+
+    store.strictBitPerfect = true
+    store.exclusiveMode = true
+    expect(store.strictBitPerfect).toBe(false)
+    expect(store.exclusiveMode).toBe(false)
+
+    await nextTick()
+    expect(readPersistedSettings(storage)).toMatchObject({
+      audioEngine: 'webapi',
+      strictBitPerfect: false,
+      exclusiveMode: false
+    })
+  })
+
+  it('normalizes incompatible persisted WebAPI output settings', () => {
+    writePersistedSettings(storage, {
+      audioEngine: 'webapi',
+      strictBitPerfect: true,
+      exclusiveMode: true,
+      softwareVolume: true
+    })
+
+    const store = useConfigStore()
+
+    expect(store.audioEngine).toBe('webapi')
+    expect(store.strictBitPerfect).toBe(false)
+    expect(store.exclusiveMode).toBe(false)
+    expect(store.softwareVolume).toBe(true)
+  })
+
   it('defaults lyric debug to disabled and persists explicit changes', async () => {
     const store = useConfigStore()
 

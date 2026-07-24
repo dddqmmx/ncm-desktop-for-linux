@@ -128,6 +128,10 @@ export function loadSettings(): PersistedSettings {
         typeof parsed.strictBitPerfect === 'boolean'
           ? parsed.strictBitPerfect
           : fallbackSettings.strictBitPerfect,
+      softwareVolume:
+        typeof parsed.softwareVolume === 'boolean'
+          ? parsed.softwareVolume
+          : fallbackSettings.softwareVolume,
       theme: isThemeMode(parsed.theme) ? parsed.theme : fallbackSettings.theme,
       acrylic: typeof parsed.acrylic === 'boolean' ? parsed.acrylic : fallbackSettings.acrylic,
       accentColor:

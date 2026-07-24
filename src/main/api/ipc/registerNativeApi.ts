@@ -42,6 +42,10 @@ export function registerNativeApi(): void {
       return NativeService.playFile(filePath, startSecs, strictBitPerfect)
     }
   )
+  ipcMain.handle('player:getFileDuration', (_event, filePath: string) => {
+    void _event
+    return NativeService.getFileDuration(filePath)
+  })
   ipcMain.handle('player:pause', () => {
     return NativeService.pause()
   })

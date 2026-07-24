@@ -462,10 +462,15 @@ fn target_output_buffer_size(
     }
 }
 
+fn device_alsa_name(device: &cpal::Device) -> String {
+    device
+        .description()
+        .map(|desc| desc.name().to_string())
+        .unwrap_or_else(|_| "Unknown Device".to_string())
+}
+
 pub(crate) fn device_id(device: &cpal::Device) -> String {
-    let alsa_name = device
-        .name()
-        .unwrap_or_else(|_| "Unknown Device".to_string());
+    let alsa_name = device_alsa_name(device);
 
     #[cfg(target_os = "linux")]
     {
@@ -489,9 +494,7 @@ pub(crate) fn device_id(device: &cpal::Device) -> String {
 }
 
 pub(crate) fn device_display_name(device: &cpal::Device) -> String {
-    let alsa_name = device
-        .name()
-        .unwrap_or_else(|_| "Unknown Device".to_string());
+    let alsa_name = device_alsa_name(device);
 
     #[cfg(target_os = "linux")]
     {

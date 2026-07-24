@@ -49,7 +49,12 @@ const themeVars = computed(() => {
     '--lrc-text-color': isDark ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.9)',
     '--lrc-text-active-color': isDark ? '#ffffff' : '#000000',
     '--lrc-text-shadow': isDark ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.1)',
-    '--lrc-status-color': isDark ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.5)'
+    '--lrc-status-color': isDark ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.5)',
+    '--lrc-toggle-bg': isDark ? 'rgba(255, 255, 255, 0.88)' : 'rgba(0, 0, 0, 0.72)',
+    '--lrc-toggle-bg-active': isDark ? '#ffffff' : 'rgba(0, 0, 0, 0.88)',
+    '--lrc-toggle-border': isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.16)',
+    '--lrc-toggle-color': isDark ? 'rgba(0, 0, 0, 0.72)' : 'rgba(255, 255, 255, 0.82)',
+    '--lrc-toggle-color-active': isDark ? '#000000' : '#ffffff'
   }
 })
 
@@ -385,10 +390,10 @@ watch([showPronunciation, showTranslation], () => {
   width: 32px;
   height: 32px;
   padding: 0;
-  border: 1px solid transparent;
+  border: 1px solid var(--lrc-toggle-border);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--lrc-status-color);
+  background: var(--lrc-toggle-bg);
+  color: var(--lrc-toggle-color);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -413,9 +418,8 @@ watch([showPronunciation, showTranslation], () => {
 
 .lyric-toggle:hover,
 .lyric-toggle.active {
-  background: rgba(255, 255, 255, 0.22);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: var(--lrc-text-active-color);
+  background: var(--lrc-toggle-bg-active);
+  color: var(--lrc-toggle-color-active);
 }
 
 .lyrics-scroll-container {

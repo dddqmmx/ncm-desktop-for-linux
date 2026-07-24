@@ -5,7 +5,13 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 fn main() {
     let host = cpal::default_host();
     let device = host.default_output_device().expect("no default output device");
-    println!("device: {:?}", device.name());
+    println!(
+        "device: {:?}",
+        device
+            .description()
+            .map(|desc| desc.name().to_string())
+            .unwrap_or_else(|_| "Unknown Device".to_string())
+    );
 
     // 可选参数：目标采样率（复刻 app 的 find_best_config，按源采样率开流）
     let target_sr: Option<u32> = std::env::args().nth(1).and_then(|s| s.parse().ok());

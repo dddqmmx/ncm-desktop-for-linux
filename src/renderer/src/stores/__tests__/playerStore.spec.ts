@@ -858,6 +858,7 @@ describe('playerStore device switch sequencing', () => {
   it('plays a local queue item directly without requesting cloud song data', async () => {
     const songDetail = vi.fn()
     const playFile = vi.fn(async () => undefined)
+    const getFileDuration = vi.fn(async () => 180_000)
 
     vi.stubGlobal('window', {
       requestAnimationFrame: vi.fn(() => 1),
@@ -875,6 +876,7 @@ describe('playerStore device switch sequencing', () => {
         switch_output_device: vi.fn(async () => undefined),
         stop: vi.fn(async () => undefined),
         play_file: playFile,
+        get_file_duration: getFileDuration,
         get_progress: vi.fn(async () => 42_000),
         is_buffering: vi.fn(async () => false),
         wait_finished: vi.fn(() => new Promise(() => undefined))
@@ -887,7 +889,7 @@ describe('playerStore device switch sequencing', () => {
       name: 'Local Track',
       artists: [{ id: 0, name: 'Local Artist' }],
       cover: '',
-      duration: 180_000,
+      duration: 0,
       source: 'local' as const,
       filePath: '/music/local-track.flac',
       fileName: 'local-track.flac'
@@ -896,8 +898,41 @@ describe('playerStore device switch sequencing', () => {
     await playerStore.playAll([localSong])
 
     expect(songDetail).not.toHaveBeenCalled()
+    expect(getFileDuration).toHaveBeenCalledWith('/music/local-track.flac')
     expect(playFile).toHaveBeenCalledWith('/music/local-track.flac', 0, false)
-    expect(playerStore.currentSong).toEqual(localSong)
+    expect(playerStore.currentSong).toEqual({ ...localSong, duration: 180_000 })
+    expect(playerStore.duration).toBe(180_000)
     expect(playerStore.isPlaying).toBe(true)
+  })
+
+  it('fills the duration of a persisted local song during player initialization', async () => {
+    storage.setItem('currentSongId', '-101')
+    storage.setItem(
+      'currentSong',
+      JSON.stringify({
+        id: -101,
+        name: 'Stored Local Track',
+        artists: [{ id: 0, name: 'Local Artist' }],
+        cover: '',
+        duration: 0,
+        source: 'local',
+        filePath: '/music/stored.flac',
+        fileName: 'stored.flac'
+      })
+    )
+    const getFileDuration = vi.fn(async () => 201_500)
+
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: { get_file_duration: getFileDuration }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+    await playerStore.initFromStorage()
+
+    expect(getFileDuration).toHaveBeenCalledWith('/music/stored.flac')
+    expect(playerStore.currentSong?.duration).toBe(201_500)
+    expect(JSON.parse(storage.getItem('currentSong') ?? '{}').duration).toBe(201_500)
   })
 })

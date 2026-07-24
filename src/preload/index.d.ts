@@ -42,6 +42,7 @@ interface CustomApi {
     strictBitPerfect?: boolean
   ) => Promise<unknown>
   play_file: (filePath: string, startSecs?: number, strictBitPerfect?: boolean) => Promise<unknown>
+  get_file_duration: (filePath: string) => Promise<number>
   pause: () => Promise<unknown>
   resume: () => Promise<unknown>
   stop: () => Promise<unknown>
@@ -82,7 +83,33 @@ interface CustomApi {
   close_settings_window: () => Promise<unknown>
   open_dialog_window: (options: DialogWindowOptions) => Promise<boolean>
   get_app_info: () => Promise<AppInfo>
+  select_library_folder: () => Promise<string | null>
+  scan_library_folders: (paths: string[]) => Promise<LibraryScanResult>
+  check_library_files: (paths: string[]) => Promise<LibraryFileCheckResult>
+  get_library_file_durations: (paths: string[]) => Promise<LibraryFileDuration[]>
   get_path_for_file: (file: File) => string
+}
+
+interface ScannedAudioFile {
+  filePath: string
+  fileName: string
+  rootPath: string
+  duration: number
+}
+
+interface LibraryScanResult {
+  files: ScannedAudioFile[]
+  scannedRoots: string[]
+  truncated: boolean
+}
+
+interface LibraryFileCheckResult {
+  missingPaths: string[]
+}
+
+interface LibraryFileDuration {
+  filePath: string
+  duration: number
 }
 
 interface DialogWindowOptions {

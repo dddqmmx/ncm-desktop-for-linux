@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AppIcon from '@renderer/components/common/AppIcon.vue'
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import MediaDetailLayout from '@renderer/components/media/MediaDetailLayout.vue'
 import SongList from '@renderer/components/media/SongList.vue'
 import { useDialogStore } from '@renderer/stores/dialogStore'
@@ -110,6 +110,10 @@ const clearLibrary = async (): Promise<void> => {
   playerStore.playlist = playerStore.playlist.filter((song) => !localIds.has(song.id))
 }
 
+onMounted(() => {
+  void localMusicStore.refreshLibraryFiles()
+})
+
 onBeforeUnmount(() => {
   if (messageTimer) window.clearTimeout(messageTimer)
 })
@@ -146,7 +150,7 @@ onBeforeUnmount(() => {
     >
       <template #cover>
         <div class="local-library-cover" aria-hidden="true">
-          <AppIcon name="music" :size="24" />
+          <AppIcon name="music" :size="112" />
         </div>
       </template>
 
@@ -208,8 +212,8 @@ onBeforeUnmount(() => {
 }
 
 .local-library-cover svg {
-  width: 92px;
-  height: 92px;
+  width: 112px;
+  height: 112px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.25;
@@ -243,6 +247,7 @@ onBeforeUnmount(() => {
 .local-icon-button {
   width: 40px;
   height: 40px;
+  border: none;
   border-radius: 50%;
   transition:
     background 0.2s,
@@ -271,12 +276,6 @@ onBeforeUnmount(() => {
 .local-action-button:disabled {
   cursor: default;
   opacity: 0.5;
-}
-
-.local-icon-button:hover {
-  background: var(--sys-danger-soft);
-  border-color: var(--sys-danger);
-  color: var(--sys-danger);
 }
 
 .local-icon-button:active {

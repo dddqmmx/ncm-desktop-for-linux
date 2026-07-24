@@ -5,6 +5,7 @@ import { registerMusicApi } from './api/ipc/registerMusicApi'
 import { registerNativeApi } from './api/ipc/registerNativeApi'
 import { registerCacheApi } from './api/ipc/registerCacheApi'
 import { registerUiApi } from './api/ipc/registerUiApi'
+import { registerLibraryApi } from './api/ipc/registerLibraryApi'
 import { registerCacheProtocol } from './api/protocol/registerCacheProtocol'
 
 const iconPath = join(__dirname, '../../resources/icon.png')
@@ -67,6 +68,7 @@ app.whenReady().then(() => {
   registerMusicApi()
   registerNativeApi()
   registerCacheApi()
+  registerLibraryApi(() => mainWindow)
 
   // 必须先创建窗口并赋值，再注册需要依赖窗口的 API
   mainWindow = createWindow()

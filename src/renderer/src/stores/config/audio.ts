@@ -19,8 +19,19 @@ export const useAudioConfigStore = defineStore('audioConfig', () => {
   const audioEngine = ref<AudioEngineType>(initialSettings.audioEngine)
   const outputDeviceId = ref(initialSettings.outputDeviceId)
   const outputDeviceName = ref(initialSettings.outputDeviceName)
-  const strictBitPerfect = ref(initialSettings.strictBitPerfect)
-  const exclusiveMode = ref(initialSettings.strictBitPerfect ? true : initialSettings.exclusiveMode)
+  const strictBitPerfect = ref(
+    initialSettings.audioEngine === 'webapi' ? false : initialSettings.strictBitPerfect
+  )
+  const exclusiveMode = ref(
+    initialSettings.audioEngine === 'webapi'
+      ? false
+      : initialSettings.strictBitPerfect || initialSettings.exclusiveMode
+  )
+  const softwareVolume = ref(
+    initialSettings.audioEngine === 'webapi' || !initialSettings.strictBitPerfect
+      ? initialSettings.softwareVolume
+      : false
+  )
 
   const outputDevices = ref<AudioDeviceInfo[]>([])
   const currentOutputDevice = computed(() => {
@@ -30,11 +41,50 @@ export const useAudioConfigStore = defineStore('audioConfig', () => {
   const isSwitchingOutputDevice = ref(false)
   const outputDeviceError = ref('')
 
-  watch(strictBitPerfect, (enabled) => {
+  const setAudioEngine = (engine: AudioEngineType): void => {
+    audioEngine.value = engine
+    if (engine === 'webapi') {
+      strictBitPerfect.value = false
+      exclusiveMode.value = false
+    }
+  }
+
+  const setExclusiveMode = (enabled: boolean): void => {
+    if (audioEngine.value === 'webapi' || strictBitPerfect.value) return
+    exclusiveMode.value = enabled
+  }
+
+  const setStrictBitPerfect = (enabled: boolean): void => {
+    if (audioEngine.value === 'webapi') return
+
+    strictBitPerfect.value = enabled
     if (enabled) {
       exclusiveMode.value = true
+      softwareVolume.value = false
     }
-  })
+  }
+
+  const setSoftwareVolume = (enabled: boolean): void => {
+    if (enabled && strictBitPerfect.value) return
+    softwareVolume.value = enabled
+  }
+
+  watch(
+    [audioEngine, strictBitPerfect, exclusiveMode, softwareVolume],
+    () => {
+      if (audioEngine.value === 'webapi') {
+        strictBitPerfect.value = false
+        exclusiveMode.value = false
+        return
+      }
+
+      if (!strictBitPerfect.value) return
+
+      exclusiveMode.value = true
+      softwareVolume.value = false
+    },
+    { flush: 'sync' }
+  )
 
   const refreshOutputDevices = async (): Promise<AudioDeviceInfo[]> => {
     isLoadingOutputDevices.value = true
@@ -134,6 +184,7 @@ export const useAudioConfigStore = defineStore('audioConfig', () => {
     outputDeviceName,
     exclusiveMode,
     strictBitPerfect,
+    softwareVolume,
     outputDevices,
     currentOutputDevice,
     isLoadingOutputDevices,
@@ -141,6 +192,10 @@ export const useAudioConfigStore = defineStore('audioConfig', () => {
     outputDeviceError,
     refreshOutputDevices,
     applyOutputDevice,
-    ensureConfiguredOutputDevice
+    ensureConfiguredOutputDevice,
+    setAudioEngine,
+    setExclusiveMode,
+    setStrictBitPerfect,
+    setSoftwareVolume
   }
 })

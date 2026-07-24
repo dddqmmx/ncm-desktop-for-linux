@@ -27,6 +27,7 @@ export const useConfigStore = defineStore('config', () => {
     outputDeviceName: audio.outputDeviceName,
     exclusiveMode: audio.exclusiveMode,
     strictBitPerfect: audio.strictBitPerfect,
+    softwareVolume: audio.softwareVolume,
     theme: appearance.theme,
     acrylic: appearance.acrylic,
     accentColor: appearance.accentColor,
@@ -50,11 +51,12 @@ export const useConfigStore = defineStore('config', () => {
     audio.soundQuality = settings.soundQuality
     general.autoLaunch = settings.autoLaunch
     general.trayMinimize = settings.trayMinimize
-    audio.audioEngine = settings.audioEngine
+    audio.setAudioEngine(settings.audioEngine)
     audio.outputDeviceId = settings.outputDeviceId
     audio.outputDeviceName = settings.outputDeviceName
-    audio.exclusiveMode = settings.exclusiveMode
-    audio.strictBitPerfect = settings.strictBitPerfect
+    audio.setExclusiveMode(settings.exclusiveMode)
+    audio.setStrictBitPerfect(settings.strictBitPerfect)
+    audio.setSoftwareVolume(settings.softwareVolume)
     appearance.theme = settings.theme
     appearance.acrylic = settings.acrylic
     appearance.accentColor = settings.accentColor
@@ -79,6 +81,7 @@ export const useConfigStore = defineStore('config', () => {
       () => audio.outputDeviceName,
       () => audio.exclusiveMode,
       () => audio.strictBitPerfect,
+      () => audio.softwareVolume,
       () => appearance.theme,
       () => appearance.acrylic,
       () => appearance.accentColor,
@@ -162,7 +165,7 @@ export const useConfigStore = defineStore('config', () => {
     }),
     audioEngine: computed({
       get: () => audio.audioEngine,
-      set: (val) => (audio.audioEngine = val)
+      set: (val) => audio.setAudioEngine(val)
     }),
     outputDeviceId: computed({
       get: () => audio.outputDeviceId,
@@ -174,11 +177,15 @@ export const useConfigStore = defineStore('config', () => {
     }),
     exclusiveMode: computed({
       get: () => audio.exclusiveMode,
-      set: (val) => (audio.exclusiveMode = val)
+      set: (val) => audio.setExclusiveMode(val)
     }),
     strictBitPerfect: computed({
       get: () => audio.strictBitPerfect,
-      set: (val) => (audio.strictBitPerfect = val)
+      set: (val) => audio.setStrictBitPerfect(val)
+    }),
+    softwareVolume: computed({
+      get: () => audio.softwareVolume,
+      set: (val) => audio.setSoftwareVolume(val)
     }),
     outputDevices: computed(() => audio.outputDevices),
     currentOutputDevice: computed(() => audio.currentOutputDevice),

@@ -15,6 +15,7 @@ const {
   outputDeviceId,
   exclusiveMode,
   strictBitPerfect,
+  softwareVolume,
   outputDevices,
   currentOutputDevice,
   isLoadingOutputDevices,
@@ -22,10 +23,12 @@ const {
   outputDeviceError
 } = storeToRefs(configStore)
 
+const isWebApiOutput = computed(() => audioEngine.value === 'webapi')
+
 const exclusiveModeValue = computed({
   get: () => strictBitPerfect.value || exclusiveMode.value,
   set: (enabled: boolean) => {
-    if (!strictBitPerfect.value) {
+    if (!strictBitPerfect.value && !isWebApiOutput.value) {
       exclusiveMode.value = enabled
     }
   }
@@ -96,6 +99,20 @@ onMounted(() => {
       />
     </SettingGroup>
 
+    <SettingGroup title="音量控制">
+      <SettingRow
+        title="软件音量"
+        description="允许应用进行数字音量调节；严格 BitPerfect 打开时不可用"
+      >
+        <input
+          v-model="softwareVolume"
+          type="checkbox"
+          class="modern-switch"
+          :disabled="strictBitPerfect"
+        />
+      </SettingRow>
+    </SettingGroup>
+
     <SettingGroup title="设备选择">
       <SettingRow title="指定输出设备" description="选择系统默认输出或一个真实硬件端点">
         <div class="settings-device-picker">
@@ -140,21 +157,26 @@ onMounted(() => {
 
       <SettingRow
         title="独占输出模式"
-        description="严格 BitPerfect 打开时必须独占硬件端点，因此该选项会强制启用"
+        description="仅 Native 输出可用；严格 BitPerfect 打开时会强制启用"
       >
         <input
           v-model="exclusiveModeValue"
           type="checkbox"
           class="modern-switch"
-          :disabled="strictBitPerfect"
+          :disabled="strictBitPerfect || isWebApiOutput"
         />
       </SettingRow>
 
       <SettingRow
         title="严格 BitPerfect"
-        description="启用后仅在设备原生支持当前音源采样率、声道和样本格式时播放"
+        description="仅 Native 输出可用；设备必须原生支持当前音源格式"
       >
-        <input v-model="strictBitPerfect" type="checkbox" class="modern-switch" />
+        <input
+          v-model="strictBitPerfect"
+          type="checkbox"
+          class="modern-switch"
+          :disabled="isWebApiOutput"
+        />
       </SettingRow>
     </SettingGroup>
   </div>

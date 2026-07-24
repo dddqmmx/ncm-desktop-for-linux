@@ -163,6 +163,14 @@ impl PlayerService {
             .map_err(Error::from_reason)
     }
 
+    #[napi]
+    pub async fn get_file_duration_ms(&self, path: String) -> Result<i64> {
+        crate::audio::decoder::probe_file_duration_ms(path)
+            .await
+            .map(|duration| duration.min(i64::MAX as u64) as i64)
+            .map_err(|error| Error::from_reason(error.to_string()))
+    }
+
     #[napi(getter)]
     pub fn progress_ms(&self) -> u32 {
         self.shared_state.progress_ms()

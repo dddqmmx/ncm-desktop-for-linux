@@ -144,24 +144,61 @@
 }
 
 .settings-path-label {
+  flex: 1;
   min-width: 0;
   word-break: break-all;
 }
 
+.settings-path-item .settings-inline-action-btn,
 .settings-remove-path {
-  margin-left: auto;
-  background: var(--sys-danger-soft);
-  color: var(--sys-danger);
+  border: 1px solid var(--sys-border);
+  background: var(--sys-control);
+  color: var(--sys-text-secondary);
   padding: 8px 12px;
   font-weight: 700;
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.settings-path-item .settings-inline-action-btn {
+  flex-shrink: 0;
+}
+
+.settings-path-item .settings-inline-action-btn:hover,
+.settings-remove-path:hover {
+  border-color: var(--sys-border-strong);
+  background: var(--sys-control-hover);
+  color: var(--sys-text);
+}
+
+.settings-remove-path:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.settings-add-path-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
 }
 
 .settings-add-path-btn {
   padding: 12px;
   border: 2px dashed var(--sys-border-strong);
-  background: none;
+  background: var(--sys-surface-muted);
   color: var(--sys-text-tertiary);
   font-weight: 700;
+}
+
+.settings-add-path-btn:hover {
+  border-color: var(--sys-text-disabled);
+  background: var(--sys-control-hover);
+  color: var(--sys-text-secondary);
 }
 
 .settings-empty-state,

@@ -530,6 +530,24 @@ export const usePlaybackStore = defineStore('playback', () => {
     isPlaying.value = playing
   }
 
+  const resolveLocalSongDuration = async (song: LocalSong): Promise<LocalSong> => {
+    if (song.duration > 0 || typeof window.api?.get_file_duration !== 'function') return song
+
+    try {
+      const duration = Math.round(await window.api.get_file_duration(song.filePath))
+      if (!Number.isFinite(duration) || duration <= 0) return song
+
+      const resolved = { ...song, duration }
+      playlistStore.playlist = playlistStore.playlist.map((item) =>
+        item.id === song.id && isLocalSong(item) ? resolved : item
+      )
+      return resolved
+    } catch (error) {
+      console.warn('读取本地音乐时长失败:', error)
+      return song
+    }
+  }
+
   /**
    * 异步等待当前音频播放结束
    * @param songId 触发等待时的歌曲 ID
@@ -686,23 +704,26 @@ export const usePlaybackStore = defineStore('playback', () => {
       )
       if (currentToken !== playToken) return
 
+      const playableSong = await resolveLocalSongDuration(song)
+      if (currentToken !== playToken) return
+
       currentTime.value = startTime
       lastSyncedProgressMs = startTime
       lastSyncedAt = performance.now()
-      setLocalPlayerData(song, false)
+      setLocalPlayerData(playableSong, false)
 
       await withTimeout(
-        window.api.play_file(song.filePath, startTime / 1000, configStore.strictBitPerfect),
+        window.api.play_file(playableSong.filePath, startTime / 1000, configStore.strictBitPerfect),
         PLAYBACK_OPERATION_TIMEOUT_MS,
         '本地音乐播放启动超时'
       )
       if (currentToken !== playToken) return
 
-      setLocalPlayerData(song, true)
+      setLocalPlayerData(playableSong, true)
       isHistorySong.value = false
       currentTime.value = startTime
-      playlistStore.addToPlaylist(song)
-      void waitForEnd(song.id, currentToken)
+      playlistStore.addToPlaylist(playableSong)
+      void waitForEnd(playableSong.id, currentToken)
     } catch (error) {
       if (currentToken === playToken) {
         console.error('播放本地音乐失败:', error)
@@ -1096,6 +1117,7 @@ export const usePlaybackStore = defineStore('playback', () => {
     if (!currentSongId.value) return
 
     if (isLocalSong(currentSong.value) && currentSong.value.id === currentSongId.value) {
+      currentSong.value = await resolveLocalSongDuration(currentSong.value)
       isHistorySong.value = true
       return
     }

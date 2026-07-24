@@ -45,6 +45,10 @@ export const NativeService = {
     return player.playFile(filePath, start_secs, strictBitPerfect)
   },
 
+  getFileDuration(filePath: string) {
+    return player.getFileDurationMs(filePath)
+  },
+
   pause() {
     return player.pause()
   },

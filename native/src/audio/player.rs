@@ -169,10 +169,7 @@ impl SongCacheDownloadControl {
         }
     }
 
-    pub fn wait_finished(&self) {
-        self.wait_finished_timeout(Duration::from_secs(2));
-    }
-
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn wait_finished_timeout(&self, timeout: Duration) {
         // 下载任务若卡在 stream-download 的 wait_for_read，cancel 无法立刻打断。
         // 这里必须有超时，否则 cancelSongCacheDownload / 切歌会永久卡住主流程。
@@ -330,43 +327,6 @@ impl AudioPlayer {
         })
     }
 
-    pub fn list_output_devices() -> Vec<OutputDeviceInfo> {
-        let host = cpal::default_host();
-        let default_device = host.default_output_device();
-        let default_id = default_device.as_ref().map(backend::device_id);
-
-        let mut devices = Vec::new();
-        if let Ok(it) = host.output_devices() {
-            for d in it {
-                let id = backend::device_id(&d);
-                let name = backend::device_display_name(&d);
-
-                #[cfg(target_os = "linux")]
-                if !backend::should_list_linux_output_device(&id, default_id.as_deref(), None) {
-                    continue;
-                }
-
-                devices.push(OutputDeviceInfo {
-                    id,
-                    name,
-                    is_default: default_id
-                        .as_ref()
-                        .map_or(false, |did| did == &backend::device_id(&d)),
-                    is_current: false,
-                });
-            }
-        }
-        #[cfg(target_os = "linux")]
-        backend::append_linux_alsa_hint_output_devices(&mut devices, default_id.as_deref(), None);
-        #[cfg(target_os = "linux")]
-        backend::append_linux_proc_asound_output_devices(&mut devices, default_id.as_deref(), None);
-
-        #[cfg(target_os = "linux")]
-        backend::collapse_linux_duplicate_output_devices(&mut devices);
-        backend::disambiguate_output_device_names(&mut devices);
-        devices
-    }
-
     pub fn output_devices(&self) -> Result<Vec<OutputDeviceInfo>, Box<dyn std::error::Error>> {
         let host = cpal::default_host();
         let default_device = host.default_output_device();
@@ -416,28 +376,6 @@ impl AudioPlayer {
         backend::collapse_linux_duplicate_output_devices(&mut devices);
         backend::disambiguate_output_device_names(&mut devices);
         Ok(devices)
-    }
-
-    pub fn set_output_device(&mut self, device_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let host = cpal::default_host();
-
-        #[cfg(target_os = "linux")]
-        let target_id =
-            backend::linux_plughw_locator(device_id).unwrap_or_else(|| device_id.to_string());
-        #[cfg(not(target_os = "linux"))]
-        let target_id = device_id;
-
-        let device = host
-            .output_devices()?
-            .find(|d| backend::device_id(d) == target_id);
-
-        if let Some(d) = device {
-            self.device = d;
-            self.requested_device_id = Some(device_id.to_string());
-        } else {
-            return Err(format!("Device not found: {}", device_id).into());
-        }
-        Ok(())
     }
 
     pub async fn play_url(
@@ -1016,13 +954,6 @@ impl AudioPlayer {
 
     pub(crate) fn get_state(&self) -> Arc<SharedState> {
         self.state.clone()
-    }
-
-    pub async fn wait_finished(&self) {
-        if self.is_finished() {
-            return;
-        }
-        self.state.finish_notify.notified().await;
     }
 }
 
