@@ -24,6 +24,7 @@ interface WebEngineCallbacks {
 let audioEl: HTMLAudioElement | null = null
 let callbacks: WebEngineCallbacks = {}
 let pendingStartSec = 0
+let volume = 1
 
 /** 将本地缓存绝对路径转成项目已注册的 ncm-cache:// 协议 URL。 */
 function cacheFileToUrl(path: string): string {
@@ -57,6 +58,7 @@ function ensureEl(): HTMLAudioElement {
   if (audioEl) return audioEl
   const a = new Audio()
   a.preload = 'auto'
+  a.volume = volume
   // 注意：不要设置 crossOrigin —— 纯 <audio> 播放跨域 URL 无需 CORS，
   // 一旦设为 anonymous 反而要求 CDN 返回 CORS 头，网易 CDN 不返回会导致加载失败。
 
@@ -89,6 +91,12 @@ function ensureEl(): HTMLAudioElement {
 export const webAudioEngine = {
   setCallbacks(cbs: WebEngineCallbacks): void {
     callbacks = cbs
+  },
+
+  /** 应用级软件音量（0.0~1.0），跨歌曲保留。 */
+  setVolume(value: number): void {
+    volume = Math.min(1, Math.max(0, value))
+    if (audioEl) audioEl.volume = volume
   },
 
   /**

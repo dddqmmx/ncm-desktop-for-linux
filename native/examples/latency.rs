@@ -4,7 +4,9 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 fn main() {
     let host = cpal::default_host();
-    let device = host.default_output_device().expect("no default output device");
+    let device = host
+        .default_output_device()
+        .expect("no default output device");
     println!(
         "device: {:?}",
         device
@@ -27,8 +29,16 @@ fn main() {
         let pick = matches
             .iter()
             .find(|c| c.sample_format() == cpal::SampleFormat::F32)
-            .or_else(|| matches.iter().find(|c| c.sample_format() == cpal::SampleFormat::I16))
-            .or_else(|| matches.iter().find(|c| c.sample_format() == cpal::SampleFormat::I32))
+            .or_else(|| {
+                matches
+                    .iter()
+                    .find(|c| c.sample_format() == cpal::SampleFormat::I16)
+            })
+            .or_else(|| {
+                matches
+                    .iter()
+                    .find(|c| c.sample_format() == cpal::SampleFormat::I32)
+            })
             .cloned();
         match pick {
             Some(c) => {
@@ -55,7 +65,11 @@ fn main() {
     let calls = Arc::new(AtomicU32::new(0));
     let first_frames = Arc::new(AtomicU64::new(0));
 
-    let make_cb = |lat: Arc<AtomicU64>, mx: Arc<AtomicU64>, c: Arc<AtomicU32>, ff: Arc<AtomicU64>, chan: usize| {
+    let make_cb = |lat: Arc<AtomicU64>,
+                   mx: Arc<AtomicU64>,
+                   c: Arc<AtomicU32>,
+                   ff: Arc<AtomicU64>,
+                   chan: usize| {
         move |len: usize, ts: cpal::OutputStreamTimestamp| {
             if let Some(d) = ts.playback.duration_since(&ts.callback) {
                 let us = d.as_micros() as u64;
@@ -74,7 +88,13 @@ fn main() {
 
     let stream = match sample_format {
         cpal::SampleFormat::F32 => {
-            let cb = make_cb(lat_us.clone(), max_us.clone(), calls.clone(), first_frames.clone(), chan);
+            let cb = make_cb(
+                lat_us.clone(),
+                max_us.clone(),
+                calls.clone(),
+                first_frames.clone(),
+                chan,
+            );
             device
                 .build_output_stream(
                     &config,
@@ -90,7 +110,13 @@ fn main() {
                 .expect("build f32 stream")
         }
         cpal::SampleFormat::I16 => {
-            let cb = make_cb(lat_us.clone(), max_us.clone(), calls.clone(), first_frames.clone(), chan);
+            let cb = make_cb(
+                lat_us.clone(),
+                max_us.clone(),
+                calls.clone(),
+                first_frames.clone(),
+                chan,
+            );
             device
                 .build_output_stream(
                     &config,
@@ -115,7 +141,10 @@ fn main() {
     std::thread::sleep(std::time::Duration::from_millis(1500));
     let sr = config.sample_rate as f64;
     println!("callbacks: {}", calls.load(Ordering::Relaxed));
-    println!("first callback frames: {}", first_frames.load(Ordering::Relaxed));
+    println!(
+        "first callback frames: {}",
+        first_frames.load(Ordering::Relaxed)
+    );
     let last = lat_us.load(Ordering::Relaxed);
     let max = max_us.load(Ordering::Relaxed);
     println!(

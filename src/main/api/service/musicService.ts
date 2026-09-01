@@ -142,6 +142,9 @@ const responseHandler = <T = APIBaseResponse>(
     }))
 }
 
+// 线性退避步长：失败后立即重试只会在网络抖动或服务端限流时雪上加霜
+const RETRY_BACKOFF_STEP_MS = 250
+
 const retry = <T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> => {
   let attempt = 0
 
@@ -149,7 +152,9 @@ const retry = <T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> => {
     return fn().catch((err) => {
       if (attempt >= maxRetries) throw err
       attempt++
-      return run()
+      return new Promise<T>((resolve) => {
+        setTimeout(() => resolve(run()), RETRY_BACKOFF_STEP_MS * attempt)
+      })
     })
   }
 

@@ -6,7 +6,8 @@ import SegmentedSlider from '@renderer/components/common/SegmentedSlider.vue'
 import { useConfigStore } from '@renderer/stores/configStore'
 
 const configStore = useConfigStore()
-const { theme, acrylic, accentColor } = storeToRefs(configStore)
+const { theme, acrylic, accentColor, fullscreenShowFavorite, fullscreenShowPlayMode } =
+  storeToRefs(configStore)
 </script>
 
 <template>
@@ -28,6 +29,15 @@ const { theme, acrylic, accentColor } = storeToRefs(configStore)
       </SettingRow>
       <SettingRow title="强调色" description="用于后续主题扩展和重点控件着色">
         <input v-model="accentColor" type="color" class="color-picker" />
+      </SettingRow>
+    </SettingGroup>
+
+    <SettingGroup title="全屏播放页">
+      <SettingRow title="显示喜欢按钮" description="在全屏播放页展示喜欢 / 取消喜欢按钮">
+        <input v-model="fullscreenShowFavorite" type="checkbox" class="modern-switch" />
+      </SettingRow>
+      <SettingRow title="显示播放顺序按钮" description="在全屏播放页展示切换播放顺序按钮">
+        <input v-model="fullscreenShowPlayMode" type="checkbox" class="modern-switch" />
       </SettingRow>
     </SettingGroup>
   </div>

@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import SettingGroup from '@renderer/components/settings/SettingGroup.vue'
+import RangeSlider from '@renderer/components/common/RangeSlider.vue'
 import { useConfigStore } from '@renderer/stores/configStore'
 
 const configStore = useConfigStore()
@@ -28,18 +29,6 @@ watch(cacheLimitMb, (value) => {
 watch(songMaxCacheAheadMb, (value) => {
   songMaxCacheAheadDraft.value = value
 })
-
-// === 计算滑块进度的百分比用于 div 宽度渲染 ===
-const cacheLimitPercent = computed(() => {
-  const val = Number(cacheLimitDraft.value) || 128
-  return Math.max(0, Math.min(100, ((val - 128) / (8192 - 128)) * 100))
-})
-
-const songMaxCacheAheadPercent = computed(() => {
-  const val = Number(songMaxCacheAheadDraft.value) || 1
-  return Math.max(0, Math.min(100, ((val - 1) / (128 - 1)) * 100))
-})
-// =============================================
 
 const formatBytes = (bytes: number): string => {
   if (bytes >= 1024 * 1024 * 1024) {
@@ -136,22 +125,13 @@ const clearCache = async (): Promise<void> => {
         <div class="cache-limit-row">
           <label class="cache-limit-label" for="cache-limit-range">最大缓存占用</label>
           <div class="cache-limit-controls">
-            <!-- === 修改为 DIV 模拟视觉 + input 隐藏交互 === -->
-            <div class="custom-slider-wrapper">
-              <div class="custom-slider-track">
-                <div class="custom-slider-fill" :style="{ width: cacheLimitPercent + '%' }"></div>
-              </div>
-              <input
-                id="cache-limit-range"
-                v-model.number="cacheLimitDraft"
-                class="custom-slider-input"
-                type="range"
-                min="128"
-                max="8192"
-                step="128"
-              />
-            </div>
-            <!-- ======================================= -->
+            <RangeSlider
+              v-model="cacheLimitDraft"
+              input-id="cache-limit-range"
+              :min="128"
+              :max="8192"
+              :step="128"
+            />
 
             <input
               v-model.number="cacheLimitDraft"
@@ -175,23 +155,13 @@ const clearCache = async (): Promise<void> => {
         <div class="cache-limit-row">
           <label class="cache-limit-label" for="song-max-cache-ahead-range">最大预下载大小</label>
           <div class="cache-limit-controls">
-            <div class="custom-slider-wrapper">
-              <div class="custom-slider-track">
-                <div
-                  class="custom-slider-fill"
-                  :style="{ width: songMaxCacheAheadPercent + '%' }"
-                ></div>
-              </div>
-              <input
-                id="song-max-cache-ahead-range"
-                v-model.number="songMaxCacheAheadDraft"
-                class="custom-slider-input"
-                type="range"
-                min="1"
-                max="128"
-                step="1"
-              />
-            </div>
+            <RangeSlider
+              v-model="songMaxCacheAheadDraft"
+              input-id="song-max-cache-ahead-range"
+              :min="1"
+              :max="128"
+              :step="1"
+            />
 
             <input
               v-model.number="songMaxCacheAheadDraft"
@@ -296,43 +266,6 @@ const clearCache = async (): Promise<void> => {
   gap: 12px;
   align-items: center;
 }
-
-/* === DIV 自定义滑块样式 === */
-.custom-slider-wrapper {
-  position: relative;
-  width: 100%;
-  height: 20px; /* 点击热区高度，方便鼠标/手指操作 */
-  display: flex;
-  align-items: center;
-}
-
-.custom-slider-track {
-  width: 100%;
-  height: 6px; /* 轨道改细为 6px */
-  background: var(--sys-control);
-  border-radius: 999px;
-  overflow: hidden;
-  pointer-events: none; /* 让鼠标事件穿透给底下的 input */
-}
-
-.custom-slider-fill {
-  height: 100%;
-  background: var(--theme-color);
-  border-radius: inherit;
-  /* 不加过渡效果，保证拖拽时极致跟手 */
-}
-
-.custom-slider-input {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0; /* 原生 input 完全透明化 */
-  cursor: pointer;
-}
-/* ========================= */
 
 .cache-number-input {
   width: 100%;

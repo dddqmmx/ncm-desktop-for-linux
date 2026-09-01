@@ -18,7 +18,6 @@ use stream_download::storage::adaptive::AdaptiveStorageProvider;
 use stream_download::storage::temp::TempStorageProvider;
 use stream_download::{Settings, StreamDownload};
 use symphonia::core::conv::ConvertibleSample;
-use tokio::sync::Notify;
 
 use crate::audio::backend::{self, OutputDeviceInfo};
 use crate::audio::cache_tracker::SongCacheTracker;
@@ -27,12 +26,15 @@ use crate::audio::http_client::RangeSanitizingClient;
 use crate::audio::source::{
     PersistentFileStorageProvider, SeekableSource, SharedStorageState, prepare_blocking_seek,
 };
-use crate::audio::state::{NO_TRIM_FRAME, PlaybackClock, SharedState};
+use crate::audio::state::{NO_TRIM_FRAME, PlaybackClock, SharedState, UNITY_VOLUME_BITS};
 use crate::audio::utils::estimate_prefetch_bytes;
 use crate::cache::song::SongStreamCacheMeta;
 
 const OUTPUT_BUFFER_SECONDS: usize = 6;
 const INITIAL_PREDECODE_SECONDS: usize = 2;
+/// 独占播放拿到设备预留后，等待 PipeWire 交还声卡的上限。
+#[cfg(target_os = "linux")]
+const DEVICE_RELEASE_TIMEOUT: Duration = Duration::from_millis(2_000);
 /// 建立连接 + 等待响应头的超时（播放/缓存流式下载的建连保护）。
 const STREAM_OPEN_TIMEOUT_SECS: u64 = 15;
 
@@ -280,6 +282,8 @@ pub struct AudioPlayer {
     requested_device_id: Option<String>,
     stream: Option<cpal::Stream>,
     state: Arc<SharedState>,
+    /// 跨播放会话保留的软件音量（f32 位模式）；BitPerfect 会话强制 1.0 直通。
+    master_volume_bits: AtomicU32,
     #[cfg(target_os = "linux")]
     device_reservation: Option<DeviceReservation>,
 }
@@ -287,23 +291,25 @@ pub struct AudioPlayer {
 impl AudioPlayer {
     pub fn new(device_name: Option<&str>) -> Result<Self, Box<dyn std::error::Error>> {
         let host = cpal::default_host();
-        let device = if let Some(name) = device_name {
-            #[cfg(target_os = "linux")]
-            let target_id = backend::linux_plughw_locator(name).unwrap_or_else(|| name.to_string());
-            #[cfg(not(target_os = "linux"))]
-            let target_id = name;
-
-            host.output_devices()?
-                .find(|d| backend::device_id(d) == target_id)
-                .ok_or_else(|| format!("Device not found: {}", name))?
-        } else {
-            host.default_output_device()
-                .ok_or("No default output device found")?
+        // 记录的是解析后设备的真实 id，而不是调用方传进来的写法：同一端点有
+        // hw:CARD=1,DEV=0 与 hw:CARD=Mini,DEV=0 两种等价写法，存原样会让
+        // output_devices() 的 is_current 永远匹配不上枚举出来的那一条。
+        let (device, requested_device_id) = match device_name {
+            Some(name) => {
+                let device = Self::find_output_device(&host, name)?;
+                let id = backend::device_id(&device);
+                (device, Some(id))
+            }
+            None => (
+                host.default_output_device()
+                    .ok_or("No default output device found")?,
+                None,
+            ),
         };
 
         Ok(Self {
             device,
-            requested_device_id: device_name.map(|s| s.to_string()),
+            requested_device_id,
             stream: None,
             state: Arc::new(SharedState {
                 is_paused: AtomicBool::new(false),
@@ -317,20 +323,65 @@ impl AudioPlayer {
                 is_discarding_buffer: AtomicBool::new(false),
                 decoder_done: AtomicBool::new(false),
                 is_finished: AtomicBool::new(false),
-                finish_notify: Notify::new(),
+                playback_failed: AtomicBool::new(false),
                 buffered_frames: AtomicU64::new(0),
                 waiting_for_seek: AtomicBool::new(false),
                 has_seek_request: AtomicBool::new(false),
+                volume_bits: AtomicU32::new(UNITY_VOLUME_BITS),
+                volume_locked: AtomicBool::new(false),
             }),
+            master_volume_bits: AtomicU32::new(UNITY_VOLUME_BITS),
             #[cfg(target_os = "linux")]
             device_reservation: None,
         })
     }
 
+    fn find_output_device(
+        host: &cpal::Host,
+        name: &str,
+    ) -> Result<cpal::Device, Box<dyn std::error::Error>> {
+        let mut devices: Vec<cpal::Device> = host.output_devices()?.collect();
+
+        // 精确 id 命中优先（"default" 等虚拟端点只有这一条匹配路径）。
+        if let Some(position) = devices
+            .iter()
+            .position(|device| backend::device_id(device) == name)
+        {
+            return Ok(devices.swap_remove(position));
+        }
+
+        // UI 侧的 hw id 可能用数字 CARD（来自 /proc/asound），cpal 枚举出的
+        // ALSA hint id 用字符卡名，字符串比较永远失配；归一成
+        // (card_index, device_index) 端点键再匹配，hw/plughw 同型优先，
+        // 保证 BitPerfect 选中的 hw: 不被 plughw: 顶替。
+        #[cfg(target_os = "linux")]
+        if let Some(target_key) = backend::linux_hw_endpoint_key(name) {
+            let wants_plug = backend::is_linux_plughw_output_id(name);
+            let mut fallback = None;
+            for (index, device) in devices.iter().enumerate() {
+                let id = backend::device_id(device);
+                if backend::linux_hw_endpoint_key(&id) != Some(target_key) {
+                    continue;
+                }
+                if backend::is_linux_plughw_output_id(&id) == wants_plug {
+                    return Ok(devices.swap_remove(index));
+                }
+                if fallback.is_none() {
+                    fallback = Some(index);
+                }
+            }
+            if let Some(index) = fallback {
+                return Ok(devices.swap_remove(index));
+            }
+        }
+
+        Err(format!("Device not found: {}", name).into())
+    }
+
     pub fn output_devices(&self) -> Result<Vec<OutputDeviceInfo>, Box<dyn std::error::Error>> {
         let host = cpal::default_host();
         let default_device = host.default_output_device();
-        let default_id = default_device.as_ref().map(|d| backend::device_id(d));
+        let default_id = default_device.as_ref().map(backend::device_id);
 
         let mut devices = Vec::new();
         for d in host.output_devices()? {
@@ -346,9 +397,11 @@ impl AudioPlayer {
                 continue;
             }
 
-            let is_default = default_id.as_deref() == Some(&id);
+            let is_default = default_id
+                .as_deref()
+                .is_some_and(|value| backend::output_device_ids_match(value, &id));
             let is_current = match self.requested_device_id.as_deref() {
-                Some(rid) => id == rid,
+                Some(rid) => backend::output_device_ids_match(rid, &id),
                 None => is_default,
             };
 
@@ -359,12 +412,6 @@ impl AudioPlayer {
                 is_current,
             });
         }
-        #[cfg(target_os = "linux")]
-        backend::append_linux_alsa_hint_output_devices(
-            &mut devices,
-            default_id.as_deref(),
-            self.requested_device_id.as_deref(),
-        );
         #[cfg(target_os = "linux")]
         backend::append_linux_proc_asound_output_devices(
             &mut devices,
@@ -383,6 +430,7 @@ impl AudioPlayer {
         url: &str,
         start_at: Option<Duration>,
         strict_bit_perfect: bool,
+        exclusive: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let extension = Path::new(url)
             .extension()
@@ -402,7 +450,7 @@ impl AudioPlayer {
         let content_len = reader.content_length();
         let source = Box::new(SeekableSource::new(reader, content_len));
         let meta = decoder::spawn_probe_task(source, extension).await?;
-        self.setup_and_play(meta, start_at, strict_bit_perfect)
+        self.setup_and_play(meta, start_at, strict_bit_perfect, exclusive)
     }
 
     pub async fn play_url_cached(
@@ -415,6 +463,7 @@ impl AudioPlayer {
         max_cache_ahead_bytes: Option<u64>,
         start_at: Option<Duration>,
         strict_bit_perfect: bool,
+        exclusive: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let extension = Path::new(url)
             .extension()
@@ -436,13 +485,13 @@ impl AudioPlayer {
             SeekableSource::new(reader, content_len).with_storage_state(download.storage_state),
         );
         let meta = decoder::spawn_probe_task(source, extension).await?;
-        self.setup_and_play(meta, start_at, strict_bit_perfect)
+        self.setup_and_play(meta, start_at, strict_bit_perfect, exclusive)
     }
 
     /// 仅下载并缓存歌曲，不播放。
     /// 使用与 play_url_cached 相同的 HttpStream + StreamDownload 链路，
     /// 保证 WebAPI 引擎的缓存行为与 native 引擎一致（边下边存，按 prefetch 控制）。
-    pub async fn download_song_for_cache(
+    pub(crate) async fn download_song_for_cache(
         url: &str,
         cache_path: &str,
         metadata_path: &str,
@@ -558,6 +607,7 @@ impl AudioPlayer {
         path: &str,
         start_at: Option<Duration>,
         strict_bit_perfect: bool,
+        exclusive: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let path_buf = Path::new(path);
         let extension = path_buf
@@ -568,7 +618,7 @@ impl AudioPlayer {
         let source = Box::new(file);
 
         let meta = decoder::spawn_probe_task(source, extension).await?;
-        self.setup_and_play(meta, start_at, strict_bit_perfect)
+        self.setup_and_play(meta, start_at, strict_bit_perfect, exclusive)
     }
 
     pub(crate) fn setup_and_play(
@@ -576,9 +626,31 @@ impl AudioPlayer {
         mut meta: AudioMetadata,
         start_at: Option<Duration>,
         strict_bit_perfect: bool,
+        exclusive: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // 独占输出（BitPerfect 隐含）目前仅在 Linux（PipeWire pw-reserve）上实现，
+        // 其余平台忽略该请求；want_exclusive 在非 Linux 下仅用于禁用默认端点回退。
+        let want_exclusive = strict_bit_perfect || exclusive;
+        #[cfg(target_os = "linux")]
+        let active_device_id = backend::device_id(&self.device);
+
+        // stop() 会连同设备预留一起释放。切歌时目标设备没变，预留必须原样留住：
+        // 一旦松手，PipeWire 会立刻抢回声卡，下一首重新预留期间的空窗足以让
+        // hw: 打开失败——表现就是“独占播放第一首正常，之后随机失败”。
+        #[cfg(target_os = "linux")]
+        let reusable_reservation = self
+            .device_reservation
+            .take()
+            .filter(|reservation| want_exclusive && reservation.covers_device(&active_device_id));
+
         self.stop();
 
+        // BitPerfect 会话锁定为 1.0 直通，样本不经任何数字增益。
+        let session_volume_bits = if strict_bit_perfect {
+            UNITY_VOLUME_BITS
+        } else {
+            self.master_volume_bits.load(Ordering::Relaxed)
+        };
         self.state = Arc::new(SharedState {
             is_paused: AtomicBool::new(false),
             current_frame: AtomicU64::new(0),
@@ -591,33 +663,58 @@ impl AudioPlayer {
             is_discarding_buffer: AtomicBool::new(false),
             decoder_done: AtomicBool::new(false),
             is_finished: AtomicBool::new(false),
-            finish_notify: Notify::new(),
+            playback_failed: AtomicBool::new(false),
             buffered_frames: AtomicU64::new(0),
             waiting_for_seek: AtomicBool::new(false),
             has_seek_request: AtomicBool::new(false),
+            volume_bits: AtomicU32::new(session_volume_bits),
+            volume_locked: AtomicBool::new(strict_bit_perfect),
         });
 
         let sr = meta.sample_rate;
         let channels = meta.channels;
         let should_predecode = start_at.is_none_or(|target| target.is_zero());
 
+        // 独占要求输出落在真实硬件端点上：虚拟端点（default/pipewire/pulse）本身
+        // 就是混音服务器的入口，预留它毫无意义，也谈不上独占。
         #[cfg(target_os = "linux")]
-        if strict_bit_perfect {
-            let active_device_id = backend::device_id(&self.device);
-            if !backend::is_linux_real_hardware_output_id(&active_device_id) {
-                return Err(format!(
-                    "当前无法满足BitPerfect条件拒绝播放：当前输出端点 {} 不是真实硬件设备",
-                    active_device_id
-                )
-                .into());
-            }
+        if want_exclusive && !backend::is_linux_real_hardware_output_id(&active_device_id) {
+            let requirement = if strict_bit_perfect {
+                "当前无法满足BitPerfect条件拒绝播放"
+            } else {
+                "当前无法满足独占输出条件拒绝播放"
+            };
+            return Err(format!(
+                "{}：当前输出端点 {} 不是真实硬件设备，请在设置中选择一个硬件输出设备",
+                requirement, active_device_id
+            )
+            .into());
         }
 
+        // BitPerfect 还必须落在 hw: 上。plughw: 是同一块硬件外面套的转换插件，
+        // 它会把任意采样率/位深都报成“支持”，find_bit_perfect_config 于是必然
+        // 通过，实际却由 ALSA 悄悄重采样、改位深——校验全过而声音早已不是原始
+        // 比特流。这种“假 BitPerfect”比直接拒绝更糟，必须挡在开流之前。
         #[cfg(target_os = "linux")]
-        let device_reservation = if strict_bit_perfect {
-            Some(DeviceReservation::reserve(&backend::device_id(
-                &self.device,
-            ))?)
+        if strict_bit_perfect && backend::is_linux_plughw_output_id(&active_device_id) {
+            return Err(format!(
+                "当前无法满足BitPerfect条件拒绝播放：{} 是带软件转换的 plughw 端点，\
+                 会静默重采样，请改选对应的 hw: 直通端点",
+                active_device_id
+            )
+            .into());
+        }
+
+        // 预留 → 等待 PipeWire 真正交出声卡 → 再开流。释放是异步的，
+        // 拿到预留的瞬间 hw: 往往仍是 EBUSY，不等就会直接开流失败。
+        #[cfg(target_os = "linux")]
+        let device_reservation = if want_exclusive {
+            let reservation = match reusable_reservation {
+                Some(reservation) => reservation,
+                None => DeviceReservation::reserve(&active_device_id)?,
+            };
+            backend::wait_for_output_device_available(&self.device, DEVICE_RELEASE_TIMEOUT)?;
+            Some(reservation)
         } else {
             None
         };
@@ -641,7 +738,11 @@ impl AudioPlayer {
                 Ok(cfg) => cfg,
                 Err(primary_err) => {
                     let primary_msg = primary_err.to_string();
-                    if self.maybe_fallback_to_default_device()? {
+                    // 独占会话不允许悄悄回退到系统默认端点：默认端点不是硬件
+                    // 设备，回退等于独占失效，必须把错误如实抛给前端。
+                    // （独占仅在 Linux 实现，其他平台始终允许回退。）
+                    let allow_fallback = !want_exclusive || !cfg!(target_os = "linux");
+                    if allow_fallback && self.maybe_fallback_to_default_device()? {
                         backend::find_best_config(
                             &self.device,
                             sr,
@@ -820,12 +921,16 @@ impl AudioPlayer {
         Ok(())
     }
 
+    /// 目标设备开不出兼容配置时退回系统默认端点（独占会话禁用此路径）。
+    /// 退回后必须同步改写 requested_device_id，否则 output_devices() 会继续把
+    /// 用户选的那条标成 is_current——UI 显示的输出端点和实际发声端点对不上。
     fn maybe_fallback_to_default_device(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
         let host = cpal::default_host();
         if let Some(default) = host.default_output_device() {
             if backend::device_id(&default) != backend::device_id(&self.device) {
                 println!("[audio] falling back to default device...");
                 self.device = default;
+                self.requested_device_id = None;
                 return Ok(true);
             }
         }
@@ -920,6 +1025,20 @@ impl AudioPlayer {
         self.state.is_paused.store(true, Ordering::SeqCst);
     }
 
+    /// 设置软件音量（0.0..=1.0），跨播放会话保留；BitPerfect 会话内不生效。
+    /// 非有限输入（NaN/±inf）按 1.0 处理：clamp 会传播 NaN，存进
+    /// master_volume_bits 会一直驻留到下一次有效设置。
+    pub fn set_volume(&self, volume: f32) {
+        let clamped = if volume.is_finite() {
+            volume.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        self.master_volume_bits
+            .store(clamped.to_bits(), Ordering::Relaxed);
+        self.state.set_volume(clamped);
+    }
+
     pub fn resume(&self) {
         self.state.is_paused.store(false, Ordering::SeqCst);
     }
@@ -945,11 +1064,17 @@ impl AudioPlayer {
             self.device_reservation = None;
         }
         self.state.is_finished.store(true, Ordering::SeqCst);
-        self.state.finish_notify.notify_waiters();
     }
 
     pub fn is_finished(&self) -> bool {
-        self.state.is_finished.load(Ordering::Relaxed)
+        // Acquire 配合生产者线程的 SeqCst 存储：tick() 相继读取
+        // is_finished 与 playback_failed，若用 Relaxed 在弱序目标上可能
+        // 读到 finished=true 而 failed 还是旧值 false，把致命错误误报成自然播完。
+        self.state.is_finished.load(Ordering::Acquire)
+    }
+
+    pub fn playback_failed(&self) -> bool {
+        self.state.playback_failed.load(Ordering::Acquire)
     }
 
     pub(crate) fn get_state(&self) -> Arc<SharedState> {
@@ -972,7 +1097,6 @@ impl Drop for AudioPlayer {
         {
             self.device_reservation = None;
         }
-        self.state.finish_notify.notify_waiters();
     }
 }
 
@@ -999,9 +1123,11 @@ mod tests {
             is_discarding_buffer: AtomicBool::new(false),
             decoder_done: AtomicBool::new(false),
             is_finished: AtomicBool::new(false),
-            finish_notify: Notify::new(),
+            playback_failed: AtomicBool::new(false),
             buffered_frames: AtomicU64::new(0),
             waiting_for_seek: AtomicBool::new(false),
+            volume_bits: AtomicU32::new(crate::audio::state::UNITY_VOLUME_BITS),
+            volume_locked: AtomicBool::new(false),
         }
     }
 
@@ -1435,7 +1561,9 @@ mod tests {
                 let Ok(mut socket) = stream else { continue };
                 thread::spawn(move || {
                     let mut request = [0u8; 8192];
-                    let Ok(read) = socket.read(&mut request) else { return };
+                    let Ok(read) = socket.read(&mut request) else {
+                        return;
+                    };
                     if read == 0 {
                         return;
                     }
@@ -1528,11 +1656,13 @@ mod tests {
             .expect("join cached stream reader");
         assert_eq!(read_total, CONTENT_LENGTH);
 
-        let meta: SongStreamCacheMeta = serde_json::from_str(
-            &std::fs::read_to_string(&metadata_path).expect("read song meta"),
-        )
-        .expect("parse song meta");
-        assert!(meta.is_fully_downloaded(), "cache meta must show full progress");
+        let meta: SongStreamCacheMeta =
+            serde_json::from_str(&std::fs::read_to_string(&metadata_path).expect("read song meta"))
+                .expect("parse song meta");
+        assert!(
+            meta.is_fully_downloaded(),
+            "cache meta must show full progress"
+        );
 
         let _ = std::fs::remove_dir_all(test_root);
     }
@@ -1816,10 +1946,14 @@ mod tests {
 
             read_some(&mut reader, 128 * 1024, "initial");
             // 向前 seek 到 2MB（未缓存）。
-            reader.seek(SeekFrom::Start(2 * 1024 * 1024)).expect("seek to 2MB");
+            reader
+                .seek(SeekFrom::Start(2 * 1024 * 1024))
+                .expect("seek to 2MB");
             read_some(&mut reader, 32 * 1024, "at 2MB");
             // 回退 seek 到 1MB（未缓存）：downloaded 集合留下 [1MB..2MB) 的 gap。
-            reader.seek(SeekFrom::Start(1024 * 1024)).expect("seek back to 1MB");
+            reader
+                .seek(SeekFrom::Start(1024 * 1024))
+                .expect("seek back to 1MB");
             read_some(&mut reader, 32 * 1024, "at 1MB");
             // 再向前 seek 到 2.5MB（未缓存）：此处不允许把下载任务弄挂。
             reader
@@ -1898,7 +2032,9 @@ mod tests {
                 assert!(read > 0, "unexpected EOF during initial playback");
                 consumed += read;
             }
-            initial_done_tx.send(()).expect("notify initial playback done");
+            initial_done_tx
+                .send(())
+                .expect("notify initial playback done");
 
             go_seek_rx.recv().expect("wait for seek signal");
             reader

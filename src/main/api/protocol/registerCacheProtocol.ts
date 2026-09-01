@@ -22,13 +22,14 @@ function getMimeType(filePath: string): string {
   return MIME_TYPES[ext] ?? 'application/octet-stream'
 }
 
-function isPathInsideCacheRoot(filePath: string, rootDir: string): boolean {
+// 全程异步：协议处理器跑在主进程，任何同步 fs 调用都会在磁盘慢时阻塞整个主进程
+async function isPathInsideCacheRoot(filePath: string, rootDir: string): Promise<boolean> {
   if (!isPathInsideRoot(filePath, rootDir)) {
     return false
   }
 
   try {
-    const realPath = fs.realpathSync(filePath)
+    const realPath = await fs.promises.realpath(filePath)
     return isPathInsideRoot(realPath, rootDir)
   } catch {
     return false
@@ -70,17 +71,19 @@ export function registerCacheProtocol(cacheRootDir: string): void {
 
     const normalizedTargetPath = path.resolve(requestedPath)
 
-    if (!isPathInsideCacheRoot(normalizedTargetPath, normalizedRootDir)) {
+    if (!(await isPathInsideCacheRoot(normalizedTargetPath, normalizedRootDir))) {
       console.warn(`[ncm-cache] outside cache root: ${normalizedTargetPath}`)
       return new Response('Forbidden', { status: 403 })
     }
 
-    if (!fs.existsSync(normalizedTargetPath)) {
+    // stat 失败即视为不存在，省掉此前 existsSync + stat 的重复检查
+    let stat: fs.Stats
+    try {
+      stat = await fs.promises.stat(normalizedTargetPath)
+    } catch {
       console.warn(`[ncm-cache] file not found: ${normalizedTargetPath}`)
       return new Response('Not Found', { status: 404 })
     }
-
-    const stat = await fs.promises.stat(normalizedTargetPath)
     if (!stat.isFile()) {
       console.warn(`[ncm-cache] not a file: ${normalizedTargetPath}`)
       return new Response('Not Found', { status: 404 })

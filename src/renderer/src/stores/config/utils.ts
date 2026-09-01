@@ -16,7 +16,9 @@ import {
   MAX_CACHE_LIMIT_MB,
   MIN_CACHE_LIMIT_MB,
   MAX_SONG_MAX_CACHE_AHEAD_MB,
-  MIN_SONG_MAX_CACHE_AHEAD_MB
+  MIN_SONG_MAX_CACHE_AHEAD_MB,
+  MAX_VOLUME_PERCENT,
+  MIN_VOLUME_PERCENT
 } from './types'
 
 export function isSoundQuality(value: unknown): value is SoundQualityType {
@@ -87,6 +89,14 @@ export function normalizeSongMaxCacheAheadMb(value: unknown): number {
   )
 }
 
+export function normalizeVolumePercent(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_SETTINGS.volumePercent
+  }
+
+  return Math.min(MAX_VOLUME_PERCENT, Math.max(MIN_VOLUME_PERCENT, Math.round(value)))
+}
+
 export function loadSettings(): PersistedSettings {
   const fallbackSettings: PersistedSettings = {
     ...DEFAULT_SETTINGS,
@@ -132,7 +142,16 @@ export function loadSettings(): PersistedSettings {
         typeof parsed.softwareVolume === 'boolean'
           ? parsed.softwareVolume
           : fallbackSettings.softwareVolume,
+      volumePercent: normalizeVolumePercent(parsed.volumePercent),
       theme: isThemeMode(parsed.theme) ? parsed.theme : fallbackSettings.theme,
+      fullscreenShowFavorite:
+        typeof parsed.fullscreenShowFavorite === 'boolean'
+          ? parsed.fullscreenShowFavorite
+          : fallbackSettings.fullscreenShowFavorite,
+      fullscreenShowPlayMode:
+        typeof parsed.fullscreenShowPlayMode === 'boolean'
+          ? parsed.fullscreenShowPlayMode
+          : fallbackSettings.fullscreenShowPlayMode,
       acrylic: typeof parsed.acrylic === 'boolean' ? parsed.acrylic : fallbackSettings.acrylic,
       accentColor:
         typeof parsed.accentColor === 'string' && parsed.accentColor.trim().length > 0
@@ -350,17 +369,28 @@ export function isMissingOutputDeviceError(error: unknown): boolean {
   return false
 }
 
+/**
+ * 目标端点是否已经生效。注意：空列表 / 无 is_current 标记 ⇒ 只有“系统默认输出”
+ * 算生效——这是 Linux 枚举契约（列表只含真实硬件端点，跟随默认时无任何标记），
+ * 不是通用语义；平台行为变化时需同步修改此处与 ensureConfiguredOutputDevice。
+ */
 export function isOutputDeviceActive(devices: AudioDeviceInfo[], targetDeviceId: string): boolean {
   if (devices.length === 0) {
-    // If we have no device list yet, assume the status quo is fine
-    // to avoid redundant switch attempts during early initialization.
-    return true
+    // 设备列表为空（枚举失败/尚未就绪）时只有“跟随系统默认”可以视为生效；
+    // 具名设备必须走切换流程：ensureConfiguredOutputDevice 依赖这里的 false
+    // 触发 switch→失败→回退默认，从而摘掉独占/BitPerfect——若对具名目标
+    // 也返回 true，播放会带着独占选项打到实际生效的虚拟端点上被原生侧拒绝。
+    return targetDeviceId === DEFAULT_OUTPUT_DEVICE_ID
   }
 
   const currentDevice = devices.find((device) => device.isCurrent)
 
   if (!currentDevice) {
-    return false
+    // Linux 跟随系统默认时，设备列表只枚举真实硬件端点，任何设备都不带
+    // is_current 标记——此时“系统默认输出”本身就是生效状态。若不识别这种
+    // 情况，每次切歌都会发起一次注定 no-op 的切换 IPC 外加第二次全量
+    // ALSA 设备枚举。指定了具名设备时仍视为未生效，走切换流程。
+    return targetDeviceId === DEFAULT_OUTPUT_DEVICE_ID
   }
 
   if (targetDeviceId === DEFAULT_OUTPUT_DEVICE_ID) {

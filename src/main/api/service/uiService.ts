@@ -193,8 +193,13 @@ export const UiService = {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
     const resultChannel = `ui:dialogResult:${id}`
 
+    // 关闭旧弹窗后立即创建新窗口。旧窗口的 'closed' 事件是异步派发的，
+    // 若沿用模块级 dialogWindow 引用，旧窗口的 closed 回调会在新窗口赋值
+    // 之后才执行、把引用置空——新窗口的 ready-to-show 里 show() 落在 null
+    // 上，弹窗永远不显示。因此所有生命周期回调只捕获局部 win 引用，
+    // 模块级引用仅在仍指向本窗口时才清空。
     dialogWindow?.close()
-    dialogWindow = new BrowserWindow({
+    const win = new BrowserWindow({
       width: 420,
       height: 240,
       minWidth: 360,
@@ -211,6 +216,7 @@ export const UiService = {
         sandbox: false
       }
     })
+    dialogWindow = win
 
     return new Promise((resolve) => {
       let settled = false
@@ -222,26 +228,35 @@ export const UiService = {
         settled = true
         ipcMain.removeAllListeners(resultChannel)
         resolve(confirmed)
-        dialogWindow?.close()
+        if (!win.isDestroyed()) {
+          win.close()
+        }
       }
 
       ipcMain.once(resultChannel, (_event, confirmed: boolean) => {
         finish(confirmed)
       })
 
-      dialogWindow?.on('closed', () => {
-        dialogWindow = null
+      win.on('closed', () => {
+        if (dialogWindow === win) {
+          dialogWindow = null
+        }
         finish(false)
       })
 
-      dialogWindow?.on('ready-to-show', () => {
-        dialogWindow?.show()
-        dialogWindow?.focus()
+      win.on('ready-to-show', () => {
+        win.show()
+        win.focus()
       })
 
-      dialogWindow?.loadURL(
-        `data:text/html;charset=UTF-8,${encodeURIComponent(buildDialogHtml(id, normalizedOptions))}`
-      )
+      // 加载失败时不能让 Promise 悬挂：调用方（播放失败告警）会一直等待。
+      win
+        .loadURL(
+          `data:text/html;charset=UTF-8,${encodeURIComponent(
+            buildDialogHtml(id, normalizedOptions)
+          )}`
+        )
+        .catch(() => finish(false))
     })
   },
 

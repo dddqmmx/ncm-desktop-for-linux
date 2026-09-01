@@ -47,6 +47,9 @@ const LOCAL_SCHEMES = ['ncm-cache:', 'file:', 'data:', 'blob:']
 
 let nativeCache: NativeCacheBinding | null = null
 const resolvedMediaUrlCache = new Map<string, string>()
+// 同一封面 URL 的并发解析共享一次下载：网格视图会同时请求同一张图，
+// 没有去重时每个请求都会触发一次完整的远端下载
+const inflightMediaUrlResolves = new Map<string, Promise<string>>()
 
 function getCacheRootDir(): string {
   return path.join(app.getPath('userData'), 'cache')
@@ -278,20 +281,31 @@ export const CacheService = {
     }
     resolvedMediaUrlCache.delete(normalizedUrl)
 
-    try {
-      const cachedPath = normalizeCachedPath(
-        await getNativeCache().cacheRemoteFile('cover', normalizedUrl, normalizedUrl)
-      )
-      if (!cachedPath) {
-        return normalizedUrl
-      }
-
-      cacheMediaUrl(normalizedUrl, cachedPath)
-      return createCacheAssetUrl(cachedPath)
-    } catch (error) {
-      console.warn('[cache] failed to resolve cached media url', error)
-      return normalizedUrl
+    const inflight = inflightMediaUrlResolves.get(normalizedUrl)
+    if (inflight) {
+      return inflight
     }
+
+    const resolvePromise = (async (): Promise<string> => {
+      try {
+        const cachedPath = normalizeCachedPath(
+          await getNativeCache().cacheRemoteFile('cover', normalizedUrl, normalizedUrl)
+        )
+        if (!cachedPath) {
+          return normalizedUrl
+        }
+
+        cacheMediaUrl(normalizedUrl, cachedPath)
+        return createCacheAssetUrl(cachedPath)
+      } catch (error) {
+        console.warn('[cache] failed to resolve cached media url', error)
+        return normalizedUrl
+      } finally {
+        inflightMediaUrlResolves.delete(normalizedUrl)
+      }
+    })()
+    inflightMediaUrlResolves.set(normalizedUrl, resolvePromise)
+    return resolvePromise
   },
 
   async prepareSongSource(payload: {

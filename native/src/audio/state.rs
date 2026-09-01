@@ -1,7 +1,6 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
 use std::time::{Duration, Instant};
-use tokio::sync::Notify;
 
 pub(crate) const NO_TRIM_FRAME: u64 = u64::MAX;
 
@@ -72,10 +71,17 @@ pub(crate) struct SharedState {
     pub(crate) is_discarding_buffer: AtomicBool,
     pub(crate) decoder_done: AtomicBool,
     pub(crate) is_finished: AtomicBool,
-    pub(crate) finish_notify: Notify,
+    /// 播放因致命流错误而终止（区别于自然播完），随 is_finished 一起置位。
+    pub(crate) playback_failed: AtomicBool,
     pub(crate) buffered_frames: AtomicU64,
     pub(crate) waiting_for_seek: AtomicBool,
+    /// 软件音量（f32 位模式存储），1.0 = 原样直通。
+    pub(crate) volume_bits: AtomicU32,
+    /// BitPerfect 会话锁定音量为 1.0，set_volume 直接忽略。
+    pub(crate) volume_locked: AtomicBool,
 }
+
+pub(crate) const UNITY_VOLUME_BITS: u32 = 0x3F80_0000; // 1.0f32.to_bits()
 
 impl SharedState {
     pub(crate) fn schedule_seek(&self, target: Duration) {
@@ -168,6 +174,23 @@ impl SharedState {
         self.trim_until_frame
             .store(NO_TRIM_FRAME, std::sync::atomic::Ordering::SeqCst);
     }
+
+    pub(crate) fn volume(&self) -> f32 {
+        f32::from_bits(self.volume_bits.load(std::sync::atomic::Ordering::Relaxed))
+    }
+
+    pub(crate) fn set_volume(&self, volume: f32) {
+        if self
+            .volume_locked
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return;
+        }
+        self.volume_bits.store(
+            volume.clamp(0.0, 1.0).to_bits(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+    }
 }
 
 pub(crate) fn duration_to_frames(duration: Duration, sample_rate: u32) -> u64 {
@@ -197,9 +220,11 @@ mod tests {
             is_discarding_buffer: AtomicBool::new(false),
             decoder_done: AtomicBool::new(false),
             is_finished: AtomicBool::new(false),
-            finish_notify: Notify::new(),
+            playback_failed: AtomicBool::new(false),
             buffered_frames: AtomicU64::new(0),
             waiting_for_seek: AtomicBool::new(false),
+            volume_bits: AtomicU32::new(UNITY_VOLUME_BITS),
+            volume_locked: AtomicBool::new(false),
         }
     }
 
@@ -275,6 +300,26 @@ mod tests {
             progress >= 997_500 && progress <= 999_000,
             "expected around 997600 frames, got {progress}"
         );
+    }
+
+    #[test]
+    fn volume_updates_are_clamped_and_ignored_while_locked() {
+        let state = create_state(48_000);
+        assert_eq!(state.volume(), 1.0);
+
+        state.set_volume(0.5);
+        assert_eq!(state.volume(), 0.5);
+
+        state.set_volume(2.0);
+        assert_eq!(state.volume(), 1.0);
+        state.set_volume(-1.0);
+        assert_eq!(state.volume(), 0.0);
+
+        // BitPerfect 会话：锁定后音量维持创建时的值（1.0 直通）。
+        state.set_volume(1.0);
+        state.volume_locked.store(true, Ordering::SeqCst);
+        state.set_volume(0.3);
+        assert_eq!(state.volume(), 1.0);
     }
 
     #[test]

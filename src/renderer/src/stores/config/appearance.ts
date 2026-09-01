@@ -9,10 +9,14 @@ export const useAppearanceConfigStore = defineStore('appearanceConfig', () => {
   const theme = ref<ThemeMode>(initialSettings.theme)
   const acrylic = ref(initialSettings.acrylic)
   const accentColor = ref(initialSettings.accentColor)
+  const fullscreenShowFavorite = ref(initialSettings.fullscreenShowFavorite)
+  const fullscreenShowPlayMode = ref(initialSettings.fullscreenShowPlayMode)
 
   return {
     theme,
     acrylic,
-    accentColor
+    accentColor,
+    fullscreenShowFavorite,
+    fullscreenShowPlayMode
   }
 })

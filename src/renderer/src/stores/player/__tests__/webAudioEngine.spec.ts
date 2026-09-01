@@ -21,10 +21,7 @@ describe('webAudioEngine URL 解析', () => {
   })
 
   it('网络 URL (url) 保持原样', () => {
-    const http = source(
-      'url',
-      'https://m701.music.126.net/20260101/abc/def.mp3?authSecret=xxx'
-    )
+    const http = source('url', 'https://m701.music.126.net/20260101/abc/def.mp3?authSecret=xxx')
     expect(toAudioUrl(http)).toBe(http.value)
   })
 

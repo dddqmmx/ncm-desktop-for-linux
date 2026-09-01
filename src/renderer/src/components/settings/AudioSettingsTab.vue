@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import SettingGroup from '@renderer/components/settings/SettingGroup.vue'
 import SettingRow from '@renderer/components/settings/SettingRow.vue'
 import SegmentedSlider from '@renderer/components/common/SegmentedSlider.vue'
+import RangeSlider from '@renderer/components/common/RangeSlider.vue'
 import { useConfigStore } from '@renderer/stores/configStore'
 import { DEFAULT_OUTPUT_DEVICE_ID } from '@renderer/stores/config/types'
 import { type AudioDeviceInfo } from '@renderer/types/audio'
@@ -16,11 +17,14 @@ const {
   exclusiveMode,
   strictBitPerfect,
   softwareVolume,
+  volumePercent,
   outputDevices,
   currentOutputDevice,
   isLoadingOutputDevices,
   isSwitchingOutputDevice,
-  outputDeviceError
+  outputDeviceError,
+  supportsExclusiveOutput,
+  canAdjustVolume
 } = storeToRefs(configStore)
 
 const isWebApiOutput = computed(() => audioEngine.value === 'webapi')
@@ -111,6 +115,20 @@ onMounted(() => {
           :disabled="strictBitPerfect"
         />
       </SettingRow>
+      <SettingRow title="应用音量" description="仅调节本应用的输出音量，不影响系统音量">
+        <div class="settings-volume-row">
+          <div class="settings-volume-slider">
+            <RangeSlider
+              v-model="volumePercent"
+              :min="0"
+              :max="100"
+              :step="1"
+              :disabled="!canAdjustVolume"
+            />
+          </div>
+          <span class="settings-volume-value">{{ Math.round(volumePercent) }}%</span>
+        </div>
+      </SettingRow>
     </SettingGroup>
 
     <SettingGroup title="设备选择">
@@ -157,25 +175,33 @@ onMounted(() => {
 
       <SettingRow
         title="独占输出模式"
-        description="仅 Native 输出可用；严格 BitPerfect 打开时会强制启用"
+        :description="
+          supportsExclusiveOutput
+            ? '仅 Native 输出可用；严格 BitPerfect 打开时会强制启用'
+            : '“系统默认输出”是混音服务器的虚拟端点，独占无从谈起；选择一个硬件端点后自动恢复'
+        "
       >
         <input
           v-model="exclusiveModeValue"
           type="checkbox"
           class="modern-switch"
-          :disabled="strictBitPerfect || isWebApiOutput"
+          :disabled="strictBitPerfect || isWebApiOutput || !supportsExclusiveOutput"
         />
       </SettingRow>
 
       <SettingRow
         title="严格 BitPerfect"
-        description="仅 Native 输出可用；设备必须原生支持当前音源格式"
+        :description="
+          supportsExclusiveOutput
+            ? '仅 Native 输出可用；设备必须原生支持当前音源格式'
+            : 'BitPerfect 必须直通 hw: 硬件端点，请先在上方选择具体的输出设备'
+        "
       >
         <input
           v-model="strictBitPerfect"
           type="checkbox"
           class="modern-switch"
-          :disabled="isWebApiOutput"
+          :disabled="isWebApiOutput || !supportsExclusiveOutput"
         />
       </SettingRow>
     </SettingGroup>

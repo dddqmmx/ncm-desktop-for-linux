@@ -93,7 +93,12 @@ fn main() {
                         let pkt = p.ts() as f64 / sr;
                         println!(
                             "  seek {:>5.0}s -> required={:.2}s actual={:.2}s nextPkt={:.2}s  | actual-target={:+.2}s pkt-target={:+.2}s",
-                            t, req, act, pkt, act - t, pkt - t
+                            t,
+                            req,
+                            act,
+                            pkt,
+                            act - t,
+                            pkt - t
                         );
                     }
                     Err(e) => println!(

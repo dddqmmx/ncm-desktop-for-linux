@@ -521,7 +521,11 @@ where
             true
         }
         Err(e) => {
+            // 非 IO 的解复用错误（ResetRequired/Unsupported 等）意味着曲目在
+            // 中途异常终止。不标记失败的话，decoder_done 落地后会被当成自然
+            // 播完：前端把进度吸附到时长并静默切歌，用户只觉得歌“少了一截”。
             println!("[Decoder] 停止解码: {:?}", e);
+            state.playback_failed.store(true, Ordering::SeqCst);
             false
         }
     }
@@ -548,11 +552,13 @@ fn fail_playback_after_stream_error(
         .lock()
         .unwrap()
         .reset_to(0, state.sample_rate.load(Ordering::SeqCst));
+    // 先落 playback_failed 再开 decoder_done：输出回调一旦观察到
+    // decoder_done 且缓冲已空就会自行置 is_finished，若此刻 failed 还没
+    // 落地，这次致命错误会被误分类成自然播完（前端静默切歌）。
+    state.playback_failed.store(true, Ordering::SeqCst);
     state.decoder_done.store(true, Ordering::SeqCst);
     state.is_terminating.store(true, Ordering::SeqCst);
-    if !state.is_finished.swap(true, Ordering::SeqCst) {
-        state.finish_notify.notify_waiters();
-    }
+    state.is_finished.store(true, Ordering::SeqCst);
 }
 
 fn push_samples_blocking<S, P>(producer: &mut P, samples: &[S], state: &SharedState)
@@ -606,7 +612,6 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Instant;
     use symphonia::core::audio::{AudioBuffer, AudioBufferRef, Channels, Signal, SignalSpec};
-    use tokio::sync::Notify;
 
     #[test]
     fn converts_track_ticks_to_milliseconds() {
@@ -635,9 +640,11 @@ mod tests {
             is_discarding_buffer: AtomicBool::new(false),
             decoder_done: AtomicBool::new(false),
             is_finished: AtomicBool::new(false),
-            finish_notify: Notify::new(),
+            playback_failed: AtomicBool::new(false),
             buffered_frames: AtomicU64::new(12_000),
             waiting_for_seek: AtomicBool::new(true),
+            volume_bits: AtomicU32::new(crate::audio::state::UNITY_VOLUME_BITS),
+            volume_locked: AtomicBool::new(false),
         }
     }
 

@@ -125,7 +125,10 @@ describe('configStore output device handling', () => {
     expect(store.outputDevices.find((device) => device.id === preferredDeviceId)?.name).toContain(
       '当前不可用'
     )
-    expect(api.switch_output_device.mock.calls).toEqual([[preferredDeviceId], [undefined]])
+    expect(api.switch_output_device.mock.calls).toEqual([
+      [preferredDeviceId, false, false],
+      [undefined, false, false]
+    ])
   })
 
   it('does not recreate the device when the configured device is already current', async () => {
@@ -264,10 +267,22 @@ describe('configStore output device handling', () => {
     expect(readPersistedSettings(storage).outputDeviceName).toBe('USB DAC')
     expect(store.currentOutputDevice?.id).toBe(preferredDeviceId)
     expect(api.switch_output_device.mock.calls).toEqual([
-      [preferredDeviceId],
-      [undefined],
-      [preferredDeviceId]
+      [preferredDeviceId, false, false],
+      [undefined, false, false],
+      [preferredDeviceId, false, false]
     ])
+  })
+
+  it('treats following-system-default as active when the list marks no current device', async () => {
+    // Linux 硬件端点列表：跟随系统默认时没有任何设备带 is_current/is_default
+    api.get_output_devices.mockResolvedValue([
+      createDevice('hw:CARD=0,DEV=0', { name: 'HDA Intel PCH' })
+    ])
+
+    const store = useConfigStore()
+
+    expect(await store.ensureConfiguredOutputDevice()).toBe('default')
+    expect(api.switch_output_device).not.toHaveBeenCalled()
   })
 
   it('persists only explicit user selections, including switching back to default', async () => {
@@ -368,6 +383,52 @@ describe('configStore output device handling', () => {
     expect(store.softwareVolume).toBe(true)
   })
 
+  it('defaults application volume to 100 and clamps persisted values into range', () => {
+    expect(useConfigStore().volumePercent).toBe(100)
+
+    setActivePinia(createPinia())
+    writePersistedSettings(storage, { volumePercent: 350 })
+    expect(useConfigStore().volumePercent).toBe(100)
+
+    setActivePinia(createPinia())
+    writePersistedSettings(storage, { volumePercent: -20 })
+    expect(useConfigStore().volumePercent).toBe(0)
+
+    setActivePinia(createPinia())
+    writePersistedSettings(storage, { volumePercent: 42.6 })
+    expect(useConfigStore().volumePercent).toBe(43)
+  })
+
+  it('persists application volume changes', async () => {
+    const store = useConfigStore()
+
+    store.volumePercent = 55
+    await nextTick()
+
+    expect(readPersistedSettings(storage).volumePercent).toBe(55)
+  })
+
+  it('defaults fullscreen favorite/play-mode buttons to visible and persists toggles', async () => {
+    const store = useConfigStore()
+
+    expect(store.fullscreenShowFavorite).toBe(true)
+    expect(store.fullscreenShowPlayMode).toBe(true)
+
+    store.fullscreenShowFavorite = false
+    store.fullscreenShowPlayMode = false
+    await nextTick()
+
+    expect(readPersistedSettings(storage)).toMatchObject({
+      fullscreenShowFavorite: false,
+      fullscreenShowPlayMode: false
+    })
+
+    setActivePinia(createPinia())
+    const reloaded = useConfigStore()
+    expect(reloaded.fullscreenShowFavorite).toBe(false)
+    expect(reloaded.fullscreenShowPlayMode).toBe(false)
+  })
+
   it('defaults lyric debug to disabled and persists explicit changes', async () => {
     const store = useConfigStore()
 
@@ -432,5 +493,54 @@ describe('configStore output device handling', () => {
 
     expect(store.soundQuality).toBe('jymaster')
     expect(store.lyricDebug).toBe(true)
+  })
+
+  /**
+   * 回归：开着独占/BitPerfect 时也要能切回“系统默认输出”。
+   *
+   * 系统默认输出是混音服务器的虚拟端点，原生侧会以“不是真实硬件设备”拒绝独占与
+   * BitPerfect。若照着用户存的偏好原样下发，这条切换必然失败并回滚——用户被锁在
+   * 自己的 DAC 上，连把开关关掉都没用（那只影响下一首，当前会话的选项是开播时
+   * 冻结的）。选项必须按“切过去之后”的端点算。
+   */
+  it('drops exclusive and bit-perfect when switching to the system default output', async () => {
+    const preferredDeviceId = 'hw:CARD=1,DEV=0'
+    writePersistedSettings(storage, {
+      outputDeviceId: preferredDeviceId,
+      outputDeviceName: 'FreeDSP Mini',
+      exclusiveMode: true,
+      strictBitPerfect: true
+    })
+
+    api.get_output_devices.mockResolvedValue([
+      createDevice(preferredDeviceId, { name: 'FreeDSP Mini', isCurrent: true })
+    ])
+    api.switch_output_device.mockResolvedValue(undefined)
+
+    const store = useConfigStore()
+    expect(store.strictBitPerfect).toBe(true)
+    expect(store.supportsExclusiveOutput).toBe(true)
+
+    expect(await store.setOutputDevice('default')).toBe(true)
+
+    expect(api.switch_output_device).toHaveBeenLastCalledWith(undefined, false, false)
+    // 用户存的偏好保持原样，重新选回硬件端点即自动恢复。
+    expect(store.strictBitPerfect).toBe(true)
+    expect(store.exclusiveMode).toBe(true)
+    expect(store.supportsExclusiveOutput).toBe(false)
+    expect(store.outputOptionsFor('default')).toEqual({
+      strictBitPerfect: false,
+      exclusive: false
+    })
+    expect(store.outputOptionsFor(preferredDeviceId)).toEqual({
+      strictBitPerfect: true,
+      exclusive: true
+    })
+
+    api.get_output_devices.mockResolvedValue([
+      createDevice(preferredDeviceId, { name: 'FreeDSP Mini', isCurrent: true })
+    ])
+    expect(await store.setOutputDevice(preferredDeviceId)).toBe(true)
+    expect(api.switch_output_device).toHaveBeenLastCalledWith(preferredDeviceId, true, true)
   })
 })

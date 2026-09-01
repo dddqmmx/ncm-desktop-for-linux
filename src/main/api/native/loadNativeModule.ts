@@ -26,7 +26,12 @@ export type NativeCacheStats = {
 }
 
 export interface NativePlayerBinding {
-  playUrl(url: string, startSecs?: number, strictBitPerfect?: boolean): Promise<void>
+  playUrl(
+    url: string,
+    startSecs?: number,
+    strictBitPerfect?: boolean,
+    exclusive?: boolean
+  ): Promise<void>
   playUrlCached(
     url: string,
     cachePath: string,
@@ -35,9 +40,15 @@ export interface NativePlayerBinding {
     cacheAheadSecs?: number,
     maxCacheAheadBytes?: number,
     startSecs?: number,
-    strictBitPerfect?: boolean
+    strictBitPerfect?: boolean,
+    exclusive?: boolean
   ): Promise<void>
-  playFile(filePath: string, startSecs?: number, strictBitPerfect?: boolean): Promise<void>
+  playFile(
+    filePath: string,
+    startSecs?: number,
+    strictBitPerfect?: boolean,
+    exclusive?: boolean
+  ): Promise<void>
   getFileDurationMs(filePath: string): Promise<number>
   pause(): void
   resume(): void
@@ -46,10 +57,25 @@ export interface NativePlayerBinding {
   readonly isPlaying: boolean
   readonly isBuffering: boolean
   seek(time: number): void
-  switchOutputDevice(deviceId?: string): Promise<void>
+  /** 应用级软件音量（0.0~1.0），仅影响本应用输出 */
+  setVolume(volume: number): void
+  /**
+   * 切换输出端点。后两个参数是调用方此刻的播放选项：会话里那份是开播时冻结的，
+   * 切到不支持独占的端点（系统默认输出是虚拟端点）时照搬会让重放被拒绝。
+   * 均不传则沿用会话原有选项。
+   */
+  switchOutputDevice(
+    deviceId?: string,
+    strictBitPerfect?: boolean,
+    exclusive?: boolean
+  ): Promise<void>
   getOutputDevices(): Promise<unknown[]>
-  waitFinished(): Promise<void>
+  /** 阻塞到当前播放会话结束，返回结束原因。 */
+  waitFinished(): Promise<NativeFinishReason>
 }
+
+/** 播放会话结束原因（对应 Rust FinishReason::as_str）。 */
+export type NativeFinishReason = 'ended' | 'stopped' | 'replaced' | 'error'
 
 export interface NativeSongCacheProgress {
   downloadedBytes: number

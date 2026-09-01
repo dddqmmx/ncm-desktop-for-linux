@@ -27,8 +27,7 @@ impl EvictionPlanner {
             .collect::<Vec<_>>();
 
         candidates.sort_by(|a, b| {
-            b.4
-                .cmp(&a.4)
+            b.4.cmp(&a.4)
                 .then_with(|| a.1.cmp(&b.1))
                 .then_with(|| a.2.cmp(&b.2))
         });

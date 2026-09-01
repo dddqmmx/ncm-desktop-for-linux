@@ -737,9 +737,14 @@ mod tests {
             budget_bytes: 8,
             seek_escape_budget_end: None,
         }));
-        let mut source =
-            SeekableSource::new(ProbeReader { position: 0, zero_length_reads: 0 }, Some(256))
-                .with_storage_state(Arc::clone(&shared));
+        let mut source = SeekableSource::new(
+            ProbeReader {
+                position: 0,
+                zero_length_reads: 0,
+            },
+            Some(256),
+        )
+        .with_storage_state(Arc::clone(&shared));
 
         source.seek(SeekFrom::Start(128)).unwrap();
 

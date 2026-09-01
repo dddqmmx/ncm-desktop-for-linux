@@ -73,6 +73,24 @@
   width: min(420px, 42vw);
 }
 
+.settings-volume-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-volume-slider {
+  width: min(220px, 30vw);
+}
+
+.settings-volume-value {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--sys-text-secondary);
+  min-width: 40px;
+  text-align: right;
+}
+
 .settings-inline-action-btn,
 .settings-action-btn,
 .settings-add-path-btn,

@@ -3,9 +3,7 @@ use std::time::Duration;
 
 use crate::audio::{AudioPlayer, OutputDeviceInfo};
 
-use super::types::{
-    BackendFuture, BackendResult, CachedUrlPlaybackRequest, PlaybackOptions, SignalFuture,
-};
+use super::types::{BackendFuture, BackendResult, CachedUrlPlaybackRequest, PlaybackOptions};
 
 pub(crate) trait PlayerBackend: Send {
     fn play_file<'a>(
@@ -30,10 +28,13 @@ pub(crate) trait PlayerBackend: Send {
     fn resume(&self);
     fn stop(&mut self);
     fn seek(&self, target: Duration);
+    /// 软件音量（0.0..=1.0），跨会话保留；BitPerfect 会话内由底层直通忽略。
+    fn set_volume(&self, volume: f64);
     fn progress(&self) -> Duration;
     fn is_buffering(&self) -> bool;
     fn is_finished(&self) -> bool;
-    fn wait_finished_signal(&self) -> SignalFuture;
+    /// is_finished 为真时区分结束原因：true = 致命流错误终止，false = 自然播完。
+    fn playback_failed(&self) -> bool;
     fn output_devices(&self) -> BackendResult<Vec<OutputDeviceInfo>>;
 }
 
@@ -57,7 +58,12 @@ impl PlayerBackend for NativePlayer {
     ) -> BackendFuture<'a, ()> {
         Box::pin(async move {
             self.0
-                .play_file(path, start_at, options.strict_bit_perfect)
+                .play_file(
+                    path,
+                    start_at,
+                    options.strict_bit_perfect,
+                    options.exclusive,
+                )
                 .await
                 .map_err(|err| err.to_string())
         })
@@ -71,7 +77,7 @@ impl PlayerBackend for NativePlayer {
     ) -> BackendFuture<'a, ()> {
         Box::pin(async move {
             self.0
-                .play_url(url, start_at, options.strict_bit_perfect)
+                .play_url(url, start_at, options.strict_bit_perfect, options.exclusive)
                 .await
                 .map_err(|err| err.to_string())
         })
@@ -94,6 +100,7 @@ impl PlayerBackend for NativePlayer {
                     request.max_cache_ahead_bytes,
                     start_at,
                     options.strict_bit_perfect,
+                    options.exclusive,
                 )
                 .await
                 .map_err(|err| err.to_string())
@@ -116,6 +123,10 @@ impl PlayerBackend for NativePlayer {
         self.0.seek(target);
     }
 
+    fn set_volume(&self, volume: f64) {
+        self.0.set_volume(volume as f32);
+    }
+
     fn progress(&self) -> Duration {
         self.0.progress()
     }
@@ -128,14 +139,8 @@ impl PlayerBackend for NativePlayer {
         self.0.is_finished()
     }
 
-    fn wait_finished_signal(&self) -> super::types::SignalFuture {
-        let state = self.0.get_state();
-        Box::pin(async move {
-            if state.is_finished.load(Ordering::Relaxed) {
-                return;
-            }
-            state.finish_notify.notified().await;
-        })
+    fn playback_failed(&self) -> bool {
+        self.0.playback_failed()
     }
 
     fn output_devices(&self) -> BackendResult<Vec<OutputDeviceInfo>> {

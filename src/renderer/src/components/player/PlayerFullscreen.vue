@@ -7,11 +7,15 @@ import LyricPanel from './LyricPanel.vue'
 import { colord } from 'colord'
 import { extractColors } from 'extract-colors'
 import { useResolvedMediaUrl } from '@renderer/composables/useResolvedMediaUrl'
+import { useSeekControl } from '@renderer/composables/useSeekControl'
 import SongCover from '@renderer/components/media/SongCover.vue'
+import { useConfigStore } from '@renderer/stores/configStore'
+import { useFavoriteStore } from '@renderer/stores/favoriteStore'
 
 const playerStore = usePlayerStore()
+const configStore = useConfigStore()
+const favoriteStore = useFavoriteStore()
 const router = useRouter()
-const isDragging = ref(false)
 const imgRef = ref<HTMLImageElement | null>(null)
 const resolvedCover = useResolvedMediaUrl(() => playerStore.currentSong?.cover)
 
@@ -40,40 +44,42 @@ const currentArtists = computed(() => playerStore.currentSong?.artists ?? [])
 const isCurrentSongLocal = computed(() => isLocalSong(playerStore.currentSong))
 const hasCurrentSongCover = computed(() => Boolean(playerStore.currentSong?.cover?.trim()))
 
-const beginSeek = (): void => {
-  if (!isDragging.value) isDragging.value = true
-  if (!playerStore.isSeeking) {
-    console.log('[FULLSCREEN] beginSeek: isSeeking -> true')
-    playerStore.isSeeking = true
-  }
+// 进度条拖拽 seek（与 PlayerBar 共用同一套交互逻辑）
+const { handleInput, handleSeek } = useSeekControl('FULLSCREEN')
+
+// --- 喜欢 / 播放顺序按钮（是否展示由设置控制） ---
+const isCurrentSongFavorite = computed(() => favoriteStore.isFavorite(playerStore.currentSongId))
+
+const favoriteTitle = computed(() => {
+  if (isCurrentSongLocal.value) return '本地音乐'
+  return isCurrentSongFavorite.value ? '取消喜欢' : '喜欢'
+})
+
+const toggleCurrentFavorite = (): void => {
+  if (!playerStore.currentSong || isCurrentSongLocal.value) return
+  void favoriteStore.toggleFavorite(playerStore.currentSong)
 }
 
-const endSeek = (): void => {
-  console.log('[FULLSCREEN] endSeek: scheduling isSeeking=false in 50ms')
-  setTimeout(() => {
-    console.log('[FULLSCREEN] endSeek TIMER: isSeeking -> false, isLoading=', playerStore.isLoading)
-    isDragging.value = false
-    playerStore.isSeeking = false
-  }, 50)
-}
+const playModeIcon = computed(() => {
+  if (playerStore.playMode === 'random') return 'shuffle'
+  if (playerStore.playMode === 'single') return 'single'
+  return 'loop'
+})
 
-// 处理进度跳转
-const handleSeek = async (e: Event): Promise<void> => {
-  beginSeek()
-  const targetTime = Number((e.target as HTMLInputElement).value)
-  console.log(`[FULLSCREEN] handleSeek: target=${targetTime}ms`)
-  try {
-    await playerStore.seek(targetTime)
-  } finally {
-    endSeek()
-  }
-}
+const playModeTitle = computed(() => {
+  if (playerStore.playMode === 'random') return '随机播放'
+  if (playerStore.playMode === 'single') return '单曲循环'
+  return '列表循环'
+})
 
-const handleInput = (e: Event): void => {
-  beginSeek()
-  const targetTime = Number((e.target as HTMLInputElement).value)
-  playerStore.currentTime = targetTime
-}
+// 播放按钮状态机：三态互斥，保证加载图标与播放/暂停图标永不重叠。
+// isLoading 与 isPlaying 在 store 中可能同时为 true（如乐观更新），
+// 此处强制收敛为单一状态，模板仅依据该状态渲染。
+type PlayButtonState = 'loading' | 'playing' | 'paused'
+const playButtonState = computed<PlayButtonState>(() => {
+  if (playerStore.isLoading) return 'loading'
+  return playerStore.isPlaying ? 'playing' : 'paused'
+})
 
 const goToArtist = async (artistId: number): Promise<void> => {
   if (!artistId) return
@@ -228,11 +234,11 @@ const onImageLoad = (): void => {
                   @input="handleInput"
                   @change="handleSeek"
                 />
+                <!-- 已缓冲小于播放进度时会被上层进度条完全盖住，视觉等价；
+                     只绑定 bufferedPercent 避免每帧改写 width 反复重启过渡动画 -->
                 <div
                   class="progress-buffer-fill"
-                  :style="{
-                    width: Math.max(playerStore.bufferedPercent, playerStore.progressPercent) + '%'
-                  }"
+                  :style="{ width: playerStore.bufferedPercent + '%' }"
                 />
                 <div class="progress-bar-fill" :style="{ width: progressPercent + '%' }" />
               </div>
@@ -241,23 +247,43 @@ const onImageLoad = (): void => {
 
             <!-- 控制按钮 -->
             <div class="btns-row">
+              <button
+                v-if="configStore.fullscreenShowFavorite"
+                class="icon-btn secondary aux-btn favorite-btn"
+                :class="{ active: isCurrentSongFavorite }"
+                :disabled="!playerStore.currentSong || isCurrentSongLocal"
+                :title="favoriteTitle"
+                @click="toggleCurrentFavorite"
+              >
+                <AppIcon :name="isCurrentSongFavorite ? 'heart-fill' : 'heart'" :size="20" />
+              </button>
+
               <button class="icon-btn secondary" @click="playerStore.playPrev()">
                 <AppIcon name="prev" :size="24" />
               </button>
 
               <button
                 class="play-main-btn"
-                :class="{ loading: playerStore.isLoading }"
-                :disabled="playerStore.isLoading"
+                :class="`is-${playButtonState}`"
+                :disabled="playButtonState === 'loading'"
                 @click="playerStore.togglePlay"
               >
-                <div v-if="playerStore.isLoading" class="loading-spinner"></div>
-                <AppIcon v-if="playerStore.isPlaying" name="pause" :size="32" />
+                <div v-if="playButtonState === 'loading'" class="loading-spinner"></div>
+                <AppIcon v-else-if="playButtonState === 'playing'" name="pause" :size="32" />
                 <AppIcon v-else name="play" :size="32" />
               </button>
 
               <button class="icon-btn secondary" @click="playerStore.playNext()">
                 <AppIcon name="next" :size="24" />
+              </button>
+
+              <button
+                v-if="configStore.fullscreenShowPlayMode"
+                class="icon-btn secondary aux-btn"
+                :title="playModeTitle"
+                @click="playerStore.togglePlayMode()"
+              >
+                <AppIcon :name="playModeIcon" :size="20" />
               </button>
             </div>
           </div>
@@ -267,9 +293,7 @@ const onImageLoad = (): void => {
         <LyricPanel
           v-if="!isCurrentSongLocal"
           :song-id="playerStore.currentSong?.id"
-          :current-time="playerStore.currentTime"
           :is-dark="theme.isDark"
-          :is-seeking="playerStore.isSeeking"
         />
         <section v-else class="local-file-panel" />
       </main>
@@ -553,12 +577,8 @@ const onImageLoad = (): void => {
     background 0.5s;
 }
 
-.play-main-btn:disabled {
+.play-main-btn.is-loading {
   cursor: wait;
-}
-
-.play-main-btn.loading svg {
-  opacity: 0;
 }
 
 .loading-spinner {
@@ -589,6 +609,23 @@ const onImageLoad = (): void => {
 }
 .icon-btn:hover {
   opacity: 1;
+}
+
+.aux-btn {
+  opacity: 0.55;
+}
+
+.aux-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.favorite-btn.active {
+  opacity: 1;
+}
+
+.favorite-btn.active :deep(svg) {
+  fill: currentColor;
 }
 
 /* 响应式 */

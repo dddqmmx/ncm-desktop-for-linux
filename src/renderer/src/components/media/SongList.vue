@@ -69,7 +69,10 @@ const toggleFavorite = (song: Song): void => {
         v-for="(track, index) in songs"
         :key="track.id"
         class="track-row"
-        :class="{ 'is-active': track.id === playerStore.currentSongId }"
+        :class="{
+          'is-active': track.id === playerStore.currentSongId,
+          'has-open-menu': openMenuSongId === track.id
+        }"
         @dblclick="handlePlaySong(track)"
       >
         <div class="col-index">
@@ -191,6 +194,15 @@ const toggleFavorite = (song: Song): void => {
   cursor: pointer;
   transition: background 0.2s;
   margin: 2px 0;
+  /* CSS 虚拟渲染：长列表（收藏/大歌单）只为视口内的行做布局与绘制 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
+
+/* content-visibility 隐含 paint containment，会把行内绝对定位的
+   上下文菜单裁剪在行框内；菜单展开的行必须豁免 */
+.track-row.has-open-menu {
+  content-visibility: visible;
 }
 
 .track-row:hover {

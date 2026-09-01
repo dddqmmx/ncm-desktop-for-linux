@@ -55,11 +55,12 @@ const api = {
   stop: invoke('player:stop'),
   get_progress: invoke('player:getProgress'),
   is_buffering: invoke('player:isBuffering'),
+  get_playback_status: invoke('player:getPlaybackStatus'),
   seek: invoke('player:seek'),
+  set_volume: invoke('player:setVolume'),
   switch_output_device: invokeArgs('player:switchOutputDevice'),
   get_output_devices: invoke('player:getOutputDevices'),
   wait_finished: invoke('player:waitFinished'),
-  song_url_and_wait: invokeArgs('music:playUrlAndWait'),
 
   // --- Native Cache API ---
   cache_get_stats: invoke('cache:getStats'),

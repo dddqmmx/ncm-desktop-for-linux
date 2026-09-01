@@ -4,9 +4,9 @@ import { NativeService } from '../service/nativeService'
 export function registerNativeApi(): void {
   ipcMain.handle(
     'player:playUrl',
-    (_event, url: string, startSecs?: number, strictBitPerfect?: boolean) => {
+    (_event, url: string, startSecs?: number, strictBitPerfect?: boolean, exclusive?: boolean) => {
       void _event
-      return NativeService.playUrl(url, startSecs, strictBitPerfect)
+      return NativeService.playUrl(url, startSecs, strictBitPerfect, exclusive)
     }
   )
   ipcMain.handle(
@@ -20,7 +20,8 @@ export function registerNativeApi(): void {
       cacheAheadSecs?: number,
       maxCacheAheadBytes?: number,
       startSecs?: number,
-      strictBitPerfect?: boolean
+      strictBitPerfect?: boolean,
+      exclusive?: boolean
     ) => {
       void _event
       return NativeService.playUrlCached(
@@ -31,15 +32,22 @@ export function registerNativeApi(): void {
         cacheAheadSecs,
         maxCacheAheadBytes,
         startSecs,
-        strictBitPerfect
+        strictBitPerfect,
+        exclusive
       )
     }
   )
   ipcMain.handle(
     'player:playFile',
-    (_event, filePath: string, startSecs?: number, strictBitPerfect?: boolean) => {
+    (
+      _event,
+      filePath: string,
+      startSecs?: number,
+      strictBitPerfect?: boolean,
+      exclusive?: boolean
+    ) => {
       void _event
-      return NativeService.playFile(filePath, startSecs, strictBitPerfect)
+      return NativeService.playFile(filePath, startSecs, strictBitPerfect, exclusive)
     }
   )
   ipcMain.handle('player:getFileDuration', (_event, filePath: string) => {
@@ -61,23 +69,29 @@ export function registerNativeApi(): void {
   ipcMain.handle('player:isBuffering', () => {
     return NativeService.isBuffering()
   })
+  ipcMain.handle('player:getPlaybackStatus', () => {
+    return NativeService.getPlaybackStatus()
+  })
   ipcMain.handle('player:seek', (_event, time: number) => {
     void _event
     return NativeService.seek(time)
   })
-  ipcMain.handle('player:switchOutputDevice', (_event, deviceId?: string) => {
+  ipcMain.handle('player:setVolume', (_event, volume: number) => {
     void _event
-    return NativeService.switchOutputDevice(deviceId)
+    return NativeService.setVolume(volume)
   })
+  ipcMain.handle(
+    'player:switchOutputDevice',
+    (_event, deviceId?: string, strictBitPerfect?: boolean, exclusive?: boolean) => {
+      void _event
+      return NativeService.switchOutputDevice(deviceId, strictBitPerfect, exclusive)
+    }
+  )
   ipcMain.handle('player:getOutputDevices', () => {
     return NativeService.getOutputDevices()
   })
   ipcMain.handle('player:waitFinished', () => {
     return NativeService.waitFinished()
-  })
-  ipcMain.handle('player:playUrlAndWait', (_e, url: string, startSecs?: number) => {
-    void _e
-    return NativeService.playUrlAndWait(url, startSecs)
   })
   console.log('Native API registered successfully.')
 }

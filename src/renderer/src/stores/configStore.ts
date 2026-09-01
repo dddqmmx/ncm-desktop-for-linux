@@ -28,7 +28,10 @@ export const useConfigStore = defineStore('config', () => {
     exclusiveMode: audio.exclusiveMode,
     strictBitPerfect: audio.strictBitPerfect,
     softwareVolume: audio.softwareVolume,
+    volumePercent: audio.volumePercent,
     theme: appearance.theme,
+    fullscreenShowFavorite: appearance.fullscreenShowFavorite,
+    fullscreenShowPlayMode: appearance.fullscreenShowPlayMode,
     acrylic: appearance.acrylic,
     accentColor: appearance.accentColor,
     libPaths: [...cache.libPaths],
@@ -57,7 +60,10 @@ export const useConfigStore = defineStore('config', () => {
     audio.setExclusiveMode(settings.exclusiveMode)
     audio.setStrictBitPerfect(settings.strictBitPerfect)
     audio.setSoftwareVolume(settings.softwareVolume)
+    audio.setVolumePercent(settings.volumePercent)
     appearance.theme = settings.theme
+    appearance.fullscreenShowFavorite = settings.fullscreenShowFavorite
+    appearance.fullscreenShowPlayMode = settings.fullscreenShowPlayMode
     appearance.acrylic = settings.acrylic
     appearance.accentColor = settings.accentColor
     cache.libPaths = [...settings.libPaths]
@@ -82,7 +88,10 @@ export const useConfigStore = defineStore('config', () => {
       () => audio.exclusiveMode,
       () => audio.strictBitPerfect,
       () => audio.softwareVolume,
+      () => audio.volumePercent,
       () => appearance.theme,
+      () => appearance.fullscreenShowFavorite,
+      () => appearance.fullscreenShowPlayMode,
       () => appearance.acrylic,
       () => appearance.accentColor,
       () => cache.libPaths,
@@ -187,11 +196,17 @@ export const useConfigStore = defineStore('config', () => {
       get: () => audio.softwareVolume,
       set: (val) => audio.setSoftwareVolume(val)
     }),
+    volumePercent: computed({
+      get: () => audio.volumePercent,
+      set: (val) => audio.setVolumePercent(val)
+    }),
     outputDevices: computed(() => audio.outputDevices),
     currentOutputDevice: computed(() => audio.currentOutputDevice),
     isLoadingOutputDevices: computed(() => audio.isLoadingOutputDevices),
     isSwitchingOutputDevice: computed(() => audio.isSwitchingOutputDevice),
     outputDeviceError: computed(() => audio.outputDeviceError),
+    supportsExclusiveOutput: computed(() => audio.supportsExclusiveOutput),
+    canAdjustVolume: computed(() => audio.canAdjustVolume),
 
     // Appearance
     theme: computed({
@@ -205,6 +220,14 @@ export const useConfigStore = defineStore('config', () => {
     accentColor: computed({
       get: () => appearance.accentColor,
       set: (val) => (appearance.accentColor = val)
+    }),
+    fullscreenShowFavorite: computed({
+      get: () => appearance.fullscreenShowFavorite,
+      set: (val) => (appearance.fullscreenShowFavorite = val)
+    }),
+    fullscreenShowPlayMode: computed({
+      get: () => appearance.fullscreenShowPlayMode,
+      set: (val) => (appearance.fullscreenShowPlayMode = val)
     }),
 
     // General
@@ -249,6 +272,7 @@ export const useConfigStore = defineStore('config', () => {
     refreshOutputDevices: audio.refreshOutputDevices,
     refreshCacheStats: cache.refreshCacheStats,
     ensureConfiguredOutputDevice: audio.ensureConfiguredOutputDevice,
+    outputOptionsFor: audio.outputOptionsFor,
     setSoundQuality: (quality: SoundQualityType) => (audio.soundQuality = quality),
     setOutputDevice: (deviceId: string) => audio.applyOutputDevice(deviceId, true),
     setCacheLimit: cache.setCacheLimit,

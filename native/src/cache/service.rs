@@ -1042,15 +1042,20 @@ mod tests {
             .expect("cancel stuck download");
         let elapsed = started.elapsed();
 
-        assert!(cancelled, "cancel should report an active download was cancelled");
+        assert!(
+            cancelled,
+            "cancel should report an active download was cancelled"
+        );
         assert!(
             elapsed < Duration::from_millis(300),
             "cancel_song_cache_download must not block on stuck downloads (elapsed={elapsed:?})"
         );
         // 再次 cancel 应返回 false（已移除）
-        assert!(!service
-            .cancel_song_cache_download(&meta_key)
-            .expect("second cancel"));
+        assert!(
+            !service
+                .cancel_song_cache_download(&meta_key)
+                .expect("second cancel")
+        );
     }
 
     #[test]

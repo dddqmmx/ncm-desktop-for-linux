@@ -94,7 +94,10 @@ fn main() {
 
     let decoded_dur = total_frames as f64 / sr as f64;
     let declared = n_frames.unwrap_or(0);
-    println!("packets={} decoded_frames={} decoded_dur={:.2}s last_end_ts={}", packets, total_frames, decoded_dur, last_end);
+    println!(
+        "packets={} decoded_frames={} decoded_dur={:.2}s last_end_ts={}",
+        packets, total_frames, decoded_dur, last_end
+    );
     println!("decode_errors={} last_err={:?}", decode_errors, last_err);
     if let Some(n) = n_frames {
         let diff = total_frames as i64 - n as i64;

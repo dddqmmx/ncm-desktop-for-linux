@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { formatCurrentSongArtists, isLocalSong, usePlayerStore } from '@renderer/stores/playerStore'
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 // 1. 必须导入新设计的播放列表组件
 import PlaylistOverlay from './PlaylistOverlay.vue'
+import RangeSlider from '@renderer/components/common/RangeSlider.vue'
 import SongCover from '@renderer/components/media/SongCover.vue'
 import AddToPlaylistModal from '@renderer/components/overlays/AddToPlaylistModal.vue'
 import { useFavoriteStore } from '@renderer/stores/favoriteStore'
+import { useSeekControl } from '@renderer/composables/useSeekControl'
 
 const playerStore = usePlayerStore()
 const favoriteStore = useFavoriteStore()
@@ -21,41 +23,7 @@ const isCurrentSongLocal = computed(() => isLocalSong(playerStore.currentSong))
 const hasCurrentSongCover = computed(() => Boolean(playerStore.currentSong?.cover?.trim()))
 
 // --- 进度条逻辑 ---
-const isDragging = ref(false)
-
-const beginSeek = (): void => {
-  if (!isDragging.value) isDragging.value = true
-  if (!playerStore.isSeeking) {
-    console.log('[BAR] beginSeek: isSeeking -> true')
-    playerStore.isSeeking = true
-  }
-}
-
-const endSeek = (): void => {
-  console.log('[BAR] endSeek: scheduling isSeeking=false in 50ms')
-  setTimeout(() => {
-    console.log('[BAR] endSeek TIMER: isSeeking -> false, isLoading=', playerStore.isLoading)
-    isDragging.value = false
-    playerStore.isSeeking = false
-  }, 50)
-}
-
-const handleInput = (e: Event): void => {
-  beginSeek()
-  const targetTime = Number((e.target as HTMLInputElement).value)
-  playerStore.currentTime = targetTime
-}
-
-const handleSeek = async (e: Event): Promise<void> => {
-  beginSeek()
-  const targetTime = Number((e.target as HTMLInputElement).value)
-  console.log(`[BAR] handleSeek: target=${targetTime}ms`)
-  try {
-    await playerStore.seek(targetTime)
-  } finally {
-    endSeek()
-  }
-}
+const { handleInput, handleSeek } = useSeekControl('BAR')
 
 // 播放列表状态
 const isPlaylistVisible = ref(false)
@@ -73,8 +41,32 @@ const openAddToPlaylist = (): void => {
   isAddToPlaylistVisible.value = true
 }
 
+// --- 应用级软件音量 ---
+const isVolumePanelVisible = ref(false)
+const volumeControlRef = ref<HTMLElement | null>(null)
+
+const volumeIcon = computed(() => (playerStore.volumePercent <= 0 ? 'volume-mute' : 'volume'))
+
+const volumeTitle = computed(() => `音量 ${Math.round(playerStore.volumePercent)}%`)
+
+const toggleVolumePanel = (): void => {
+  isVolumePanelVisible.value = !isVolumePanelVisible.value
+}
+
+const handleDocumentClick = (event: MouseEvent): void => {
+  if (!isVolumePanelVisible.value) return
+  if (volumeControlRef.value && !volumeControlRef.value.contains(event.target as Node)) {
+    isVolumePanelVisible.value = false
+  }
+}
+
 onMounted(() => {
   playerStore.initFromStorage()
+  document.addEventListener('click', handleDocumentClick)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocumentClick)
 })
 </script>
 
@@ -163,12 +155,9 @@ onMounted(() => {
 
           <div class="progress-area">
             <div class="progress-track">
-              <div
-                class="buffered-bar"
-                :style="{
-                  width: Math.max(playerStore.bufferedPercent, playerStore.progressPercent) + '%'
-                }"
-              ></div>
+              <!-- 已缓冲小于播放进度时会被上层进度条完全盖住，视觉等价；
+                   只绑定 bufferedPercent 避免每帧改写 width 反复重启过渡动画 -->
+              <div class="buffered-bar" :style="{ width: playerStore.bufferedPercent + '%' }"></div>
               <div class="progress-bar" :style="{ width: playerStore.progressPercent + '%' }"></div>
               <input
                 type="range"
@@ -186,6 +175,24 @@ onMounted(() => {
 
         <!-- 3. 右侧：功能按钮 -->
         <div class="section-right">
+          <div v-if="playerStore.canAdjustVolume" ref="volumeControlRef" class="volume-control">
+            <Transition name="volume-fade">
+              <div v-if="isVolumePanelVisible" class="volume-popup">
+                <div class="volume-slider">
+                  <RangeSlider v-model="playerStore.volumePercent" :min="0" :max="100" :step="1" />
+                </div>
+                <span class="volume-value">{{ Math.round(playerStore.volumePercent) }}%</span>
+              </div>
+            </Transition>
+            <button
+              class="icon-btn volume-btn"
+              :class="{ active: isVolumePanelVisible }"
+              :title="volumeTitle"
+              @click="toggleVolumePanel"
+            >
+              <AppIcon :name="volumeIcon" :size="20" />
+            </button>
+          </div>
           <button
             class="icon-btn list-btn"
             :class="{ active: isPlaylistVisible }"
@@ -471,6 +478,56 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* 音量控制 */
+.volume-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.volume-popup {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  /* 处于 .glass-morphism（自身有 backdrop-filter，构成 Backdrop Root）内部，
+     子元素的 backdrop-filter 采样不到页面内容，因此用高不透明度表面代替毛玻璃 */
+  background: var(--sys-surface-strong);
+  border: 0.5px solid var(--sys-border);
+  border-radius: 14px;
+  box-shadow: var(--sys-shadow-elevated);
+  white-space: nowrap;
+}
+
+.volume-slider {
+  width: 120px;
+}
+
+.volume-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--sys-text-secondary);
+  min-width: 36px;
+  text-align: right;
+}
+
+.volume-fade-enter-active,
+.volume-fade-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.volume-fade-enter-from,
+.volume-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(6px);
 }
 
 .icon-btn {

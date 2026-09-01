@@ -428,7 +428,7 @@ describe('playerStore device switch sequencing', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(playUrl).toHaveBeenCalledWith('https://example.com/test.flac', 0, false)
+    expect(playUrl).toHaveBeenCalledWith('https://example.com/test.flac', 0, false, false)
     expect(playUrlCached).not.toHaveBeenCalled()
     expect(cacheSongSource).toHaveBeenCalledWith({
       songId: 1,
@@ -515,7 +515,7 @@ describe('playerStore device switch sequencing', () => {
 
     await playerStore.togglePlay()
 
-    expect(playFile).toHaveBeenCalledWith('/tmp/cached-test.mp3', 42, false)
+    expect(playFile).toHaveBeenCalledWith('/tmp/cached-test.mp3', 42, false, false)
     expect(playerStore.currentTime).toBe(42_000)
   })
 
@@ -587,7 +587,6 @@ describe('playerStore device switch sequencing', () => {
   })
 
   it('shows loading immediately for a new network song and keeps cancel non-blocking', async () => {
-    let cancelCalls = 0
     let resolveStuckCancel: ((value: boolean) => void) | undefined
     const cancelStarted = vi.fn()
     const songDetail = vi.fn(async ({ ids }: { ids: number[] }) => ({
@@ -648,7 +647,6 @@ describe('playerStore device switch sequencing', () => {
           metadataPath: `/tmp/${songId}.meta.json`
         })),
         cancel_song_cache_download: vi.fn(async (metadataPath: string) => {
-          cancelCalls += 1
           cancelStarted(metadataPath)
           // 切走第一首时模拟 cancel 卡住（旧逻辑会拖死整条 playMusic）
           if (String(metadataPath).includes('/1.meta.json')) {
@@ -899,7 +897,7 @@ describe('playerStore device switch sequencing', () => {
 
     expect(songDetail).not.toHaveBeenCalled()
     expect(getFileDuration).toHaveBeenCalledWith('/music/local-track.flac')
-    expect(playFile).toHaveBeenCalledWith('/music/local-track.flac', 0, false)
+    expect(playFile).toHaveBeenCalledWith('/music/local-track.flac', 0, false, false)
     expect(playerStore.currentSong).toEqual({ ...localSong, duration: 180_000 })
     expect(playerStore.duration).toBe(180_000)
     expect(playerStore.isPlaying).toBe(true)

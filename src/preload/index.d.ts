@@ -30,7 +30,12 @@ interface CustomApi {
   album: (p: unknown) => Promise<unknown>
   configureXeapi: () => Promise<void>
   // rust后端播放器操作
-  play_url: (url: string, startSecs?: number, strictBitPerfect?: boolean) => Promise<unknown>
+  play_url: (
+    url: string,
+    startSecs?: number,
+    strictBitPerfect?: boolean,
+    exclusive?: boolean
+  ) => Promise<unknown>
   play_url_cached: (
     url: string,
     cachePath: string,
@@ -39,20 +44,34 @@ interface CustomApi {
     cacheAheadSecs?: number,
     maxCacheAheadBytes?: number,
     startSecs?: number,
-    strictBitPerfect?: boolean
+    strictBitPerfect?: boolean,
+    exclusive?: boolean
   ) => Promise<unknown>
-  play_file: (filePath: string, startSecs?: number, strictBitPerfect?: boolean) => Promise<unknown>
+  play_file: (
+    filePath: string,
+    startSecs?: number,
+    strictBitPerfect?: boolean,
+    exclusive?: boolean
+  ) => Promise<unknown>
   get_file_duration: (filePath: string) => Promise<number>
   pause: () => Promise<unknown>
   resume: () => Promise<unknown>
   stop: () => Promise<unknown>
   get_progress: () => Promise<number>
   is_buffering: () => Promise<boolean>
+  /** 进度 + 缓冲状态合并查询，供 200ms 轮询单次往返使用 */
+  get_playback_status: () => Promise<{ progressMs: number; isBuffering: boolean }>
   seek: (time: number) => Promise<unknown>
-  switch_output_device: (deviceId?: string) => Promise<unknown>
+  /** 应用级软件音量（0.0~1.0），仅影响本应用输出 */
+  set_volume: (volume: number) => Promise<unknown>
+  switch_output_device: (
+    deviceId?: string,
+    strictBitPerfect?: boolean,
+    exclusive?: boolean
+  ) => Promise<unknown>
   get_output_devices: () => Promise<AudioDeviceInfo[]>
-  wait_finished: () => Promise<unknown>
-  song_url_and_wait: (url: string, startSecs?: number) => Promise<unknown>
+  /** 阻塞到当前播放会话结束，返回结束原因；通道中断时为 undefined */
+  wait_finished: () => Promise<'ended' | 'stopped' | 'replaced' | 'error' | undefined>
   cache_get_stats: () => Promise<CacheStats>
   cache_set_max_size: (maxSizeBytes: number) => Promise<CacheStats>
   cache_get_song_max_cache_ahead_bytes: () => Promise<number>

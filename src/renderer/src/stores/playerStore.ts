@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { usePlaylistStore } from './player/playlist'
 import { usePlaybackStore } from './player/playback'
 import { usePlayerUiStore } from './player/ui'
+import { useConfigStore } from './configStore'
 
 export * from '@renderer/types/player'
 export * from './player/utils'
@@ -11,6 +12,7 @@ export const usePlayerStore = defineStore('player', () => {
   const playlistStore = usePlaylistStore()
   const playbackStore = usePlaybackStore()
   const uiStore = usePlayerUiStore()
+  const configStore = useConfigStore()
 
   return {
     // Playback State
@@ -58,6 +60,13 @@ export const usePlayerStore = defineStore('player', () => {
       get: () => uiStore.isFullScreen,
       set: (val) => (uiStore.isFullScreen = val)
     }),
+
+    // Volume (application-level software volume)
+    volumePercent: computed({
+      get: () => configStore.volumePercent,
+      set: (val) => (configStore.volumePercent = val)
+    }),
+    canAdjustVolume: computed(() => configStore.canAdjustVolume),
 
     // Actions
     initFromStorage: playbackStore.initFromStorage,

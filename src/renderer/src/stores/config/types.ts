@@ -13,7 +13,10 @@ export interface PersistedSettings {
   exclusiveMode: boolean
   strictBitPerfect: boolean
   softwareVolume: boolean
+  volumePercent: number
   theme: ThemeMode
+  fullscreenShowFavorite: boolean
+  fullscreenShowPlayMode: boolean
   acrylic: boolean
   accentColor: string
   libPaths: string[]
@@ -32,6 +35,9 @@ export const MAX_CACHE_LIMIT_MB = 8192
 export const DEFAULT_SONG_MAX_CACHE_AHEAD_MB = 16
 export const MIN_SONG_MAX_CACHE_AHEAD_MB = 1
 export const MAX_SONG_MAX_CACHE_AHEAD_MB = 128
+export const DEFAULT_VOLUME_PERCENT = 100
+export const MIN_VOLUME_PERCENT = 0
+export const MAX_VOLUME_PERCENT = 100
 
 export const SOUND_QUALITIES: SoundQualityType[] = [
   'standard',
@@ -55,7 +61,10 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
   exclusiveMode: false,
   strictBitPerfect: false,
   softwareVolume: false,
+  volumePercent: DEFAULT_VOLUME_PERCENT,
   theme: 'adaptive',
+  fullscreenShowFavorite: true,
+  fullscreenShowPlayMode: true,
   acrylic: true,
   accentColor: '#6366f1',
   libPaths: [],

@@ -60,7 +60,9 @@ impl CacheFileStore {
     }
 
     pub fn is_inside_root(&self, absolute_path: &Path) -> bool {
-        let resolved = absolute_path.canonicalize().unwrap_or_else(|_| absolute_path.to_path_buf());
+        let resolved = absolute_path
+            .canonicalize()
+            .unwrap_or_else(|_| absolute_path.to_path_buf());
         let root = self
             .root_dir
             .canonicalize()

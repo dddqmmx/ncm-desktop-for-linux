@@ -63,7 +63,6 @@ export const usePlaybackStore = defineStore('playback', () => {
 
   const PLAYBACK_OPERATION_TIMEOUT_MS = 20_000
   const STARTUP_STALL_TIMEOUT_MS = 30_000
-  const NATURAL_END_TOLERANCE_MS = 2_500
   const PLAYBACK_STARTED_PROGRESS_THRESHOLD_MS = 150
   const CACHE_PROGRESS_POLL_INTERVAL_MS = 100
   const NATIVE_PROGRESS_POLL_INTERVAL_MS = 200
@@ -128,6 +127,15 @@ export const usePlaybackStore = defineStore('playback', () => {
       )) as SongCacheProgress
       if (progress && typeof progress.percent === 'number' && Number.isFinite(progress.percent)) {
         bufferedPercent.value = Math.max(bufferedPercent.value, Math.min(100, progress.percent))
+      }
+      // 缓存已完整落盘后，进度轮询与播放位置上报都是纯浪费（上报只会永远返回
+      // false 并被无限重试）。清掉 metadataPath 让两个轮询提前返回。
+      // 注意：只能依据 isComplete 停止——下载进行中时位置上报驱动着预下载窗口。
+      if (progress?.isComplete === true) {
+        bufferedPercent.value = 100
+        activeCacheMetadataPath = ''
+        pendingCachePlaybackPositionMs = null
+        lastCachePlaybackPositionMs = -1
       }
     } catch (error) {
       console.warn('读取歌曲预缓存进度失败:', error)
@@ -238,15 +246,27 @@ export const usePlaybackStore = defineStore('playback', () => {
    */
   let ignoreDriftUntil = 0
 
+  // 进度 + 缓冲状态合并为一次 IPC 往返；preload 尚未提供合并接口时
+  //（开发期渲染层先于 preload 热更新、或测试桩）回退到两次并发调用。
+  const fetchPlaybackStatus = async (): Promise<{ progressMs: number; isBuffering: boolean }> => {
+    if (typeof window.api.get_playback_status === 'function') {
+      const status = await window.api.get_playback_status()
+      return { progressMs: status.progressMs, isBuffering: status.isBuffering === true }
+    }
+    const [progressMs, buffering] = await Promise.all([
+      window.api.get_progress(),
+      window.api.is_buffering()
+    ])
+    return { progressMs, isBuffering: buffering === true }
+  }
+
   const syncProgress = async (): Promise<void> => {
     try {
       const reqStart = performance.now()
-      const [backendProgressMs, isBufferingNow] = await Promise.all([
-        window.api.get_progress(),
-        window.api.is_buffering()
-      ])
+      const { progressMs: backendProgressMs, isBuffering: isBufferingNow } =
+        await fetchPlaybackStatus()
       const reqEnd = performance.now()
-      isBuffering.value = isBufferingNow === true
+      isBuffering.value = isBufferingNow
 
       let progressMs = backendProgressMs
 
@@ -549,27 +569,26 @@ export const usePlaybackStore = defineStore('playback', () => {
   }
 
   /**
-   * 异步等待当前音频播放结束
+   * 异步等待当前音频播放结束。底层会返回会话结束的原因，
+   * 不再依赖“进度是否接近时长”的启发式来区分自然播完与中断。
    * @param songId 触发等待时的歌曲 ID
    * @param token 触发等待时的播放请求 token
    */
   const waitForEnd = async (songId: number, token: number): Promise<void> => {
     try {
-      // 阻塞式等待底层音频播放结束信号
-      await window.api.wait_finished()
+      // 阻塞式等待底层播放会话结束，返回结束原因
+      const reason = await window.api.wait_finished()
 
       // 验证环境：如果 token 或歌曲 ID 已变，说明此监听已过期，不触发自动切换
       if (token !== playToken) return
       if (isSwitching.value) return
       if (currentSongId.value !== songId) return
 
-      const latestProgress = await window.api.get_progress().catch(() => currentTime.value)
-      const finishedNearEnd =
-        duration.value <= 0 ||
-        latestProgress >= Math.max(0, duration.value - NATURAL_END_TOLERANCE_MS)
+      // 主动 Stop / 被新播放替换 / 通道中断：不是这首歌的自然终点，由发起方负责后续
+      if (reason !== 'ended' && reason !== 'error') return
 
-      if (!finishedNearEnd) {
-        await stopAfterPlaybackFailure('播放中断，可能是网络连接不稳定。')
+      if (reason === 'error') {
+        await stopAfterPlaybackFailure('播放中断，请检查网络连接或音频输出设备是否已断开。')
         return
       }
 
@@ -590,6 +609,62 @@ export const usePlaybackStore = defineStore('playback', () => {
   }
 
   // --- 公开操作 (Actions) ---
+
+  /**
+   * 确保输出设备就绪并按实际生效的端点算独占/BitPerfect 选项。
+   * 设备不可用时 ensureConfiguredOutputDevice 会回退到系统默认输出——那是虚拟
+   * 端点，带着独占下发只会被原生侧拒绝，所以选项必须按回退后的端点计算。
+   * playLocalSong / playMusic 共用，避免两条播放路径的选项推导各自漂移。
+   */
+  const resolveActiveOutputOptions = async (): Promise<{
+    activeOutputDeviceId: string
+    outputOptions: { strictBitPerfect: boolean; exclusive: boolean }
+  }> => {
+    const activeOutputDeviceId = await withTimeout(
+      configStore.ensureConfiguredOutputDevice(),
+      PLAYBACK_OPERATION_TIMEOUT_MS,
+      '音频设备准备超时'
+    )
+    return {
+      activeOutputDeviceId,
+      outputOptions: configStore.outputOptionsFor(activeOutputDeviceId)
+    }
+  }
+
+  // ====== 应用级软件音量 ======
+  // 关闭“软件音量”或开启严格 BitPerfect 时强制 1.0 直通，两条播放链路
+  //（native 输出回调增益 / WebAPI <audio>.volume）都由这里统一下发。
+  const appliedVolume = computed(() => {
+    if (!configStore.canAdjustVolume) return 1
+    // volumePercent 的每条写入路径（loadSettings/setVolumePercent）都已归一化
+    return configStore.volumePercent / 100
+  })
+
+  // 滑块拖拽时每个 1% 步进都会触发本 watch；native 侧的 SetVolume 走完整
+  // IPC→命令队列，逐帧下发纯属洪泛。本地 <audio> 音量保持即时，IPC 用
+  // 尾沿节流合并到 ~80ms 一次。
+  let nativeVolumeSendTimer: number | undefined
+  const sendNativeVolume = (volume: number): void => {
+    if (typeof window.api?.set_volume !== 'function') return
+    if (nativeVolumeSendTimer !== undefined) {
+      window.clearTimeout(nativeVolumeSendTimer)
+    }
+    nativeVolumeSendTimer = window.setTimeout(() => {
+      nativeVolumeSendTimer = undefined
+      window.api.set_volume(volume).catch((error) => {
+        console.warn('设置软件音量失败:', error)
+      })
+    }, 80)
+  }
+
+  watch(
+    appliedVolume,
+    (volume) => {
+      webAudioEngine.setVolume(volume)
+      sendNativeVolume(volume)
+    },
+    { immediate: true }
+  )
 
   const shouldUseWebEngine = computed(() => configStore.audioEngine === 'webapi')
   const isWebEngine = computed(() => shouldUseWebEngine.value && !isLocalSong(currentSong.value))
@@ -697,11 +772,8 @@ export const usePlaybackStore = defineStore('playback', () => {
       }
       if (currentToken !== playToken) return
 
-      await withTimeout(
-        configStore.ensureConfiguredOutputDevice(),
-        PLAYBACK_OPERATION_TIMEOUT_MS,
-        '音频设备准备超时'
-      )
+      // 用实际生效的端点算独占/BitPerfect（见 resolveActiveOutputOptions）。
+      const { outputOptions } = await resolveActiveOutputOptions()
       if (currentToken !== playToken) return
 
       const playableSong = await resolveLocalSongDuration(song)
@@ -713,7 +785,12 @@ export const usePlaybackStore = defineStore('playback', () => {
       setLocalPlayerData(playableSong, false)
 
       await withTimeout(
-        window.api.play_file(playableSong.filePath, startTime / 1000, configStore.strictBitPerfect),
+        window.api.play_file(
+          playableSong.filePath,
+          startTime / 1000,
+          outputOptions.strictBitPerfect,
+          outputOptions.exclusive
+        ),
         PLAYBACK_OPERATION_TIMEOUT_MS,
         '本地音乐播放启动超时'
       )
@@ -802,6 +879,9 @@ export const usePlaybackStore = defineStore('playback', () => {
         if (currentToken === playToken) {
           isPlaying.value = true
           resetPlaybackLoadState()
+          // 播放会话跨越暂停/恢复存续，但本函数开头的 playToken++ 已作废原先挂的
+          // waitForEnd 监听；这里必须以新 token 重挂，否则自然播完后不会自动切歌。
+          void waitForEnd(song_id, currentToken)
         }
         return
       }
@@ -850,12 +930,9 @@ export const usePlaybackStore = defineStore('playback', () => {
       }
       if (currentToken !== playToken) return
 
-      // 8. 确保输出设备已就绪
-      await withTimeout(
-        configStore.ensureConfiguredOutputDevice(),
-        PLAYBACK_OPERATION_TIMEOUT_MS,
-        '音频设备准备超时'
-      )
+      // 8. 确保输出设备已就绪，独占/BitPerfect 按实际生效的端点算
+      //（见 resolveActiveOutputOptions）。
+      const { outputOptions } = await resolveActiveOutputOptions()
       if (currentToken !== playToken) return
 
       // 9. 准备播放源：处理缓存逻辑 (可能是本地文件，也可能是带缓存的 URL)
@@ -876,7 +953,8 @@ export const usePlaybackStore = defineStore('playback', () => {
           window.api.play_file(
             playbackSource.value,
             startTimeInSeconds,
-            configStore.strictBitPerfect
+            outputOptions.strictBitPerfect,
+            outputOptions.exclusive
           ),
           PLAYBACK_OPERATION_TIMEOUT_MS,
           '播放本地缓存超时'
@@ -892,7 +970,8 @@ export const usePlaybackStore = defineStore('playback', () => {
             playbackSource.cacheAheadSecs ?? 30,
             playbackSource.maxCacheAheadBytes ?? configStore.songMaxCacheAheadBytes,
             startTimeInSeconds,
-            configStore.strictBitPerfect
+            outputOptions.strictBitPerfect,
+            outputOptions.exclusive
           ),
           PLAYBACK_OPERATION_TIMEOUT_MS,
           '网络播放启动超时'
@@ -903,7 +982,8 @@ export const usePlaybackStore = defineStore('playback', () => {
           window.api.play_url(
             playbackSource.value,
             startTimeInSeconds,
-            configStore.strictBitPerfect
+            outputOptions.strictBitPerfect,
+            outputOptions.exclusive
           ),
           PLAYBACK_OPERATION_TIMEOUT_MS,
           '网络播放启动超时'
@@ -941,6 +1021,12 @@ export const usePlaybackStore = defineStore('playback', () => {
         if (message.includes('BitPerfect')) {
           void dialogStore.open({
             title: '无法满足 BitPerfect',
+            message,
+            confirmText: '确定'
+          })
+        } else if (message.includes('独占输出') || message.includes('pw-reserve')) {
+          void dialogStore.open({
+            title: '无法启用独占输出',
             message,
             confirmText: '确定'
           })

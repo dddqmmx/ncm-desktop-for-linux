@@ -1,13 +1,14 @@
 import { getNativeModule } from '../native/loadNativeModule'
+import type { NativeFinishReason } from '../native/loadNativeModule'
 
 const { PlayerService } = getNativeModule()
 
 const player = new PlayerService()
 
 export const NativeService = {
-  playUrl(url: string, startSecs?: number, strictBitPerfect?: boolean) {
+  playUrl(url: string, startSecs?: number, strictBitPerfect?: boolean, exclusive?: boolean) {
     try {
-      return player.playUrl(url, startSecs, strictBitPerfect)
+      return player.playUrl(url, startSecs, strictBitPerfect, exclusive)
     } catch (e) {
       console.error('Native playUrl Error:', e)
       throw e
@@ -22,7 +23,8 @@ export const NativeService = {
     cacheAheadSecs?: number,
     maxCacheAheadBytes?: number,
     startSecs?: number,
-    strictBitPerfect?: boolean
+    strictBitPerfect?: boolean,
+    exclusive?: boolean
   ) {
     try {
       return player.playUrlCached(
@@ -33,7 +35,8 @@ export const NativeService = {
         cacheAheadSecs,
         maxCacheAheadBytes,
         startSecs,
-        strictBitPerfect
+        strictBitPerfect,
+        exclusive
       )
     } catch (e) {
       console.error('Native playUrlCached Error:', e)
@@ -41,8 +44,8 @@ export const NativeService = {
     }
   },
 
-  playFile(filePath: string, start_secs?: number, strictBitPerfect?: boolean) {
-    return player.playFile(filePath, start_secs, strictBitPerfect)
+  playFile(filePath: string, start_secs?: number, strictBitPerfect?: boolean, exclusive?: boolean) {
+    return player.playFile(filePath, start_secs, strictBitPerfect, exclusive)
   },
 
   getFileDuration(filePath: string) {
@@ -70,6 +73,17 @@ export const NativeService = {
   },
 
   /**
+   * 播放进度 + 缓冲状态一次取回：渲染层每 200ms 轮询一次，
+   * 合并成单次 IPC 往返可以把稳态轮询开销减半。
+   */
+  getPlaybackStatus() {
+    return {
+      progressMs: player.progressMs,
+      isBuffering: player.isBuffering
+    }
+  },
+
+  /**
    * 获取播放状态
    */
   isPlaying() {
@@ -80,8 +94,15 @@ export const NativeService = {
     return player.seek(time)
   },
 
-  async switchOutputDevice(deviceId?: string) {
-    return player.switchOutputDevice(deviceId)
+  /**
+   * 应用级软件音量（0.0~1.0），仅影响本应用输出，不改系统音量。
+   */
+  setVolume(volume: number) {
+    return player.setVolume(volume)
+  },
+
+  async switchOutputDevice(deviceId?: string, strictBitPerfect?: boolean, exclusive?: boolean) {
+    return player.switchOutputDevice(deviceId, strictBitPerfect, exclusive)
   },
 
   async getOutputDevices() {
@@ -89,22 +110,16 @@ export const NativeService = {
   },
 
   /**
-   * 只有这个方法真正需要 await
+   * 阻塞到当前播放会话结束，返回结束原因：
+   * 'ended' 自然播完 / 'stopped' 显式停止 / 'replaced' 被新播放替换 / 'error' 流致命错误。
+   * 通道被中断（worker 退出等）时返回 undefined，调用方按“无需处理”对待。
    */
-  async waitFinished() {
+  async waitFinished(): Promise<NativeFinishReason | undefined> {
     try {
       return await player.waitFinished()
     } catch (e) {
       console.warn('waitFinished interrupted or player stopped:', e)
+      return undefined
     }
-  },
-
-  /**
-   * 组合逻辑：
-   * 适用于：播放完这首，自动切下一首
-   */
-  async playUrlAndWait(url: string, startSecs?: number) {
-    this.playUrl(url, startSecs)
-    await this.waitFinished()
   }
 }
