@@ -1,5 +1,5 @@
 import { SoundQualityType } from '@renderer/types/song'
-import { AudioDeviceInfo } from '@renderer/types/audio'
+import { AudioDeviceInfo, isSameAudioDevice } from '@renderer/types/audio'
 import { CacheStats } from '@renderer/types/cache'
 import {
   AudioEngineType,
@@ -182,6 +182,7 @@ export type RawAudioDeviceInfo = {
   isCurrent?: unknown
   is_default?: unknown
   is_current?: unknown
+  aliases?: unknown
 }
 
 export function normalizeOutputDevice(
@@ -208,11 +209,18 @@ export function normalizeOutputDevice(
     return null
   }
 
+  // 别名表：native 不带（旧版本 .node）时兜底为仅 id 自身，匹配退化为
+  // 字符串等值——不比直接丢条目好不了多少，但至少不会比没有这层修复更糟。
+  const aliases = Array.isArray(device.aliases)
+    ? device.aliases.filter((alias): alias is string => typeof alias === 'string' && alias !== '')
+    : []
+
   return {
     id: device.id,
     name: device.name,
     isDefault,
-    isCurrent
+    isCurrent,
+    aliases: aliases.length > 0 ? aliases : [device.id]
   }
 }
 
@@ -248,9 +256,12 @@ export function withConfiguredOutputDevice(
   configuredDeviceId: string,
   configuredDeviceName: string
 ): AudioDeviceInfo[] {
+  // 经别名表比较：配置的 id 与列表条目可能只是同一端点的不同写法（数字卡号
+  // vs 字符卡名），裸字符串等值会把“设备其实在”误判成“已配置设备消失”，
+  // 拼出一条多余的“当前不可用”条目。
   if (
     configuredDeviceId === DEFAULT_OUTPUT_DEVICE_ID ||
-    devices.some((device) => device.id === configuredDeviceId)
+    devices.some((device) => isSameAudioDevice(device, configuredDeviceId))
   ) {
     return devices
   }
@@ -260,7 +271,8 @@ export function withConfiguredOutputDevice(
       id: configuredDeviceId,
       name: buildUnavailableOutputDeviceName(configuredDeviceId, configuredDeviceName),
       isDefault: false,
-      isCurrent: false
+      isCurrent: false,
+      aliases: [configuredDeviceId]
     },
     ...devices
   ]
@@ -279,7 +291,7 @@ export function findConfiguredOutputDevice(
     )
   }
 
-  return devices.find((device) => device.id === configuredDeviceId) ?? null
+  return devices.find((device) => isSameAudioDevice(device, configuredDeviceId)) ?? null
 }
 
 export function resolveConfiguredOutputDeviceName(
@@ -373,6 +385,9 @@ export function isMissingOutputDeviceError(error: unknown): boolean {
  * 目标端点是否已经生效。注意：空列表 / 无 is_current 标记 ⇒ 只有“系统默认输出”
  * 算生效——这是 Linux 枚举契约（列表只含真实硬件端点，跟随默认时无任何标记），
  * 不是通用语义；平台行为变化时需同步修改此处与 ensureConfiguredOutputDevice。
+ * 具名端点的比较经别名表：当前生效条目的 id 写法（字符卡名/数字卡号）与
+ * 用户持久化的写法可能不同，裸字符串等值会恒判“未激活”——每次开播都重复
+ * 一次注定 no-op 的切换 IPC，设置页还会把“设备明明在”显示成“当前不可用”。
  */
 export function isOutputDeviceActive(devices: AudioDeviceInfo[], targetDeviceId: string): boolean {
   if (devices.length === 0) {
@@ -397,5 +412,5 @@ export function isOutputDeviceActive(devices: AudioDeviceInfo[], targetDeviceId:
     return currentDevice.isDefault
   }
 
-  return currentDevice.id === targetDeviceId
+  return isSameAudioDevice(currentDevice, targetDeviceId)
 }

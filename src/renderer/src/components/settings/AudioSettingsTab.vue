@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import SettingGroup from '@renderer/components/settings/SettingGroup.vue'
 import SettingRow from '@renderer/components/settings/SettingRow.vue'
 import SegmentedSlider from '@renderer/components/common/SegmentedSlider.vue'
-import RangeSlider from '@renderer/components/common/RangeSlider.vue'
+import VolumeRow from '@renderer/components/common/VolumeRow.vue'
 import { useConfigStore } from '@renderer/stores/configStore'
 import { DEFAULT_OUTPUT_DEVICE_ID } from '@renderer/stores/config/types'
-import { type AudioDeviceInfo } from '@renderer/types/audio'
+import { isSameAudioDevice, type AudioDeviceInfo } from '@renderer/types/audio'
 
 const configStore = useConfigStore()
 const {
@@ -39,7 +39,8 @@ const exclusiveModeValue = computed({
 })
 
 const selectedOutputDevice = computed(
-  () => outputDevices.value.find((device) => device.id === outputDeviceId.value) ?? null
+  () =>
+    outputDevices.value.find((device) => isSameAudioDevice(device, outputDeviceId.value)) ?? null
 )
 
 const formatDeviceLabel = (device: AudioDeviceInfo): string => {
@@ -67,8 +68,25 @@ const refreshDevices = async (): Promise<void> => {
   await configStore.refreshOutputDevices()
 }
 
+// 设备拔插后列表要能自己跟上：5s 静默轮询（不动 loading 状态，不打扰手动刷新
+// 的反馈），插回的设备不需要用户先关掉设置页再打开。仅在设置页可见期间轮询。
+const DEVICE_POLL_INTERVAL_MS = 5_000
+let devicePollTimer: ReturnType<typeof setInterval> | null = null
+
 onMounted(() => {
   void refreshDevices()
+  devicePollTimer = setInterval(() => {
+    if (!isSwitchingOutputDevice.value && !isLoadingOutputDevices.value) {
+      void refreshDevices()
+    }
+  }, DEVICE_POLL_INTERVAL_MS)
+})
+
+onBeforeUnmount(() => {
+  if (devicePollTimer !== null) {
+    clearInterval(devicePollTimer)
+    devicePollTimer = null
+  }
 })
 </script>
 
@@ -106,28 +124,17 @@ onMounted(() => {
     <SettingGroup title="音量控制">
       <SettingRow
         title="软件音量"
-        description="允许应用进行数字音量调节；严格 BitPerfect 打开时不可用"
+        description="允许应用进行数字音量调节；严格 BitPerfect 播放期间暂不可用（下一曲生效）"
       >
-        <input
-          v-model="softwareVolume"
-          type="checkbox"
-          class="modern-switch"
-          :disabled="strictBitPerfect"
-        />
+        <input v-model="softwareVolume" type="checkbox" class="modern-switch" />
       </SettingRow>
       <SettingRow title="应用音量" description="仅调节本应用的输出音量，不影响系统音量">
-        <div class="settings-volume-row">
-          <div class="settings-volume-slider">
-            <RangeSlider
-              v-model="volumePercent"
-              :min="0"
-              :max="100"
-              :step="1"
-              :disabled="!canAdjustVolume"
-            />
-          </div>
-          <span class="settings-volume-value">{{ Math.round(volumePercent) }}%</span>
-        </div>
+        <VolumeRow
+          v-model="volumePercent"
+          width="min(220px, 30vw)"
+          :disabled="!canAdjustVolume"
+          locked-hint="严格 BitPerfect 打开时强制 1.0 直通"
+        />
       </SettingRow>
     </SettingGroup>
 

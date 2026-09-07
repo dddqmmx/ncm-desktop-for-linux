@@ -42,6 +42,7 @@ impl MockFactory {
         let mut factory = Self::new();
         factory.devices = vec![OutputDeviceInfo {
             id: "hw:CARD=0,DEV=0".to_string(),
+            aliases: vec!["hw:CARD=0,DEV=0".to_string()],
             name: "HDA Intel PCH - Analog".to_string(),
             is_default: false,
             is_current: false,
@@ -97,6 +98,12 @@ struct MockPlayer {
     finished: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
     fail_next_play: Arc<AtomicBool>,
+    /// 模拟 AudioPlayer 的会话音量：set_volume 记种子、play_* 建新会话
+    /// 用种子开播，回读方法从这里取值。
+    volume_seed: Arc<Mutex<f64>>,
+    volume_locked: Arc<Mutex<bool>>,
+    /// 模拟设备丢失标记（handle_stream_error 的 device_lost）。
+    device_lost: Arc<AtomicBool>,
 }
 
 impl MockPlayer {
@@ -115,6 +122,9 @@ impl MockPlayer {
             finished: Arc::new(AtomicBool::new(false)),
             failed: Arc::new(AtomicBool::new(false)),
             fail_next_play: Arc::new(AtomicBool::new(false)),
+            volume_seed: Arc::new(Mutex::new(1.0)),
+            volume_locked: Arc::new(Mutex::new(false)),
+            device_lost: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -142,6 +152,10 @@ impl MockPlayer {
         self.failed.store(failed, Ordering::SeqCst);
     }
 
+    fn set_device_lost(&self, lost: bool) {
+        self.device_lost.store(lost, Ordering::SeqCst);
+    }
+
     fn arm_play_failure(&self) {
         self.fail_next_play.store(true, Ordering::SeqCst);
     }
@@ -154,6 +168,18 @@ impl MockPlayer {
         } else {
             None
         }
+    }
+
+    /// 模拟 AudioPlayer::setup_and_play 的会话建立：新会话从开播种子取音量，
+    /// BitPerfect 会话锁定为 1.0 直通。
+    fn begin_session(&self, options: &PlaybackOptions) {
+        *self.volume_locked.lock().unwrap() = options.strict_bit_perfect;
+        let session_volume = if options.strict_bit_perfect {
+            1.0
+        } else {
+            *self.volume_seed.lock().unwrap()
+        };
+        *self.volume_seed.lock().unwrap() = session_volume;
     }
 }
 
@@ -168,6 +194,7 @@ impl PlayerBackend for MockPlayer {
         if let Some(failure) = self.take_play_failure() {
             return failure;
         }
+        self.begin_session(&options);
         let label = self.label().to_string();
         let path = path.to_string();
         let start_at = start_at.unwrap_or(Duration::ZERO);
@@ -191,6 +218,7 @@ impl PlayerBackend for MockPlayer {
         if let Some(failure) = self.take_play_failure() {
             return failure;
         }
+        self.begin_session(&options);
         let label = self.label().to_string();
         let url = url.to_string();
         let start_at = start_at.unwrap_or(Duration::ZERO);
@@ -214,6 +242,7 @@ impl PlayerBackend for MockPlayer {
         if let Some(failure) = self.take_play_failure() {
             return failure;
         }
+        self.begin_session(&options);
         let label = self.label().to_string();
         let url = request.url.clone();
         let cache_path = request.cache_path.clone();
@@ -250,8 +279,16 @@ impl PlayerBackend for MockPlayer {
         self.set_progress(target);
     }
 
-    fn set_volume(&self, volume: f64) {
-        self.log(format!("player[{}] set_volume:{volume}", self.label()));
+    fn set_volume(&mut self, volume: f64) {
+        let sanitized = if volume.is_finite() {
+            volume.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        *self.volume_seed.lock().unwrap() = sanitized;
+        if !*self.volume_locked.lock().unwrap() {
+            self.log(format!("player[{}] set_volume:{}", self.label(), sanitized));
+        }
     }
 
     fn progress(&self) -> Duration {
@@ -281,6 +318,22 @@ impl PlayerBackend for MockPlayer {
                 device
             })
             .collect())
+    }
+
+    fn session_volume(&self) -> f64 {
+        if *self.volume_locked.lock().unwrap() {
+            1.0
+        } else {
+            *self.volume_seed.lock().unwrap()
+        }
+    }
+
+    fn session_volume_locked(&self) -> bool {
+        *self.volume_locked.lock().unwrap()
+    }
+
+    fn device_lost(&self) -> bool {
+        self.device_lost.load(Ordering::SeqCst)
     }
 }
 
@@ -463,7 +516,7 @@ impl PlayerBackend for BusyMockPlayer {
         *self.progress.lock().unwrap() = target;
     }
 
-    fn set_volume(&self, _volume: f64) {}
+    fn set_volume(&mut self, _volume: f64) {}
 
     fn progress(&self) -> Duration {
         *self.progress.lock().unwrap()
@@ -492,18 +545,32 @@ impl PlayerBackend for BusyMockPlayer {
             })
             .collect())
     }
+
+    fn session_volume(&self) -> f64 {
+        1.0
+    }
+
+    fn session_volume_locked(&self) -> bool {
+        false
+    }
+
+    fn device_lost(&self) -> bool {
+        false
+    }
 }
 
 fn test_devices() -> Vec<OutputDeviceInfo> {
     vec![
         OutputDeviceInfo {
             id: "speaker".to_string(),
+            aliases: vec!["speaker".to_string()],
             name: "Speaker".to_string(),
             is_default: true,
             is_current: false,
         },
         OutputDeviceInfo {
             id: "headphones".to_string(),
+            aliases: vec!["headphones".to_string()],
             name: "Headphones".to_string(),
             is_default: false,
             is_current: false,
@@ -556,6 +623,7 @@ async fn play_url_uses_requested_start_time() {
         factory.events(),
         vec![
             "create:auto".to_string(),
+            "player[auto] set_volume:1".to_string(),
             "player[auto] play_url:https://example.com/test.mp3@12500".to_string()
         ]
     );
@@ -593,8 +661,10 @@ async fn switch_output_device_restarts_active_source_from_current_progress() {
         factory.events(),
         vec![
             "create:auto".to_string(),
+            "player[auto] set_volume:1".to_string(),
             "player[auto] play_file:/tmp/test.flac@0".to_string(),
             "create:headphones".to_string(),
+            "player[headphones] set_volume:1".to_string(),
             "player[auto] stop".to_string(),
             "player[headphones] play_file:/tmp/test.flac@4200".to_string()
         ]
@@ -604,7 +674,7 @@ async fn switch_output_device_restarts_active_source_from_current_progress() {
 #[tokio::test]
 async fn set_volume_is_reapplied_to_the_rebuilt_player_after_device_switch() {
     let factory = MockFactory::new();
-    let (mut worker, _shared_state, factory) = create_worker(factory);
+    let (mut worker, shared_state, factory) = create_worker(factory);
 
     worker
         .handle_command(PlayerCommand::Play(
@@ -625,18 +695,81 @@ async fn set_volume_is_reapplied_to_the_rebuilt_player_after_device_switch() {
         .await;
 
     assert!(rx.await.unwrap().is_ok());
+    // Play 前先把最新音量种进实例，切设备重建的新实例同样要在开播前拿到它；
+    // session 回读值（shared_state.volume）是渲染层轮询校对的权威。
     assert_eq!(
         factory.events(),
         vec![
             "create:auto".to_string(),
+            "player[auto] set_volume:1".to_string(),
             "player[auto] play_file:/tmp/test.flac@0".to_string(),
             "player[auto] set_volume:0.4".to_string(),
             "create:headphones".to_string(),
             "player[headphones] set_volume:0.4".to_string(),
             "player[auto] stop".to_string(),
-            "player[headphones] play_file:/tmp/test.flac@0".to_string()
+            "player[headphones] play_file:/tmp/test.flac@0".to_string(),
         ]
     );
+    assert!((shared_state.volume() - 0.4).abs() < 1e-9);
+    assert!(!shared_state.volume_locked());
+}
+
+/// 音量随会话实时可调（不同于开播即冻结的独占/BitPerfect 选项）：
+/// 每次开播用渲染层最近下发的值做种子，一次 SetVolume 的丢失只影响
+/// 当前会话，绝不会让新会话带着陈旧音量开播。
+#[tokio::test]
+async fn play_command_seeds_the_session_with_the_latest_synced_volume() {
+    let factory = MockFactory::new();
+    let (mut worker, shared_state, factory) = create_worker(factory);
+
+    worker.handle_command(PlayerCommand::SetVolume(0.3)).await;
+    worker
+        .handle_command(PlayerCommand::Play(
+            PlaybackSource::File("/tmp/test.flac".to_string(), PlaybackOptions::default()),
+            Some(0.0),
+            None,
+        ))
+        .await;
+
+    assert_eq!(
+        factory.events(),
+        vec![
+            "create:auto".to_string(),
+            "player[auto] set_volume:0.3".to_string(),
+            "player[auto] set_volume:0.3".to_string(),
+            "player[auto] play_file:/tmp/test.flac@0".to_string(),
+        ],
+        "SetVolume 先落会话，Play 再用最新值做种子——两次事件都必须在开播前"
+    );
+    assert!((shared_state.volume() - 0.3).abs() < 1e-9);
+}
+
+/// BitPerfect 会话锁定为 1.0 直通：SetVolume 更新种子但不落进会话，
+/// 回读上报锁定状态，渲染层据此禁用滑块。
+#[tokio::test]
+async fn bit_perfect_session_locks_volume_to_unity_and_reports_locked() {
+    let factory = MockFactory::new();
+    let (mut worker, shared_state, _factory) = create_worker(factory);
+
+    worker.handle_command(PlayerCommand::SetVolume(0.3)).await;
+    worker
+        .handle_command(PlayerCommand::Play(
+            PlaybackSource::File(
+                "/tmp/test.flac".to_string(),
+                PlaybackOptions {
+                    strict_bit_perfect: true,
+                    exclusive: true,
+                },
+            ),
+            Some(0.0),
+            None,
+        ))
+        .await;
+    worker.handle_command(PlayerCommand::SetVolume(0.5)).await;
+
+    // 锁定会话丢弃中途设置，回读保持 1.0 + locked。
+    assert_eq!(shared_state.volume(), 1.0);
+    assert!(shared_state.volume_locked());
 }
 
 /// 回归：设备切换必须用调用方此刻的播放选项重放，而不是开播时冻结在
@@ -772,9 +905,11 @@ async fn switch_output_device_preserves_paused_state() {
         factory.events(),
         vec![
             "create:auto".to_string(),
+            "player[auto] set_volume:1".to_string(),
             "player[auto] play_url:https://example.com/test.mp3@1000".to_string(),
             "player[auto] pause".to_string(),
             "create:headphones".to_string(),
+            "player[headphones] set_volume:1".to_string(),
             "player[auto] stop".to_string(),
             "player[headphones] play_url:https://example.com/test.mp3@3000".to_string(),
             "player[headphones] pause".to_string()
@@ -802,12 +937,14 @@ async fn get_output_devices_returns_current_and_default_flags() {
                 name: "Speaker".to_string(),
                 is_default: true,
                 is_current: true,
+                aliases: vec!["speaker".to_string()],
             },
             AudioDeviceInfo {
                 id: "headphones".to_string(),
                 name: "Headphones".to_string(),
                 is_default: false,
                 is_current: false,
+                aliases: vec!["headphones".to_string()],
             }
         ]
     );
@@ -875,6 +1012,7 @@ async fn failed_device_switch_keeps_existing_playback_state() {
         factory.events(),
         vec![
             "create:auto".to_string(),
+            "player[auto] set_volume:1".to_string(),
             "player[auto] play_url:https://example.com/test.mp3@2000".to_string(),
             "create:broken".to_string()
         ]
@@ -907,6 +1045,7 @@ async fn switching_default_to_default_without_listed_default_device_is_a_noop() 
         factory.events(),
         vec![
             "create:auto".to_string(),
+            "player[auto] set_volume:1".to_string(),
             "player[auto] play_file:/tmp/test.flac@0".to_string()
         ],
         "switching default->default must not rebuild the player"
@@ -1059,6 +1198,7 @@ async fn switching_to_the_concrete_default_device_while_following_default_is_a_n
         factory.events(),
         vec![
             "create:auto".to_string(),
+            "player[auto] set_volume:1".to_string(),
             "player[auto] play_file:/tmp/test.flac@0".to_string()
         ],
         "selecting the device that is already current must not rebuild the player"
@@ -1094,6 +1234,7 @@ async fn switching_by_display_name_to_the_current_device_is_a_noop() {
         factory.events(),
         vec![
             "create:auto".to_string(),
+            "player[auto] set_volume:1".to_string(),
             "player[auto] play_file:/tmp/test.flac@0".to_string()
         ],
         "matching the current device by display name must not rebuild the player"
@@ -1109,12 +1250,14 @@ async fn switching_to_follow_default_when_pinned_to_the_default_device_is_a_noop
     factory.devices = vec![
         OutputDeviceInfo {
             id: "speaker".to_string(),
+            aliases: vec!["speaker".to_string()],
             name: "Speaker".to_string(),
             is_default: false,
             is_current: false,
         },
         OutputDeviceInfo {
             id: "headphones".to_string(),
+            aliases: vec!["headphones".to_string()],
             name: "Headphones".to_string(),
             is_default: true,
             is_current: false,
@@ -1185,6 +1328,15 @@ async fn fatal_error_while_paused_ends_session_and_reports_error() {
     assert_eq!(finished_rx.await, Ok(FinishReason::Error));
     assert_eq!(shared_state.playback_status(), PlaybackStatus::Stopped);
     assert_eq!(worker.current_source, None);
+    assert!(
+        worker
+            .player
+            .events
+            .lock()
+            .unwrap()
+            .contains(&"player[auto] stop".to_string()),
+        "player.stop() must be invoked to teardown failed stream"
+    );
 }
 
 #[tokio::test]
@@ -1302,4 +1454,151 @@ async fn switching_to_the_already_active_device_is_a_noop() {
         ]
     );
     assert_eq!(shared_state.playback_status(), PlaybackStatus::Playing);
+}
+
+/// 设备在会话进行中消失（拔出）：worker 必须把会话自动迁移到系统默认端点
+/// 续播，而不是终止——用户拔掉 USB 耳机时歌应当落到扬声器继续放。迁移成功
+/// 时 wait_finished 的监听者不受扰动（会话没有终结），前端无感知。
+#[tokio::test]
+async fn device_loss_migrates_the_session_to_the_default_output_instead_of_ending_it() {
+    let factory = MockFactory::new();
+    let (mut worker, shared_state, factory) = create_worker(factory);
+
+    worker
+        .handle_command(PlayerCommand::Play(
+            PlaybackSource::File("/tmp/test.flac".to_string(), PlaybackOptions::default()),
+            Some(0.0),
+            None,
+        ))
+        .await;
+    // 落到一个具名设备上（迁移只在绑定了具名设备时有意义——本来就在系统
+    // 默认上时设备消失意味着系统输出全没了，无处可迁）。
+    let (tx, rx) = oneshot::channel();
+    worker
+        .handle_command(PlayerCommand::SwitchOutputDevice(
+            Some("headphones".to_string()),
+            None,
+            tx,
+        ))
+        .await;
+    assert!(rx.await.unwrap().is_ok());
+    worker.player.set_progress(Duration::from_millis(12_000));
+
+    // 挂上结束监听者：迁移成功绝不许触发它（前端会把中途结束信号当成
+    // 播放中断处理）。
+    let (finished_tx, mut finished_rx) = oneshot::channel();
+    worker
+        .handle_command(PlayerCommand::WaitFinished(finished_tx))
+        .await;
+
+    // 设备拔出：流以设备错误终止。
+    worker.player.set_device_lost(true);
+    worker.player.set_playback_failed(true);
+    worker.player.set_finished(true);
+    worker.tick();
+
+    // tick 只标记迁移（迁移是 async），run 循环紧接着执行。
+    assert!(worker.pending_device_migration);
+    worker.pending_device_migration = false;
+    worker.run_pending_device_migration().await;
+
+    // 会话在新实例上按当前进度重放，选项剥离独占/BitPerfect（虚拟端点会拒绝），
+    // 结束监听者没有被触发。
+    assert_eq!(
+        factory.events(),
+        vec![
+            "create:auto".to_string(),
+            "player[auto] set_volume:1".to_string(),
+            "player[auto] play_file:/tmp/test.flac@0".to_string(),
+            "create:headphones".to_string(),
+            "player[headphones] set_volume:1".to_string(),
+            "player[auto] stop".to_string(),
+            "player[headphones] play_file:/tmp/test.flac@0".to_string(),
+            "create:auto".to_string(),
+            "player[auto] set_volume:1".to_string(),
+            "player[headphones] stop".to_string(),
+            "player[auto] play_file:/tmp/test.flac@12000".to_string(),
+        ],
+        "migration must rebuild on the default endpoint and replay from current progress"
+    );
+    assert_eq!(factory.play_options().last(), Some(&PlaybackOptions::default()));
+    assert_eq!(shared_state.playback_status(), PlaybackStatus::Playing);
+    assert_eq!(shared_state.progress_ms(), 12_000);
+    assert_eq!(
+        finished_rx.try_recv(),
+        Err(oneshot::error::TryRecvError::Empty),
+        "device-loss migration must not resolve wait_finished"
+    );
+    assert_eq!(
+        worker.current_source,
+        Some(PlaybackSource::File(
+            "/tmp/test.flac".to_string(),
+            PlaybackOptions::default()
+        )),
+        "the session survives the migration (it continues on the default output)"
+    );
+}
+
+/// 普通流错误（解码/网络）不是设备丢失：会话按错误终止，绝不能误触发迁移。
+#[tokio::test]
+async fn non_device_stream_error_terminates_the_session_without_migration() {
+    let factory = MockFactory::new();
+    let (mut worker, shared_state, _factory) = create_worker(factory);
+
+    worker
+        .handle_command(PlayerCommand::Play(
+            PlaybackSource::File("/tmp/test.flac".to_string(), PlaybackOptions::default()),
+            Some(0.0),
+            None,
+        ))
+        .await;
+    let (tx, rx) = oneshot::channel();
+    worker
+        .handle_command(PlayerCommand::SwitchOutputDevice(
+            Some("headphones".to_string()),
+            None,
+            tx,
+        ))
+        .await;
+    assert!(rx.await.unwrap().is_ok());
+
+    let (finished_tx, finished_rx) = oneshot::channel();
+    worker
+        .handle_command(PlayerCommand::WaitFinished(finished_tx))
+        .await;
+
+    // 解码器致命错误：playback_failed 但 device_lost 未置位。
+    worker.player.set_playback_failed(true);
+    worker.player.set_finished(true);
+    worker.tick();
+
+    assert!(!worker.pending_device_migration);
+    assert_eq!(finished_rx.await, Ok(FinishReason::Error));
+    assert_eq!(shared_state.playback_status(), PlaybackStatus::Stopped);
+    assert_eq!(worker.current_source, None);
+}
+
+/// 在系统默认端点上跟随播放时设备消失（例如拔掉了唯一的声卡）：无处可迁，
+/// 会话按错误终止。
+#[tokio::test]
+async fn device_loss_while_following_the_default_output_ends_the_session() {
+    let factory = MockFactory::new();
+    let (mut worker, shared_state, _factory) = create_worker(factory);
+
+    worker
+        .handle_command(PlayerCommand::Play(
+            PlaybackSource::File("/tmp/test.flac".to_string(), PlaybackOptions::default()),
+            Some(0.0),
+            None,
+        ))
+        .await;
+
+    worker.player.set_device_lost(true);
+    worker.player.set_playback_failed(true);
+    worker.player.set_finished(true);
+    worker.tick();
+
+    // requested_device 是 None（跟随默认），不迁移。
+    assert!(!worker.pending_device_migration);
+    assert_eq!(shared_state.playback_status(), PlaybackStatus::Stopped);
 }

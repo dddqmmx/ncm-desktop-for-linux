@@ -213,6 +213,19 @@ impl PlayerService {
         self.shared_state.is_paused()
     }
 
+    /// 当前会话实际生效的音量（0.0..=1.0）。渲染层随进度轮询回读，
+    /// 用作 SetVolume 失步时的校对权威。
+    #[napi(getter)]
+    pub fn volume(&self) -> f64 {
+        self.shared_state.volume()
+    }
+
+    /// 当前会话是否被严格 BitPerfect 锁定为 1.0 直通（SetVolume 会被丢弃）。
+    #[napi(getter)]
+    pub fn volume_locked(&self) -> bool {
+        self.shared_state.volume_locked()
+    }
+
     /// 阻塞到当前播放会话结束，返回结束原因：
     /// "ended" 自然播完 / "stopped" 显式停止 / "replaced" 被新播放替换 / "error" 流致命错误。
     #[napi]

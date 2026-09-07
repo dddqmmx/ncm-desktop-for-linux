@@ -59,8 +59,13 @@ interface CustomApi {
   stop: () => Promise<unknown>
   get_progress: () => Promise<number>
   is_buffering: () => Promise<boolean>
-  /** 进度 + 缓冲状态合并查询，供 200ms 轮询单次往返使用 */
-  get_playback_status: () => Promise<{ progressMs: number; isBuffering: boolean }>
+  /** 进度 + 缓冲 + 会话音量/锁定状态合并查询，供 200ms 轮询单次往返使用 */
+  get_playback_status: () => Promise<{
+    progressMs: number
+    isBuffering: boolean
+    volume: number
+    volumeLocked: boolean
+  }>
   seek: (time: number) => Promise<unknown>
   /** 应用级软件音量（0.0~1.0），仅影响本应用输出 */
   set_volume: (volume: number) => Promise<unknown>
@@ -149,6 +154,7 @@ interface AudioDeviceInfo {
   name: string
   isDefault: boolean
   isCurrent: boolean
+  aliases: string[]
 }
 
 interface CacheStats {

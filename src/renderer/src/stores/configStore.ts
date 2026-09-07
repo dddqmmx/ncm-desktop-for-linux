@@ -77,6 +77,27 @@ export const useConfigStore = defineStore('config', () => {
       ? new BroadcastChannel('app-settings')
       : null
 
+  // 设置持久化 + 跨窗口广播的尾沿去抖。音量滑块拖拽时每个 1% 步进都会触发本
+  // watch；持久化是全量 snapshot 分配 + JSON.stringify + 两次同步
+  // localStorage 写 + BroadcastChannel 广播，逐帧执行纯属浪费（IPC 侧的
+  // set_volume 早已做了同样的 80ms 尾沿节流）。期间后续触发只重置计时器，
+  // 停顿 120ms 后落最后一帧。
+  const SETTINGS_PERSIST_DEBOUNCE_MS = 120
+  let persistDebounceTimer: ReturnType<typeof setTimeout> | null = null
+  let isPersistPending = false
+
+  const flushSettingsPersist = (): void => {
+    if (!isPersistPending) return
+    isPersistPending = false
+
+    const nextSettings = snapshotSettings()
+    persistSettings(nextSettings)
+    settingsChannel?.postMessage({
+      type: 'settings-updated',
+      settings: nextSettings
+    })
+  }
+
   watch(
     [
       () => audio.soundQuality,
@@ -100,17 +121,23 @@ export const useConfigStore = defineStore('config', () => {
       () => debug.lyricDebug
     ],
     () => {
+      // 外部（另一窗口）应用设置触发的本回调不持久化、不回声广播。吞在触发
+      // 时完成而不是去抖 flush 时：否则外部应用后 120ms 内的本地修改会被
+      // 整个吞掉。若此时另有待 flush 的本地修改，合并后的快照与对端等价
+      // （settingsEqual 幂等），回声无害。
       if (skipNextSettingsBroadcast) {
         skipNextSettingsBroadcast = false
         return
       }
 
-      const nextSettings = snapshotSettings()
-      persistSettings(nextSettings)
-      settingsChannel?.postMessage({
-        type: 'settings-updated',
-        settings: nextSettings
-      })
+      isPersistPending = true
+      if (persistDebounceTimer !== null) {
+        clearTimeout(persistDebounceTimer)
+      }
+      persistDebounceTimer = setTimeout(() => {
+        persistDebounceTimer = null
+        flushSettingsPersist()
+      }, SETTINGS_PERSIST_DEBOUNCE_MS)
     },
     { deep: true }
   )
@@ -139,6 +166,11 @@ export const useConfigStore = defineStore('config', () => {
 
     applyExternalSettings(loadSettings())
   })
+
+  // 去抖窗口内关窗（设置窗口尤其常见）会把最后一帧设置一起带走，卸载前冲刷。
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('beforeunload', flushSettingsPersist)
+  }
 
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
     window.addEventListener('storage', (event) => {

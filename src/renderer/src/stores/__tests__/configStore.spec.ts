@@ -45,6 +45,8 @@ function createDevice(id: string, overrides: Partial<AudioDeviceInfo> = {}): Aud
     name: id,
     isDefault: false,
     isCurrent: false,
+    // 别名表默认只含 id 自身；跨写法测试显式传入
+    aliases: [id],
     ...overrides
   }
 }
@@ -68,6 +70,13 @@ describe('configStore output device handling', () => {
   let storage: MemoryStorage
   let api: ApiMock
 
+  /** 设置持久化 watch 带 120ms 尾沿去抖，冲刷后才能读到 localStorage 里的值 */
+  const flushPersistedSettings = async (): Promise<void> => {
+    await nextTick()
+    vi.advanceTimersByTime(150)
+    await nextTick()
+  }
+
   beforeEach(() => {
     storage = new MemoryStorage()
     api = createApiMock()
@@ -80,10 +89,12 @@ describe('configStore output device handling', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
+    vi.useFakeTimers()
     setActivePinia(createPinia())
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
@@ -206,7 +217,7 @@ describe('configStore output device handling', () => {
 
     const store = useConfigStore()
     await store.refreshOutputDevices()
-    await nextTick()
+    await flushPersistedSettings()
 
     expect(store.outputDeviceName).toBe('USB DAC')
     expect(readPersistedSettings(storage).outputDeviceName).toBe('USB DAC')
@@ -307,14 +318,14 @@ describe('configStore output device handling', () => {
     const store = useConfigStore()
 
     expect(await store.setOutputDevice(preferredDeviceId)).toBe(true)
-    await nextTick()
+    await flushPersistedSettings()
     expect(store.outputDeviceId).toBe(preferredDeviceId)
     expect(store.outputDeviceName).toBe('USB DAC')
     expect(readPersistedSettings(storage).outputDeviceId).toBe(preferredDeviceId)
     expect(readPersistedSettings(storage).outputDeviceName).toBe('USB DAC')
 
     expect(await store.setOutputDevice('default')).toBe(true)
-    await nextTick()
+    await flushPersistedSettings()
     expect(store.outputDeviceId).toBe('default')
     expect(store.outputDeviceName).toBe('System Default')
     expect(readPersistedSettings(storage).outputDeviceId).toBe('default')
@@ -322,52 +333,74 @@ describe('configStore output device handling', () => {
     expect(store.currentOutputDevice?.id).toBe('default')
   })
 
-  it('prevents software volume while strict BitPerfect is enabled', async () => {
+  it('keeps user preferences intact while strict BitPerfect is enabled', async () => {
     const store = useConfigStore()
+
+    store.softwareVolume = true
+    store.exclusiveMode = false
+    expect(store.softwareVolume).toBe(true)
+
+    // 开启严格 BitPerfect：软件音量在派生层失效（canAdjustVolume=false），
+    // 但不得把用户的 softwareVolume / exclusiveMode 偏好覆写成开关含义——
+    // 否则关掉 BitPerfect 后偏好已被永久销毁，用户要重新手动打开。
+    store.strictBitPerfect = true
+    expect(store.strictBitPerfect).toBe(true)
+    expect(store.softwareVolume).toBe(true)
+    expect(store.exclusiveMode).toBe(false)
+    expect(store.canAdjustVolume).toBe(false)
+    // BitPerfect 隐含独占在每次下发时派生，无需锁存 exclusiveMode。
+    expect(store.outputOptionsFor('hw:CARD=1,DEV=0')).toEqual({
+      strictBitPerfect: true,
+      exclusive: true
+    })
 
     store.softwareVolume = true
     expect(store.softwareVolume).toBe(true)
 
-    store.strictBitPerfect = true
-    expect(store.strictBitPerfect).toBe(true)
-    expect(store.exclusiveMode).toBe(true)
-    expect(store.softwareVolume).toBe(false)
-
-    store.softwareVolume = true
-    expect(store.softwareVolume).toBe(false)
-
-    await nextTick()
+    await flushPersistedSettings()
     expect(readPersistedSettings(storage)).toMatchObject({
       strictBitPerfect: true,
-      exclusiveMode: true,
-      softwareVolume: false
+      exclusiveMode: false,
+      softwareVolume: true
     })
+
+    // 关掉 BitPerfect：偏好原样恢复，无需任何“恢复”逻辑。
+    store.strictBitPerfect = false
+    expect(store.softwareVolume).toBe(true)
+    expect(store.canAdjustVolume).toBe(true)
   })
 
-  it('disables strict BitPerfect and exclusive output for the WebAPI engine', async () => {
+  it('keeps output preferences when switching to the WebAPI engine', async () => {
     const store = useConfigStore()
 
+    store.softwareVolume = true
     store.strictBitPerfect = true
-    expect(store.exclusiveMode).toBe(true)
-
     store.audioEngine = 'webapi'
-    expect(store.strictBitPerfect).toBe(false)
-    expect(store.exclusiveMode).toBe(false)
+    // 偏好保留；WebAPI 引擎不经过原生输出链路，独占/BitPerfect 只是不生效。
+    expect(store.strictBitPerfect).toBe(true)
+    expect(store.outputOptionsFor('hw:CARD=1,DEV=0')).toEqual({
+      strictBitPerfect: false,
+      exclusive: false
+    })
+    expect(store.supportsExclusiveOutput).toBe(false)
+    // WebAPI 没有 BitPerfect 概念，软件音量照常可调。
+    expect(store.canAdjustVolume).toBe(true)
 
-    store.strictBitPerfect = true
-    store.exclusiveMode = true
-    expect(store.strictBitPerfect).toBe(false)
-    expect(store.exclusiveMode).toBe(false)
-
-    await nextTick()
+    await flushPersistedSettings()
     expect(readPersistedSettings(storage)).toMatchObject({
       audioEngine: 'webapi',
-      strictBitPerfect: false,
-      exclusiveMode: false
+      strictBitPerfect: true
+    })
+
+    // 切回 Native 后偏好原样恢复。
+    store.audioEngine = 'native'
+    expect(store.outputOptionsFor('hw:CARD=1,DEV=0')).toEqual({
+      strictBitPerfect: true,
+      exclusive: true
     })
   })
 
-  it('normalizes incompatible persisted WebAPI output settings', () => {
+  it('restores raw output preferences persisted alongside the WebAPI engine', () => {
     writePersistedSettings(storage, {
       audioEngine: 'webapi',
       strictBitPerfect: true,
@@ -377,10 +410,15 @@ describe('configStore output device handling', () => {
 
     const store = useConfigStore()
 
+    // 加载期不再归一化掉偏好：原样读入，生效与否由派生层决定。
     expect(store.audioEngine).toBe('webapi')
-    expect(store.strictBitPerfect).toBe(false)
-    expect(store.exclusiveMode).toBe(false)
+    expect(store.strictBitPerfect).toBe(true)
+    expect(store.exclusiveMode).toBe(true)
     expect(store.softwareVolume).toBe(true)
+    expect(store.outputOptionsFor('hw:CARD=1,DEV=0')).toEqual({
+      strictBitPerfect: false,
+      exclusive: false
+    })
   })
 
   it('defaults application volume to 100 and clamps persisted values into range', () => {
@@ -403,7 +441,7 @@ describe('configStore output device handling', () => {
     const store = useConfigStore()
 
     store.volumePercent = 55
-    await nextTick()
+    await flushPersistedSettings()
 
     expect(readPersistedSettings(storage).volumePercent).toBe(55)
   })
@@ -416,7 +454,7 @@ describe('configStore output device handling', () => {
 
     store.fullscreenShowFavorite = false
     store.fullscreenShowPlayMode = false
-    await nextTick()
+    await flushPersistedSettings()
 
     expect(readPersistedSettings(storage)).toMatchObject({
       fullscreenShowFavorite: false,
@@ -436,12 +474,12 @@ describe('configStore output device handling', () => {
     expect(readPersistedSettings(storage).lyricDebug).toBeUndefined()
 
     store.lyricDebug = true
-    await nextTick()
+    await flushPersistedSettings()
 
     expect(readPersistedSettings(storage).lyricDebug).toBe(true)
 
     store.lyricDebug = false
-    await nextTick()
+    await flushPersistedSettings()
 
     expect(readPersistedSettings(storage).lyricDebug).toBe(false)
   })
@@ -489,7 +527,7 @@ describe('configStore output device handling', () => {
     })
 
     storageListener?.({ key: STORAGE_KEY } as StorageEvent)
-    await nextTick()
+    await flushPersistedSettings()
 
     expect(store.soundQuality).toBe('jymaster')
     expect(store.lyricDebug).toBe(true)
@@ -542,5 +580,99 @@ describe('configStore output device handling', () => {
     ])
     expect(await store.setOutputDevice(preferredDeviceId)).toBe(true)
     expect(api.switch_output_device).toHaveBeenLastCalledWith(preferredDeviceId, true, true)
+  })
+
+  // ====== 设备 id 写法分裂（热插拔后“设备在却显示不可用”的根因）======
+
+  /**
+   * 回归：同一端点的持久化写法（数字卡号）与列表条目写法（字符卡名）不同时，
+   * 激活判定必须经别名表命中——裸字符串比较会恒判“未激活”，每次开播都重复
+   * 一次注定 no-op 的切换 IPC，设置页还把设备显示成“当前不可用”。
+   */
+  it('treats the configured device as active when the listed entry uses a different id spelling', async () => {
+    const preferredDeviceId = 'hw:CARD=1,DEV=0'
+    writePersistedSettings(storage, {
+      outputDeviceId: preferredDeviceId,
+      outputDeviceName: 'USB DAC'
+    })
+
+    api.get_output_devices.mockResolvedValue([
+      createDevice('hw:CARD=UsbDac,DEV=0', {
+        name: 'USB DAC',
+        isCurrent: true,
+        aliases: ['hw:CARD=UsbDac,DEV=0', 'hw:CARD=1,DEV=0']
+      })
+    ])
+
+    const store = useConfigStore()
+    const appliedDeviceId = await store.ensureConfiguredOutputDevice()
+
+    expect(appliedDeviceId).toBe('hw:CARD=UsbDac,DEV=0')
+    // 写法迁移：持久化身份对齐到条目的规范写法（字符卡名跨拔插稳定，
+    // 数字卡号在 USB 拔插后可能漂移），存储随之更新（经 120ms 去抖）。
+    expect(store.outputDeviceId).toBe('hw:CARD=UsbDac,DEV=0')
+    await flushPersistedSettings()
+    expect(readPersistedSettings(storage).outputDeviceId).toBe('hw:CARD=UsbDac,DEV=0')
+    // 不再发起注定 no-op 的切换。
+    expect(api.switch_output_device).not.toHaveBeenCalled()
+    // 列表不再拼出多余的“当前不可用”条目。
+    expect(store.outputDevices.map((device) => device.id)).toEqual(['hw:CARD=UsbDac,DEV=0'])
+  })
+
+  /**
+   * 回归：插回后卡号漂移（1→2）导致持久化的数字写法真的找不到时，仍然回退
+   * 系统默认，但设备偏好保持原样（不因运行时回退被改写）。
+   */
+  it('keeps the persisted numeric spelling when the endpoint truly disappears', async () => {
+    const preferredDeviceId = 'hw:CARD=1,DEV=0'
+    writePersistedSettings(storage, {
+      outputDeviceId: preferredDeviceId,
+      outputDeviceName: 'USB DAC'
+    })
+
+    api.get_output_devices.mockResolvedValue([
+      createDevice('hw:CARD=2,DEV=0', {
+        name: 'USB DAC',
+        isDefault: true,
+        isCurrent: true
+      })
+    ])
+    api.switch_output_device.mockImplementation(async (deviceId?: string) => {
+      if (deviceId === preferredDeviceId) {
+        throw new Error('device not found')
+      }
+    })
+
+    const store = useConfigStore()
+    const appliedDeviceId = await store.ensureConfiguredOutputDevice()
+
+    expect(appliedDeviceId).toBe('default')
+    expect(store.outputDeviceId).toBe(preferredDeviceId)
+    expect(readPersistedSettings(storage).outputDeviceId).toBe(preferredDeviceId)
+  })
+
+  /**
+   * 回归：别名命中时刷新列表要把持久化写法迁移到规范写法——这是“卡号漂移后
+   * 旧 id 永久失效”的自愈路径（同一 DAC 插回，字符卡名写法不变即可匹配）。
+   */
+  it('migrates the stored device id spelling to the canonical entry on refresh', async () => {
+    writePersistedSettings(storage, {
+      outputDeviceId: 'hw:CARD=1,DEV=0',
+      outputDeviceName: 'USB DAC'
+    })
+
+    api.get_output_devices.mockResolvedValue([
+      createDevice('hw:CARD=UsbDac,DEV=0', {
+        name: 'USB DAC',
+        isCurrent: false,
+        aliases: ['hw:CARD=UsbDac,DEV=0', 'hw:CARD=1,DEV=0']
+      })
+    ])
+
+    const store = useConfigStore()
+    await store.refreshOutputDevices()
+
+    expect(store.outputDeviceId).toBe('hw:CARD=UsbDac,DEV=0')
+    expect(store.outputDevices[0]?.aliases).toContain('hw:CARD=1,DEV=0')
   })
 })

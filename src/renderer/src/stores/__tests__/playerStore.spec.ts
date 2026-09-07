@@ -933,4 +933,163 @@ describe('playerStore device switch sequencing', () => {
     expect(playerStore.currentSong?.duration).toBe(201_500)
     expect(JSON.parse(storage.getItem('currentSong') ?? '{}').duration).toBe(201_500)
   })
+
+  // ====== 应用级软件音量：实时应用与失步自愈 ======
+
+  /**
+   * 开播前必须同步播种音量（不经 80ms 节流）：SetVolume 晚于 Play 入队的话，
+   * 新会话带着旧增益开播、节流到期后又被中途调整——用户音量低于 100% 时
+   * 每次切歌开头都是一声全音量爆响。
+   */
+  it('seeds the current volume synchronously before each native playback start', async () => {
+    const setVolumeCalls: Array<{ at: string; volume: number }> = []
+    const playCalls: string[] = []
+
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        song_detail: vi.fn(async ({ ids }: { ids: number[] }) => ({
+          body: {
+            songs: [
+              {
+                id: ids[0],
+                name: `Song ${ids[0]}`,
+                dt: 180000,
+                ar: [{ id: 1, name: 'Artist' }],
+                al: { id: 1, name: 'Album', picUrl: 'cover' },
+                h: null,
+                sq: null,
+                hr: null
+              }
+            ]
+          }
+        })),
+        song_url: vi.fn(async () => ({
+          body: { data: [{ url: 'https://example.com/test.mp3' }] }
+        })),
+        get_output_devices: vi.fn(async () => []),
+        switch_output_device: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        play_url: vi.fn(async () => {
+          playCalls.push('play')
+        }),
+        set_volume: vi.fn(async (volume: number) => {
+          setVolumeCalls.push({ at: `after-${playCalls.length}-plays`, volume })
+        }),
+        get_progress: vi.fn(async () => 0),
+        is_buffering: vi.fn(async () => false),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 100, isComplete: true })),
+        seek: vi.fn(async () => undefined),
+        wait_finished: vi.fn(() => new Promise(() => undefined))
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const configStore = useConfigStore()
+    configStore.softwareVolume = true
+    configStore.volumePercent = 30
+    // 放弃节流窗口：等 80ms 节流定时器跑完再开播
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    const playerStore = usePlayerStore()
+    await playerStore.playMusic(7)
+
+    const playIndex = setVolumeCalls.findIndex((call) => call.at === 'after-0-plays')
+    expect(playIndex).toBeGreaterThanOrEqual(0)
+    expect(setVolumeCalls[playIndex]?.volume).toBeCloseTo(0.3, 5)
+  })
+
+  /**
+   * 软件音量中途被关掉（或 BitPerfect 被打开）不得把正在播的会话打到全音量：
+   * BitPerfect 是开播即冻结的选项，此刻会话还不是 BitPerfect，拉到 1.0 只是
+   * 一声爆响，直通本身反而要到下一首才生效。
+   */
+  it('does not blast the current session to full volume when software volume is disabled mid-track', async () => {
+    const setVolume = vi.fn(async () => undefined)
+
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        set_volume: setVolume,
+        get_progress: vi.fn(async () => 0),
+        is_buffering: vi.fn(async () => false),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 100, isComplete: true }))
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const configStore = useConfigStore()
+    configStore.softwareVolume = true
+    configStore.volumePercent = 40
+    const playerStore = usePlayerStore()
+    void playerStore
+    // 放弃节流窗口：等 80ms 节流定时器跑完再切换
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(setVolume).toHaveBeenCalledWith(0.4)
+
+    // 中途关掉软件音量：不立即下发 SetVolume(1.0)
+    configStore.softwareVolume = false
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(setVolume).not.toHaveBeenCalledWith(1)
+
+    // 重新打开：立即下发所选百分比（只会变安静，用户预期就是立即应用）
+    configStore.softwareVolume = true
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(setVolume).toHaveBeenCalledWith(0.4)
+  })
+
+  /**
+   * 进度轮询带回的会话音量回读：SetVolume fire-and-forget 丢失后，界面 30%、
+   * 实际 100% 的失步必须在校对中自愈（重发一次），锁定标记同步给 UI。
+   */
+  it('reconciles a lost volume update from the polled session volume readback', async () => {
+    const now = 1_000
+    let progressTimer: (() => void) | undefined
+    const setVolumeCalls: number[] = []
+
+    // 会话实际生效 1.0（SetVolume 丢了），前端认为 30%
+    const getPlaybackStatus = vi.fn(async () => ({
+      progressMs: 0,
+      isBuffering: false,
+      volume: 1,
+      volumeLocked: false
+    }))
+
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    vi.stubGlobal(
+      'setInterval',
+      vi.fn((callback: () => void) => {
+        progressTimer = callback
+        return 1 as unknown as ReturnType<typeof setInterval>
+      })
+    )
+    vi.stubGlobal('clearInterval', vi.fn())
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        get_playback_status: getPlaybackStatus,
+        get_progress: vi.fn(async () => 0),
+        is_buffering: vi.fn(async () => false),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 100, isComplete: true })),
+        set_volume: vi.fn(async (volume: number) => {
+          setVolumeCalls.push(volume)
+        })
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const configStore = useConfigStore()
+    configStore.softwareVolume = true
+    configStore.volumePercent = 30
+
+    const playbackStore = usePlaybackStore()
+    // isPlaying watch 异步 flush 后 startTimer 才注册定时器；等一拍再手动 tick。
+    playbackStore.isPlaying = true
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    progressTimer?.()
+    // 校对重发走 80ms 尾沿节流，等节流窗口过去再断言
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    expect(setVolumeCalls).toContain(0.3)
+  })
 })

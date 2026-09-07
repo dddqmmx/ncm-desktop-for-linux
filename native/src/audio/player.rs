@@ -1,9 +1,9 @@
 #[cfg(target_os = "linux")]
 use crate::audio::device_reservation::DeviceReservation;
-use cpal::traits::{HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::HeapRb;
 use ringbuf::traits::{Producer, Split};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
@@ -277,13 +277,50 @@ fn playback_position_to_byte(
     Some(position)
 }
 
+/// 安全包装 cpal::Stream，隔离 drop 期间可能的底层 panic。
+/// 在 Linux ALSA 下，若音频工作线程（cpal_alsa_out）因错误退出，
+/// cpal 的 Stream::drop 会在向已关闭的唤醒管道写入时断言失败（assert_eq!(ret, 8)）。
+/// 通过 catch_unwind 捕获并吸收该 panic，避免连带导致宿主工作线程（native-worker）崩溃。
+pub(crate) struct SafeStream(Option<cpal::Stream>);
+
+impl SafeStream {
+    pub(crate) fn new(stream: cpal::Stream) -> Self {
+        Self(Some(stream))
+    }
+
+    pub(crate) fn play(&self) -> Result<(), cpal::PlayStreamError> {
+        self.0
+            .as_ref()
+            .expect("SafeStream inner stream is None")
+            .play()
+    }
+}
+
+impl Drop for SafeStream {
+    fn drop(&mut self) {
+        if let Some(stream) = self.0.take() {
+            if let Err(err) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                drop(stream);
+            })) {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[audio] warning: cpal output stream drop panicked (worker thread may have exited early): {:?}",
+                    err
+                );
+            }
+        }
+    }
+}
+
 pub struct AudioPlayer {
     device: cpal::Device,
     requested_device_id: Option<String>,
-    stream: Option<cpal::Stream>,
+    stream: Option<SafeStream>,
     state: Arc<SharedState>,
-    /// 跨播放会话保留的软件音量（f32 位模式）；BitPerfect 会话强制 1.0 直通。
-    master_volume_bits: AtomicU32,
+    /// 开播音量种子：worker 在每次 Play 前用渲染层最新下发的音量同步它，
+    /// setup_and_play 把它种进新会话（BitPerfect 会话忽略、强制 1.0 直通）。
+    /// 会话进行中的 SetVolume 也写这里，供同实例上的下一次开播继承。
+    volume_seed: f32,
     #[cfg(target_os = "linux")]
     device_reservation: Option<DeviceReservation>,
 }
@@ -329,8 +366,9 @@ impl AudioPlayer {
                 has_seek_request: AtomicBool::new(false),
                 volume_bits: AtomicU32::new(UNITY_VOLUME_BITS),
                 volume_locked: AtomicBool::new(false),
+                device_lost: AtomicBool::new(false),
             }),
-            master_volume_bits: AtomicU32::new(UNITY_VOLUME_BITS),
+            volume_seed: 1.0,
             #[cfg(target_os = "linux")]
             device_reservation: None,
         })
@@ -406,6 +444,10 @@ impl AudioPlayer {
             };
 
             devices.push(OutputDeviceInfo {
+                #[cfg(target_os = "linux")]
+                aliases: Vec::new(),
+                #[cfg(not(target_os = "linux"))]
+                aliases: vec![id.clone()],
                 id: id.clone(),
                 name,
                 is_default,
@@ -628,6 +670,14 @@ impl AudioPlayer {
         strict_bit_perfect: bool,
         exclusive: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // 跟随系统默认时，开播前重新对齐系统最新的默认输出端点（如拔出耳机后默认设备已变为扬声器）。
+        if self.requested_device_id.is_none() {
+            let host = cpal::default_host();
+            if let Some(default) = host.default_output_device() {
+                self.device = default;
+            }
+        }
+
         // 独占输出（BitPerfect 隐含）目前仅在 Linux（PipeWire pw-reserve）上实现，
         // 其余平台忽略该请求；want_exclusive 在非 Linux 下仅用于禁用默认端点回退。
         let want_exclusive = strict_bit_perfect || exclusive;
@@ -645,11 +695,12 @@ impl AudioPlayer {
 
         self.stop();
 
+        // 新会话的音量取开播前的种子（worker 在每次 Play 前用渲染层最新值同步）；
         // BitPerfect 会话锁定为 1.0 直通，样本不经任何数字增益。
         let session_volume_bits = if strict_bit_perfect {
             UNITY_VOLUME_BITS
         } else {
-            self.master_volume_bits.load(Ordering::Relaxed)
+            self.volume_seed.to_bits()
         };
         self.state = Arc::new(SharedState {
             is_paused: AtomicBool::new(false),
@@ -669,6 +720,7 @@ impl AudioPlayer {
             has_seek_request: AtomicBool::new(false),
             volume_bits: AtomicU32::new(session_volume_bits),
             volume_locked: AtomicBool::new(strict_bit_perfect),
+            device_lost: AtomicBool::new(false),
         });
 
         let sr = meta.sample_rate;
@@ -757,6 +809,20 @@ impl AudioPlayer {
                             )
                         })?
                     } else {
+                        // 找不到兼容配置可能是设备真不支持，也可能是设备此刻
+                        // 已经不在了（拔出瞬间的枚举残留）：find_best_config 的
+                        // “不支持采样率/声道”文案会把后者误报成格式问题。抛
+                        // 错误前先探一次 PCM 可用性，设备不在就按设备错误报。
+                        if let Err(availability_err) =
+                            self.device.supported_output_configs()
+                        {
+                            return Err(format!(
+                                "无法在独占输出设备 {} 上开流：{}",
+                                backend::device_id(&self.device),
+                                availability_err
+                            )
+                            .into());
+                        }
                         return Err(primary_msg.into());
                     }
                 }
@@ -912,8 +978,9 @@ impl AudioPlayer {
             self.seek(start_at);
         }
 
-        stream.play()?;
-        self.stream = Some(stream);
+        let safe_stream = SafeStream::new(stream);
+        safe_stream.play()?;
+        self.stream = Some(safe_stream);
         #[cfg(target_os = "linux")]
         {
             self.device_reservation = device_reservation;
@@ -1025,18 +1092,14 @@ impl AudioPlayer {
         self.state.is_paused.store(true, Ordering::SeqCst);
     }
 
-    /// 设置软件音量（0.0..=1.0），跨播放会话保留；BitPerfect 会话内不生效。
-    /// 非有限输入（NaN/±inf）按 1.0 处理：clamp 会传播 NaN，存进
-    /// master_volume_bits 会一直驻留到下一次有效设置。
-    pub fn set_volume(&self, volume: f32) {
-        let clamped = if volume.is_finite() {
-            volume.clamp(0.0, 1.0)
-        } else {
-            1.0
-        };
-        self.master_volume_bits
-            .store(clamped.to_bits(), Ordering::Relaxed);
-        self.state.set_volume(clamped);
+    /// 设置软件音量（0.0..=1.0）：写开播种子 + 应用到当前会话。
+    /// BitPerfect 会话内不生效（底层直通忽略），种子照常更新。
+    /// 非有限值的净化在 SharedState::set_volume（所有音量写入的汇聚点）完成，
+    /// 种子沿用同一份净化保证下一位存储干净。
+    pub fn set_volume(&mut self, volume: f32) {
+        let sanitized = crate::audio::state::sanitize_volume(volume);
+        self.volume_seed = sanitized;
+        self.state.set_volume(sanitized);
     }
 
     pub fn resume(&self) {
@@ -1128,7 +1191,32 @@ mod tests {
             waiting_for_seek: AtomicBool::new(false),
             volume_bits: AtomicU32::new(crate::audio::state::UNITY_VOLUME_BITS),
             volume_locked: AtomicBool::new(false),
+            device_lost: AtomicBool::new(false),
         }
+    }
+
+    #[test]
+    fn safe_stream_drop_swallows_panic_and_does_not_propagate() {
+        struct PanickingDrop;
+        impl Drop for PanickingDrop {
+            fn drop(&mut self) {
+                panic!("simulated cpal assertion left == right failed (left: -1, right: 8)");
+            }
+        }
+
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut obj = Some(PanickingDrop);
+            if let Some(inner) = obj.take() {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                    drop(inner);
+                }));
+            }
+        }));
+
+        assert!(
+            caught.is_ok(),
+            "Panic in drop must be swallowed by catch_unwind"
+        );
     }
 
     #[test]

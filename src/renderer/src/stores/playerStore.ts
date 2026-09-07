@@ -67,6 +67,8 @@ export const usePlayerStore = defineStore('player', () => {
       set: (val) => (configStore.volumePercent = val)
     }),
     canAdjustVolume: computed(() => configStore.canAdjustVolume),
+    /** 当前会话被 BitPerfect 锁定直通（开播即冻结）：此刻拖滑块不会生效 */
+    sessionVolumeLocked: computed(() => playbackStore.sessionVolumeLocked),
 
     // Actions
     initFromStorage: playbackStore.initFromStorage,

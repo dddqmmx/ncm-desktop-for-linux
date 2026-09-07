@@ -2,6 +2,7 @@ use crate::audio::state::SharedState;
 use cpal::FromSample;
 use cpal::traits::DeviceTrait;
 use ringbuf::traits::{Consumer, Observer};
+use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -15,6 +16,10 @@ pub struct OutputDeviceInfo {
     pub name: String,
     pub is_default: bool,
     pub is_current: bool,
+    /// 同一端点在各命名空间的全部 id 写法（含 id 本身；虚拟端点只有自身）。
+    /// 数字卡号写法在 USB 拔插后会漂移、字符卡名稳定，前端持久化身份与列表
+    /// 匹配都要经这份别名表，做不了 /proc/asound 归一的渲染层才不会写法分裂。
+    pub aliases: Vec<String>,
 }
 
 pub(crate) fn is_supported_output_format(fmt: cpal::SampleFormat) -> bool {
@@ -183,26 +188,38 @@ where
     Ok(stream)
 }
 
-/// 输出流的致命错误处理。设备被拔出/被抢占后回调不会再被调用，
-/// 若不在这里落地状态，播放会永久停在当前进度而上层毫无察觉——
-/// 标记失败并结束会话，让 worker 按“播放异常中断”通知前端。
+/// 输出流的致命错误处理。设备被拔出/被抢占后，CPAL 的 ALSA worker 可能会在
+/// poll 返回 POLLERR 时进入无休止自旋重试循环。这里通过 atomic swap 保证错误
+/// 只记录一次，并通过 writeln! 避免 stderr 管道写满时（os error 11 EAGAIN）
+/// 发生 panic 导致音频线程崩溃。
+/// 同时通过短休眠抑制 100% CPU 自旋，为外层检测 is_finished 并销毁流留出安全窗口。
+/// 设备类错误额外置位 device_lost：worker 据此把会话自动迁移到系统默认续播，
+/// 而不是当成普通流错误终止会话（解码器/网络错误不置位，仍走终止路径）。
 fn handle_stream_error(err: cpal::StreamError, state: &SharedState) {
     match err {
         cpal::StreamError::DeviceNotAvailable | cpal::StreamError::StreamInvalidated => {
-            eprintln!("[audio] output stream lost: {err}");
-            state.playback_failed.store(true, Ordering::SeqCst);
-            state.is_finished.store(true, Ordering::SeqCst);
+            state.device_lost.store(true, Ordering::SeqCst);
+            if !state.playback_failed.swap(true, Ordering::SeqCst) {
+                let _ = writeln!(std::io::stderr(), "[audio] output stream lost: {err}");
+                state.is_finished.store(true, Ordering::SeqCst);
+            }
+            std::thread::sleep(Duration::from_millis(50));
         }
         // 欠载只是一次爆音，ALSA 自己会恢复，结束会话属于过度反应。
         cpal::StreamError::BufferUnderrun => {}
         // 其余 host 特定错误按致命处理：ALSA 上设备拔出/被抢占往往以裸 errno
-        // （ENODEV/EINVAL 等）的 BackendSpecific 出现而非上面的类型化变体，
-        // 此时回调已停止。fail-open 会把会话永远挂在当前进度上，
-        // wait_finished 悬挂、前端回退默认输出的流程也永远等不到信号。
+        // （ENODEV/EINVAL 等）或 poll POLLERR 的 BackendSpecific 出现而非上面的类型化变体。
         cpal::StreamError::BackendSpecific { err } => {
-            eprintln!("[audio] output stream fatal error: {}", err.description);
-            state.playback_failed.store(true, Ordering::SeqCst);
-            state.is_finished.store(true, Ordering::SeqCst);
+            state.device_lost.store(true, Ordering::SeqCst);
+            if !state.playback_failed.swap(true, Ordering::SeqCst) {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[audio] output stream fatal error: {}",
+                    err.description
+                );
+                state.is_finished.store(true, Ordering::SeqCst);
+            }
+            std::thread::sleep(Duration::from_millis(50));
         }
     }
 }
@@ -630,10 +647,17 @@ pub(crate) fn append_linux_proc_asound_output_devices_at(
             continue;
         };
 
-        let id = format!("hw:CARD={},DEV={}", card.index, device_index);
+        // 规范写法：字符卡名跨拔插稳定（数字卡号会随 USB 枚举顺序漂移），
+        // 由它充当条目 id，持久化身份才不会插回一次就永久失效。
+        let numeric_id = format!("hw:CARD={},DEV={}", card.index, device_index);
+        let id = canonical_linux_output_device_id_at(&numeric_id, asound_root);
         let name = format!("{} - {}", card.display_name(), pcm_name);
-        let is_default = default_id.is_some_and(|value| output_device_ids_match(value, &id));
-        let is_current = current_id.is_some_and(|value| output_device_ids_match(value, &id));
+        // 归一匹配必须用同一份 asound_root（测试传的是临时目录；不带 _at 的
+        // 变体会读真实 /proc/asound，规范化 id 在测试环境里永远归一不上）。
+        let is_default =
+            default_id.is_some_and(|value| output_device_ids_match_at(value, &id, asound_root));
+        let is_current =
+            current_id.is_some_and(|value| output_device_ids_match_at(value, &id, asound_root));
 
         if let Some(device) = devices.iter_mut().find(|device| device.id == id) {
             if device.name == device.id || device.name.trim().is_empty() {
@@ -647,6 +671,7 @@ pub(crate) fn append_linux_proc_asound_output_devices_at(
         devices.push(OutputDeviceInfo {
             is_default,
             is_current,
+            aliases: linux_output_device_id_aliases_at(&id, asound_root),
             id,
             name,
         });
@@ -659,11 +684,11 @@ pub(crate) fn collapse_linux_duplicate_output_devices(devices: &mut Vec<OutputDe
 }
 
 /// 同一物理端点会以多种 id 出现（cpal hint 的字符卡名 hw:/plughw:、
-/// /proc/asound 的数字卡号），按 (card, device) 端点键合并成一条：
-/// 保留携带 is_current 的 id——worker 侧的匹配已归一到端点键，但前端的
-/// isOutputDeviceActive 仍是原始字符串等值比较，合并后条目的 id 必须与
-/// 前端持久化/当前选中的写法一致，否则每次播放都会误判需要切换设备；
-/// 其余情况偏向 hw:（BitPerfect 直通），显示名取非占位的一侧。
+/// /proc/asound 与 cpal 物理探测的数字卡号），按 (card, device) 端点键合并成
+/// 一条：条目 id 规范化为字符卡名写法（跨拔插稳定，数字卡号会随 USB 枚举
+/// 顺序漂移），别名为全写法集合——前端的持久化身份与激活匹配改走别名表，
+/// 不再依赖“合并后条目的 id 恰好等于前端持久化写法”的巧合；显示名取非
+/// 占位的一侧，hw:/plughw: 属不同输出端点仍互不合并。
 #[cfg(target_os = "linux")]
 pub(crate) fn collapse_linux_duplicate_output_devices_at(
     devices: &mut Vec<OutputDeviceInfo>,
@@ -676,39 +701,59 @@ pub(crate) fn collapse_linux_duplicate_output_devices_at(
 
     for device in devices.drain(..) {
         let Some(key) = linux_hw_endpoint_key_at(&device.id, asound_root) else {
+            let mut device = device;
+            if device.aliases.is_empty() {
+                device.aliases = linux_output_device_id_aliases_at(&device.id, asound_root);
+            }
             result.push(device);
             continue;
         };
 
+        let canonical_id = canonical_linux_output_device_id_at(&device.id, asound_root);
+
         let Some(&index) = kept_by_key.get(&key) else {
+            let aliases = linux_output_device_id_aliases_at(&canonical_id, asound_root);
+            let mut device = device;
+            device.id = canonical_id;
+            if device.aliases.is_empty() {
+                device.aliases = aliases;
+            } else {
+                merge_aliases(&mut device.aliases, &aliases);
+            }
             kept_by_key.insert(key, result.len());
             result.push(device);
             continue;
         };
 
+        let incoming_aliases = linux_output_device_id_aliases_at(&canonical_id, asound_root);
         let existing = &mut result[index];
         let existing_placeholder = existing.name == existing.id || existing.name.trim().is_empty();
         let incoming_placeholder = device.name == device.id || device.name.trim().is_empty();
 
-        let keep_incoming_id = if existing.is_current != device.is_current {
-            device.is_current
-        } else {
-            is_linux_plughw_output_id(&existing.id) && !is_linux_plughw_output_id(&device.id)
-        };
-
-        if keep_incoming_id {
-            existing.id = device.id;
-            if !incoming_placeholder {
-                existing.name = device.name;
-            }
-        } else if existing_placeholder && !incoming_placeholder {
-            existing.name = device.name;
+        // 数字卡号条目的名字多半来自 /proc 追加（已填真实显示名），优先于
+        // cpal 物理探测的占位名。
+        if existing_placeholder && !incoming_placeholder {
+            existing.name = device.name.clone();
         }
+
+        // 合并后的 id 固定用规范写法；current 标记与别名为并集。
+        existing.id = canonical_linux_output_device_id_at(&existing.id, asound_root);
+        let existing_aliases = linux_output_device_id_aliases_at(&existing.id, asound_root);
+        merge_aliases(&mut existing.aliases, &existing_aliases);
+        merge_aliases(&mut existing.aliases, &incoming_aliases);
         existing.is_default |= device.is_default;
         existing.is_current |= device.is_current;
     }
 
     *devices = result;
+}
+
+fn merge_aliases(target: &mut Vec<String>, extra: &[String]) {
+    for alias in extra {
+        if !target.contains(alias) {
+            target.push(alias.clone());
+        }
+    }
 }
 
 pub(crate) fn is_linux_real_hardware_output_id(id: &str) -> bool {
@@ -853,6 +898,91 @@ pub(crate) fn alsa_card_index_from_device_id_at(
 }
 
 #[cfg(target_os = "linux")]
+fn alsa_card_id_from_index_at(card_index: u32, asound_root: &std::path::Path) -> Option<String> {
+    let card_id_path = asound_root.join(format!("card{card_index}")).join("id");
+    let card_id = std::fs::read_to_string(card_id_path).ok()?;
+    let trimmed = card_id.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+/// 把设备 id 规范化为跨拔插稳定的写法：hw:/plughw: 端点的数字卡号换成字符
+/// 卡名（`hw:CARD=1,DEV=0` → `hw:CARD=UsbDac,DEV=0`），其余原样返回。
+///
+/// 数字卡号在拔插后可能漂移（USB 枚举顺序变化），拿它做持久化身份，插回一次
+/// 就永久失效；字符卡名由 ALSA 按卡身份解析，插回后哪怕卡号变了仍能打开。
+/// 无法解析字符卡名（读不到 /proc/asound）时返回原 id——稳定写法不可得时，
+/// 至少不能让枚举凭空丢设备。
+#[cfg(target_os = "linux")]
+pub(crate) fn canonical_linux_output_device_id_at(
+    id: &str,
+    asound_root: &std::path::Path,
+) -> String {
+    if !is_linux_real_hardware_output_id(id) {
+        return id.to_string();
+    }
+
+    let Some(card_index) = alsa_card_index_from_device_id_at(id, asound_root) else {
+        return id.to_string();
+    };
+    // 已是字符写法的不再翻回数字：目标是稳定，不是统一形状。
+    let card_token = extract_alsa_card_token(id);
+    if card_token
+        .as_deref()
+        .and_then(|token| token.parse::<u32>().ok())
+        .is_none()
+    {
+        return id.to_string();
+    }
+
+    let Some(card_id) = alsa_card_id_from_index_at(card_index, asound_root) else {
+        return id.to_string();
+    };
+
+    id.replace(&format!("CARD={card_index}"), &format!("CARD={card_id}"))
+}
+
+/// 同一物理端点在各命名空间的全部写法（去重）。前端拿它与持久化的 id 做匹配，
+/// 弥补渲染层做不了 /proc/asound 归一比较的缺口：hw:CARD=1,DEV=0（数字卡号，
+/// cpal 物理探测 / /proc/asound）、hw:CARD=UsbDac,DEV=0（字符卡名，ALSA hint）
+/// 以及 plughw: 变体。注意 hw:/plughw: 是不同输出端点（一个直通一个带软件
+/// 转换），互不进对方的别名表。
+#[cfg(target_os = "linux")]
+pub(crate) fn linux_output_device_id_aliases_at(
+    id: &str,
+    asound_root: &std::path::Path,
+) -> Vec<String> {
+    let mut aliases = vec![id.to_string()];
+    if !is_linux_real_hardware_output_id(id) {
+        return aliases;
+    }
+
+    let Some(card_index) = alsa_card_index_from_device_id_at(id, asound_root) else {
+        return aliases;
+    };
+    let card_tokens: [String; 2] = [
+        card_index.to_string(),
+        alsa_card_id_from_index_at(card_index, asound_root)
+            .unwrap_or_else(|| card_index.to_string()),
+    ];
+
+    let prefix = if is_linux_plughw_output_id(id) {
+        "plughw"
+    } else {
+        "hw"
+    };
+    let device_index = extract_alsa_device_token(id).unwrap_or(0);
+
+    for token in card_tokens {
+        let alias = format!("{prefix}:CARD={token},DEV={device_index}");
+        if !aliases.contains(&alias) {
+            aliases.push(alias);
+        }
+    }
+
+    aliases
+}
+
+#[cfg(target_os = "linux")]
 fn extract_alsa_card_token(id: &str) -> Option<String> {
     let id = id
         .trim()
@@ -937,6 +1067,7 @@ mod tests {
             waiting_for_seek: AtomicBool::new(false),
             volume_bits: AtomicU32::new(crate::audio::state::UNITY_VOLUME_BITS),
             volume_locked: AtomicBool::new(false),
+            device_lost: AtomicBool::new(false),
         }
     }
 
@@ -1319,6 +1450,8 @@ mod tests {
     #[test]
     fn proc_asound_fallback_lists_real_playback_pcm_devices() {
         let root = temp_asound_root_with_card(0, "PCH");
+        std::fs::create_dir_all(root.join("card1")).unwrap();
+        std::fs::write(root.join("card1").join("id"), "UsbDac\n").unwrap();
         std::fs::write(
             root.join("cards"),
             " 0 [PCH            ]: HDA-Intel - HDA Intel PCH\n                      HDA Intel PCH at 0x622d1b8000 irq 233\n 1 [UsbDac         ]: USB-Audio - Reference USB DAC\n                      Reference USB DAC at usb-0000:00:14.0-3, high speed\n",
@@ -1338,12 +1471,18 @@ mod tests {
             &root,
         );
 
+        // id 规范化为字符卡名写法（跨拔插稳定），数字卡号写法进别名表。
         assert!(devices.iter().any(|device| {
-            device.id == "hw:CARD=1,DEV=0"
+            device.id == "hw:CARD=UsbDac,DEV=0"
                 && device.name == "Reference USB DAC - USB Audio"
                 && device.is_current
+                && device.aliases.contains(&"hw:CARD=1,DEV=0".to_string())
         }));
-        assert!(devices.iter().any(|device| device.id == "hw:CARD=0,DEV=3"));
+        assert!(
+            devices
+                .iter()
+                .any(|device| device.id == "hw:CARD=PCH,DEV=3")
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1357,17 +1496,23 @@ mod tests {
             " 1 [UsbDac         ]: USB-Audio - Reference USB DAC\n                      Reference USB DAC at usb-0000:00:14.0-3, high speed\n",
         )
         .unwrap();
-        std::fs::write(root.join("pcm"), "01-00: USB Audio : USB Audio : playback 1\n").unwrap();
+        std::fs::write(
+            root.join("pcm"),
+            "01-00: USB Audio : USB Audio : playback 1\n",
+        )
+        .unwrap();
 
         let mut devices = vec![
             OutputDeviceInfo {
                 id: "hw:CARD=UsbDac,DEV=0".to_string(),
+                aliases: vec!["hw:CARD=UsbDac,DEV=0".to_string()],
                 name: "hw:CARD=UsbDac,DEV=0".to_string(),
                 is_default: false,
                 is_current: false,
             },
             OutputDeviceInfo {
                 id: "plughw:CARD=UsbDac,DEV=0".to_string(),
+                aliases: vec!["plughw:CARD=UsbDac,DEV=0".to_string()],
                 name: "plughw:CARD=UsbDac,DEV=0".to_string(),
                 is_default: false,
                 is_current: false,
@@ -1393,14 +1538,17 @@ mod tests {
         let mut devices = vec![
             OutputDeviceInfo {
                 id: "hw:CARD=UsbDac,DEV=0".to_string(),
+                aliases: vec!["hw:CARD=UsbDac,DEV=0".to_string()],
                 name: "Reference USB DAC, USB Audio".to_string(),
                 is_default: false,
                 is_current: false,
             },
-            // UI 持久化的是数字卡号 id；前端 isOutputDeviceActive 靠原始字符串
-            // 等值比较“已激活”，合并后的条目必须保留这个 id。
+            // UI 持久化的可能是数字卡号写法；合并后的条目 id 固定为规范
+            //（字符卡名）写法，数字写法进别名表——前端经别名表匹配持久化
+            // id，不再依赖“条目 id 恰好等于持久化写法”的巧合。
             OutputDeviceInfo {
                 id: "hw:CARD=1,DEV=0".to_string(),
+                aliases: vec!["hw:CARD=1,DEV=0".to_string()],
                 name: "Reference USB DAC - USB Audio".to_string(),
                 is_default: false,
                 is_current: true,
@@ -1410,8 +1558,14 @@ mod tests {
         collapse_linux_duplicate_output_devices_at(&mut devices, &root);
 
         assert_eq!(devices.len(), 1);
-        assert_eq!(devices[0].id, "hw:CARD=1,DEV=0");
+        assert_eq!(devices[0].id, "hw:CARD=UsbDac,DEV=0");
         assert!(devices[0].is_current);
+        assert!(devices[0].aliases.contains(&"hw:CARD=1,DEV=0".to_string()));
+        assert!(
+            devices[0]
+                .aliases
+                .contains(&"hw:CARD=UsbDac,DEV=0".to_string())
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1421,18 +1575,21 @@ mod tests {
         let mut devices = vec![
             OutputDeviceInfo {
                 id: "hw:CARD=0,DEV=0".to_string(),
+                aliases: vec!["hw:CARD=0,DEV=0".to_string()],
                 name: "USB DAC".to_string(),
                 is_default: false,
                 is_current: false,
             },
             OutputDeviceInfo {
                 id: "hw:CARD=1,DEV=0".to_string(),
+                aliases: vec!["hw:CARD=1,DEV=0".to_string()],
                 name: "USB DAC".to_string(),
                 is_default: false,
                 is_current: true,
             },
             OutputDeviceInfo {
                 id: "default".to_string(),
+                aliases: vec!["default".to_string()],
                 name: "System Default".to_string(),
                 is_default: true,
                 is_current: false,
@@ -1444,5 +1601,49 @@ mod tests {
         assert_eq!(devices[0].name, "USB DAC [hw:CARD=0,DEV=0]");
         assert_eq!(devices[1].name, "USB DAC [hw:CARD=1,DEV=0]");
         assert_eq!(devices[2].name, "System Default");
+    }
+
+    #[test]
+    fn handle_stream_error_records_failure_and_is_idempotent() {
+        let state = Arc::new(SharedState {
+            is_paused: std::sync::atomic::AtomicBool::new(false),
+            current_frame: std::sync::atomic::AtomicU64::new(0),
+            playback_clock: std::sync::Mutex::new(crate::audio::state::PlaybackClock::new()),
+            trim_until_frame: std::sync::atomic::AtomicU64::new(crate::audio::state::NO_TRIM_FRAME),
+            sample_rate: std::sync::atomic::AtomicU32::new(44100),
+            has_seek_request: std::sync::atomic::AtomicBool::new(false),
+            seek_request: std::sync::Mutex::new(None),
+            is_terminating: std::sync::atomic::AtomicBool::new(false),
+            discard_buffer: std::sync::atomic::AtomicBool::new(false),
+            is_discarding_buffer: std::sync::atomic::AtomicBool::new(false),
+            decoder_done: std::sync::atomic::AtomicBool::new(false),
+            is_finished: std::sync::atomic::AtomicBool::new(false),
+            playback_failed: std::sync::atomic::AtomicBool::new(false),
+            buffered_frames: std::sync::atomic::AtomicU64::new(0),
+            waiting_for_seek: std::sync::atomic::AtomicBool::new(false),
+            volume_bits: std::sync::atomic::AtomicU32::new(crate::audio::state::UNITY_VOLUME_BITS),
+            volume_locked: std::sync::atomic::AtomicBool::new(false),
+            device_lost: std::sync::atomic::AtomicBool::new(false),
+        });
+
+        let err = cpal::StreamError::BackendSpecific {
+            err: cpal::BackendSpecificError {
+                description: "`alsa::poll()` returned POLLERR".to_string(),
+            },
+        };
+
+        handle_stream_error(err, &state);
+        assert!(state.playback_failed.load(Ordering::SeqCst));
+        assert!(state.is_finished.load(Ordering::SeqCst));
+
+        // 第二次调用不应 panic，并且状态保持一致
+        let err2 = cpal::StreamError::BackendSpecific {
+            err: cpal::BackendSpecificError {
+                description: "`alsa::poll()` returned POLLERR".to_string(),
+            },
+        };
+        handle_stream_error(err2, &state);
+        assert!(state.playback_failed.load(Ordering::SeqCst));
+        assert!(state.is_finished.load(Ordering::SeqCst));
     }
 }

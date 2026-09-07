@@ -73,13 +73,16 @@ export const NativeService = {
   },
 
   /**
-   * 播放进度 + 缓冲状态一次取回：渲染层每 200ms 轮询一次，
-   * 合并成单次 IPC 往返可以把稳态轮询开销减半。
+   * 播放进度 + 缓冲状态 + 会话音量/锁定一次取回：渲染层每 200ms 轮询一次，
+   * 合并成单次 IPC 往返可以把稳态轮询开销减半。会话音量是 SetVolume 的
+   * 回读权威——渲染层据此校对滑块与实际生效增益是否失步。
    */
   getPlaybackStatus() {
     return {
       progressMs: player.progressMs,
-      isBuffering: player.isBuffering
+      isBuffering: player.isBuffering,
+      volume: player.volume,
+      volumeLocked: player.volumeLocked
     }
   },
 

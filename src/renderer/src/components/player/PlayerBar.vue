@@ -4,7 +4,7 @@ import { formatCurrentSongArtists, isLocalSong, usePlayerStore } from '@renderer
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 // 1. 必须导入新设计的播放列表组件
 import PlaylistOverlay from './PlaylistOverlay.vue'
-import RangeSlider from '@renderer/components/common/RangeSlider.vue'
+import VolumeRow from '@renderer/components/common/VolumeRow.vue'
 import SongCover from '@renderer/components/media/SongCover.vue'
 import AddToPlaylistModal from '@renderer/components/overlays/AddToPlaylistModal.vue'
 import { useFavoriteStore } from '@renderer/stores/favoriteStore'
@@ -47,7 +47,12 @@ const volumeControlRef = ref<HTMLElement | null>(null)
 
 const volumeIcon = computed(() => (playerStore.volumePercent <= 0 ? 'volume-mute' : 'volume'))
 
-const volumeTitle = computed(() => `音量 ${Math.round(playerStore.volumePercent)}%`)
+const volumeTitle = computed(() => {
+  if (playerStore.sessionVolumeLocked) {
+    return 'BitPerfect 直通中，音量将在下一曲生效'
+  }
+  return `音量 ${Math.round(playerStore.volumePercent)}%`
+})
 
 const toggleVolumePanel = (): void => {
   isVolumePanelVisible.value = !isVolumePanelVisible.value
@@ -178,10 +183,11 @@ onBeforeUnmount(() => {
           <div v-if="playerStore.canAdjustVolume" ref="volumeControlRef" class="volume-control">
             <Transition name="volume-fade">
               <div v-if="isVolumePanelVisible" class="volume-popup">
-                <div class="volume-slider">
-                  <RangeSlider v-model="playerStore.volumePercent" :min="0" :max="100" :step="1" />
-                </div>
-                <span class="volume-value">{{ Math.round(playerStore.volumePercent) }}%</span>
+                <VolumeRow
+                  v-model="playerStore.volumePercent"
+                  :disabled="playerStore.sessionVolumeLocked"
+                  locked-hint="BitPerfect 直通中，音量将在下一曲生效"
+                />
               </div>
             </Transition>
             <button
@@ -494,7 +500,6 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 10px;
   padding: 10px 14px;
   /* 处于 .glass-morphism（自身有 backdrop-filter，构成 Backdrop Root）内部，
      子元素的 backdrop-filter 采样不到页面内容，因此用高不透明度表面代替毛玻璃 */
@@ -503,18 +508,6 @@ onBeforeUnmount(() => {
   border-radius: 14px;
   box-shadow: var(--sys-shadow-elevated);
   white-space: nowrap;
-}
-
-.volume-slider {
-  width: 120px;
-}
-
-.volume-value {
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--sys-text-secondary);
-  min-width: 36px;
-  text-align: right;
 }
 
 .volume-fade-enter-active,

@@ -79,9 +79,24 @@ pub(crate) struct SharedState {
     pub(crate) volume_bits: AtomicU32,
     /// BitPerfect 会话锁定音量为 1.0，set_volume 直接忽略。
     pub(crate) volume_locked: AtomicBool,
+    /// 输出设备在会话进行中消失（拔出/被系统移除）。仅由设备类流错误置位
+    ///（DeviceNotAvailable / StreamInvalidated / BackendSpecific 的 PCM 级
+    /// 错误），解码器/网络错误不置位——worker 据此区分“迁移到系统默认续播”
+    /// 与“会话异常终止”。
+    pub(crate) device_lost: AtomicBool,
 }
 
 pub(crate) const UNITY_VOLUME_BITS: u32 = 0x3F80_0000; // 1.0f32.to_bits()
+
+/// 所有音量写入的统一净化：clamp 会原样放行 NaN，非有限值（NaN/±inf）一律按
+/// 1.0 处理——驻留在音量位上会让软件音量静默失灵，直到下一次有效设置。
+pub(crate) fn sanitize_volume(volume: f32) -> f32 {
+    if volume.is_finite() {
+        volume.clamp(0.0, 1.0)
+    } else {
+        1.0
+    }
+}
 
 impl SharedState {
     pub(crate) fn schedule_seek(&self, target: Duration) {
@@ -179,15 +194,18 @@ impl SharedState {
         f32::from_bits(self.volume_bits.load(std::sync::atomic::Ordering::Relaxed))
     }
 
-    pub(crate) fn set_volume(&self, volume: f32) {
-        if self
-            .volume_locked
+    /// 当前会话是否被 BitPerfect 锁定为 1.0 直通。
+    pub(crate) fn volume_locked(&self) -> bool {
+        self.volume_locked
             .load(std::sync::atomic::Ordering::Relaxed)
-        {
+    }
+
+    pub(crate) fn set_volume(&self, volume: f32) {
+        if self.volume_locked() {
             return;
         }
         self.volume_bits.store(
-            volume.clamp(0.0, 1.0).to_bits(),
+            sanitize_volume(volume).to_bits(),
             std::sync::atomic::Ordering::Relaxed,
         );
     }
@@ -225,6 +243,7 @@ mod tests {
             waiting_for_seek: AtomicBool::new(false),
             volume_bits: AtomicU32::new(UNITY_VOLUME_BITS),
             volume_locked: AtomicBool::new(false),
+            device_lost: AtomicBool::new(false),
         }
     }
 
@@ -314,6 +333,12 @@ mod tests {
         assert_eq!(state.volume(), 1.0);
         state.set_volume(-1.0);
         assert_eq!(state.volume(), 0.0);
+
+        // NaN/±inf 由汇聚点统一按 1.0 处理，不得驻留进位存储。
+        state.set_volume(f32::NAN);
+        assert_eq!(state.volume(), 1.0);
+        state.set_volume(f32::INFINITY);
+        assert_eq!(state.volume(), 1.0);
 
         // BitPerfect 会话：锁定后音量维持创建时的值（1.0 直通）。
         state.set_volume(1.0);

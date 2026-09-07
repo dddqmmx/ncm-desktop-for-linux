@@ -56,6 +56,10 @@ export interface NativePlayerBinding {
   readonly progressMs: number
   readonly isPlaying: boolean
   readonly isBuffering: boolean
+  /** 当前会话实际生效的音量（0.0~1.0），渲染层轮询回读用作失步校对 */
+  readonly volume: number
+  /** 当前会话是否被严格 BitPerfect 锁定为 1.0 直通 */
+  readonly volumeLocked: boolean
   seek(time: number): void
   /** 应用级软件音量（0.0~1.0），仅影响本应用输出 */
   setVolume(volume: number): void

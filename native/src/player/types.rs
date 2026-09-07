@@ -111,6 +111,10 @@ pub struct AudioDeviceInfo {
     pub name: String,
     pub is_default: bool,
     pub is_current: bool,
+    /// 同一端点的全部 id 写法（含 id 本身；虚拟端点只有自身）。数字卡号写法
+    /// 在 USB 拔插后会漂移，渲染层做不了 /proc/asound 归一，持久化身份与激活
+    /// 匹配都要经这份别名表。
+    pub aliases: Vec<String>,
 }
 
 impl From<OutputDeviceInfo> for AudioDeviceInfo {
@@ -120,6 +124,7 @@ impl From<OutputDeviceInfo> for AudioDeviceInfo {
             name: value.name,
             is_default: value.is_default,
             is_current: value.is_current,
+            aliases: value.aliases,
         }
     }
 }

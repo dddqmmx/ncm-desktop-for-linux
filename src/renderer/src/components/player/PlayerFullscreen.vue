@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { formatCurrentSongArtists, isLocalSong, usePlayerStore } from '@renderer/stores/playerStore'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import LyricPanel from './LyricPanel.vue'
 import { colord } from 'colord'
@@ -9,6 +9,7 @@ import { extractColors } from 'extract-colors'
 import { useResolvedMediaUrl } from '@renderer/composables/useResolvedMediaUrl'
 import { useSeekControl } from '@renderer/composables/useSeekControl'
 import SongCover from '@renderer/components/media/SongCover.vue'
+import VolumeRow from '@renderer/components/common/VolumeRow.vue'
 import { useConfigStore } from '@renderer/stores/configStore'
 import { useFavoriteStore } from '@renderer/stores/favoriteStore'
 
@@ -17,7 +18,13 @@ const configStore = useConfigStore()
 const favoriteStore = useFavoriteStore()
 const router = useRouter()
 const imgRef = ref<HTMLImageElement | null>(null)
+const lyricPanelRef = ref<InstanceType<typeof LyricPanel> | null>(null)
 const resolvedCover = useResolvedMediaUrl(() => playerStore.currentSong?.cover)
+
+const handleFullscreenContextMenu = (e: MouseEvent): void => {
+  e.preventDefault()
+  lyricPanelRef.value?.cancelUserScroll()
+}
 
 // 响应式主题变量
 const theme = ref({
@@ -49,6 +56,36 @@ const { handleInput, handleSeek } = useSeekControl('FULLSCREEN')
 
 // --- 喜欢 / 播放顺序按钮（是否展示由设置控制） ---
 const isCurrentSongFavorite = computed(() => favoriteStore.isFavorite(playerStore.currentSongId))
+
+// --- 应用级软件音量 ---
+const isVolumePanelVisible = ref(false)
+const volumeControlRef = ref<HTMLElement | null>(null)
+
+const volumeTitle = computed(() => {
+  if (playerStore.sessionVolumeLocked) {
+    return 'BitPerfect 直通中，音量将在下一曲生效'
+  }
+  return `音量 ${Math.round(playerStore.volumePercent)}%`
+})
+
+const toggleVolumePanel = (): void => {
+  isVolumePanelVisible.value = !isVolumePanelVisible.value
+}
+
+const handleDocumentClick = (event: MouseEvent): void => {
+  if (!isVolumePanelVisible.value) return
+  if (volumeControlRef.value && !volumeControlRef.value.contains(event.target as Node)) {
+    isVolumePanelVisible.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleDocumentClick)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocumentClick)
+})
 
 const favoriteTitle = computed(() => {
   if (isCurrentSongLocal.value) return '本地音乐'
@@ -152,6 +189,7 @@ const onImageLoad = (): void => {
       '--btn-bg': theme.text,
       '--btn-text': theme.isDark ? '#000' : '#fff'
     }"
+    @contextmenu="handleFullscreenContextMenu"
   >
     <!-- 动态背景层 -->
     <div class="dynamic-background"></div>
@@ -285,6 +323,30 @@ const onImageLoad = (): void => {
               >
                 <AppIcon :name="playModeIcon" :size="20" />
               </button>
+
+              <!-- 应用级软件音量：全屏同样可达，否则退出全屏前音量完全不可调 -->
+              <div v-if="playerStore.canAdjustVolume" ref="volumeControlRef" class="volume-control">
+                <Transition name="volume-fade">
+                  <div v-if="isVolumePanelVisible" class="volume-popup">
+                    <VolumeRow
+                      v-model="playerStore.volumePercent"
+                      :disabled="playerStore.sessionVolumeLocked"
+                      locked-hint="BitPerfect 直通中，音量将在下一曲生效"
+                    />
+                  </div>
+                </Transition>
+                <button
+                  class="icon-btn secondary aux-btn"
+                  :class="{ active: isVolumePanelVisible }"
+                  :title="volumeTitle"
+                  @click.stop="toggleVolumePanel"
+                >
+                  <AppIcon
+                    :name="playerStore.volumePercent <= 0 ? 'volume-mute' : 'volume'"
+                    :size="20"
+                  />
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -292,6 +354,7 @@ const onImageLoad = (): void => {
         <!-- 右侧：歌词面板 -->
         <LyricPanel
           v-if="!isCurrentSongLocal"
+          ref="lyricPanelRef"
           :song-id="playerStore.currentSong?.id"
           :is-dark="theme.isDark"
         />
@@ -618,6 +681,51 @@ const onImageLoad = (): void => {
 .aux-btn:disabled {
   opacity: 0.25;
   cursor: default;
+}
+
+/* 音量控制（按钮与全屏按钮排同款风格，弹层对齐主题色变量） */
+.volume-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  -webkit-app-region: no-drag;
+}
+
+.volume-control .icon-btn.active {
+  opacity: 1;
+}
+
+.volume-popup {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--contrast-color);
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
+.volume-popup :deep(.volume-value) {
+  color: var(--text-color);
+}
+
+.volume-fade-enter-active,
+.volume-fade-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.volume-fade-enter-from,
+.volume-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(6px);
 }
 
 .favorite-btn.active {

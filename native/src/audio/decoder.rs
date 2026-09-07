@@ -645,6 +645,7 @@ mod tests {
             waiting_for_seek: AtomicBool::new(true),
             volume_bits: AtomicU32::new(crate::audio::state::UNITY_VOLUME_BITS),
             volume_locked: AtomicBool::new(false),
+            device_lost: AtomicBool::new(false),
         }
     }
 

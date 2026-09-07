@@ -246,12 +246,22 @@ export const usePlaybackStore = defineStore('playback', () => {
    */
   let ignoreDriftUntil = 0
 
-  // 进度 + 缓冲状态合并为一次 IPC 往返；preload 尚未提供合并接口时
+  // 进度 + 缓冲 + 会话音量状态合并为一次 IPC 往返；preload 尚未提供合并接口时
   //（开发期渲染层先于 preload 热更新、或测试桩）回退到两次并发调用。
-  const fetchPlaybackStatus = async (): Promise<{ progressMs: number; isBuffering: boolean }> => {
+  const fetchPlaybackStatus = async (): Promise<{
+    progressMs: number
+    isBuffering: boolean
+    volume?: number
+    volumeLocked?: boolean
+  }> => {
     if (typeof window.api.get_playback_status === 'function') {
       const status = await window.api.get_playback_status()
-      return { progressMs: status.progressMs, isBuffering: status.isBuffering === true }
+      return {
+        progressMs: status.progressMs,
+        isBuffering: status.isBuffering === true,
+        volume: typeof status.volume === 'number' ? status.volume : undefined,
+        volumeLocked: typeof status.volumeLocked === 'boolean' ? status.volumeLocked : undefined
+      }
     }
     const [progressMs, buffering] = await Promise.all([
       window.api.get_progress(),
@@ -263,8 +273,13 @@ export const usePlaybackStore = defineStore('playback', () => {
   const syncProgress = async (): Promise<void> => {
     try {
       const reqStart = performance.now()
-      const { progressMs: backendProgressMs, isBuffering: isBufferingNow } =
-        await fetchPlaybackStatus()
+      const {
+        progressMs: backendProgressMs,
+        isBuffering: isBufferingNow,
+        volume: sessionVolume,
+        volumeLocked: sessionVolumeLockedNow
+      } = await fetchPlaybackStatus()
+      reconcileSessionVolume(sessionVolume, sessionVolumeLockedNow)
       const reqEnd = performance.now()
       isBuffering.value = isBufferingNow
 
@@ -640,31 +655,95 @@ export const usePlaybackStore = defineStore('playback', () => {
     return configStore.volumePercent / 100
   })
 
+  // native 当前会话的锁定标记（严格 BitPerfect 开播即冻结），由进度轮询回读。
+  // 这是“此刻滑块拖动是否真的会生效”的唯一权威——设置层 canAdjustVolume 只
+  // 反映用户意图，会话层的锁定状态只有后端知道。锁定时滑块必须禁用，否则就是
+  // 一个拖了毫无反应的死滑块。
+  const sessionVolumeLocked = ref(false)
+
   // 滑块拖拽时每个 1% 步进都会触发本 watch；native 侧的 SetVolume 走完整
   // IPC→命令队列，逐帧下发纯属洪泛。本地 <audio> 音量保持即时，IPC 用
   // 尾沿节流合并到 ~80ms 一次。
-  let nativeVolumeSendTimer: number | undefined
+  const NATIVE_VOLUME_SEND_THROTTLE_MS = 80
+  let nativeVolumeSendTimer: ReturnType<typeof setTimeout> | undefined
   const sendNativeVolume = (volume: number): void => {
     if (typeof window.api?.set_volume !== 'function') return
     if (nativeVolumeSendTimer !== undefined) {
-      window.clearTimeout(nativeVolumeSendTimer)
+      clearTimeout(nativeVolumeSendTimer)
     }
-    nativeVolumeSendTimer = window.setTimeout(() => {
+    nativeVolumeSendTimer = setTimeout(() => {
       nativeVolumeSendTimer = undefined
-      window.api.set_volume(volume).catch((error) => {
+      void window.api.set_volume(volume).catch((error) => {
         console.warn('设置软件音量失败:', error)
       })
-    }, 80)
+    }, NATIVE_VOLUME_SEND_THROTTLE_MS)
+  }
+
+  /**
+   * 开播前的音量重播种：同步下发、不经节流。
+   *
+   * 节流版在拖拽场景合并事件，但开播前它反而致命——SetVolume 若晚于 Play
+   * 命令进队列，新会话就带着旧增益开播、80ms 后才被中途调整（一声爆音）。
+   * 同步发送保证 SetVolume 先于 Play 入队（同一条命令通道，顺序保留），
+   * worker 的 synced_volume 拿到最新值后再开新会话。中途关掉软件音量时
+   * watch 刻意不发 SetVolume（见下），当前会话保持既有增益，增益切换
+   * 全靠下一次开播时的这份播种。
+   */
+  const seedNativeVolumeForNewSession = (volume: number): void => {
+    if (typeof window.api?.set_volume !== 'function') return
+    if (nativeVolumeSendTimer !== undefined) {
+      clearTimeout(nativeVolumeSendTimer)
+      nativeVolumeSendTimer = undefined
+    }
+    void window.api.set_volume(volume).catch((error) => {
+      console.warn('设置软件音量失败:', error)
+    })
   }
 
   watch(
-    appliedVolume,
-    (volume) => {
+    [appliedVolume, () => configStore.canAdjustVolume],
+    ([volume, canAdjust], prev) => {
+      // WebAPI 引擎的 <audio>.volume 没有会话冻结概念，始终实时生效。
       webAudioEngine.setVolume(volume)
+
+      // 软件音量中途被关掉（或 BitPerfect 被打开）时不下发 SetVolume：独占/
+      // BitPerfect 本来就是开播即冻结、下一首才生效的选项，正在播的会话还
+      // 不是 BitPerfect，此刻把增益拉到 1.0 只会把当前曲目瞬间打到全音量——
+      // 一声爆响，而 BitPerfect 其实还什么都没生效。当前会话保持既有增益，
+      // 下一次开播由 seedNativeVolumeForNewSession 用新值播种。
+      // 反方向（重新开启软件音量）不抑制：音量只会变安静，用户预期就是
+      // 立即应用所选百分比。
+      const prevCanAdjust = prev?.[1] ?? canAdjust
+      if (!canAdjust && prevCanAdjust) return
+
       sendNativeVolume(volume)
     },
     { immediate: true }
   )
+
+  /**
+   * 进度轮询带回的会话音量回读：SetVolume 是 fire-and-forget，一次丢失就会让
+   * “界面 30%、实际 100%”的失步跨切歌、跨设备一直存在。这里拿会话实际生效值
+   * 做校对，失步即重发（带节流），并同步锁定标记供 UI 禁用滑块。
+   */
+  const reconcileSessionVolume = (
+    statusVolume: number | undefined,
+    statusVolumeLocked: boolean | undefined
+  ): void => {
+    if (typeof statusVolumeLocked === 'boolean') {
+      sessionVolumeLocked.value = statusVolumeLocked
+    }
+    if (
+      typeof statusVolume !== 'number' ||
+      !Number.isFinite(statusVolume) ||
+      sessionVolumeLocked.value
+    ) {
+      return
+    }
+    if (Math.abs(statusVolume - appliedVolume.value) > 0.005) {
+      sendNativeVolume(appliedVolume.value)
+    }
+  }
 
   const shouldUseWebEngine = computed(() => configStore.audioEngine === 'webapi')
   const isWebEngine = computed(() => shouldUseWebEngine.value && !isLocalSong(currentSong.value))
@@ -784,6 +863,10 @@ export const usePlaybackStore = defineStore('playback', () => {
       lastSyncedAt = performance.now()
       setLocalPlayerData(playableSong, false)
 
+      // 新会话开播前把最新音量同步给 worker（同步下发保证先于 Play 入队，
+      // 见 seedNativeVolumeForNewSession）。中途关掉的软件音量在这里生效——
+      // BitPerfect/独占这类开播即冻结的选项本来也是切歌时才切换的。
+      seedNativeVolumeForNewSession(appliedVolume.value)
       await withTimeout(
         window.api.play_file(
           playableSong.filePath,
@@ -947,6 +1030,10 @@ export const usePlaybackStore = defineStore('playback', () => {
       // 10. 执行底层播放指令
       const playbackSource = playbackCache.source
       const startTimeInSeconds = startTime / 1000
+      // 新会话开播前把最新音量同步给 worker（同步下发保证先于 Play 入队，
+      // 见 seedNativeVolumeForNewSession）。中途关掉的软件音量在这里生效——
+      // BitPerfect/独占这类开播即冻结的选项本来也是切歌时才切换的。
+      seedNativeVolumeForNewSession(appliedVolume.value)
       if (playbackSource.type === 'file') {
         // 情况 A: 命中本地文件缓存，直接播放文件
         await withTimeout(
@@ -1341,6 +1428,8 @@ export const usePlaybackStore = defineStore('playback', () => {
     bufferedPercent,
     duration,
     progressPercent,
+    /** 当前会话被 BitPerfect 锁定直通（开播即冻结）：此刻拖滑块不会生效 */
+    sessionVolumeLocked,
     playMusic,
     togglePlay,
     seek,

@@ -136,6 +136,7 @@ const handleUserScroll = (): void => {
   userScrollTimer = window.setTimeout(() => {
     isUserScrolling.value = false
     centeredLyricIndex.value = -1
+    scrollActiveLyricToCenter('smooth')
   }, 3000)
 }
 
@@ -152,6 +153,19 @@ const clearUserScrollState = (): void => {
     centeredLyricRaf = undefined
   }
 }
+
+const cancelUserScroll = (event?: Event): void => {
+  if (event) {
+    event.preventDefault()
+  }
+  if (!isUserScrolling.value) return
+  clearUserScrollState()
+  scrollActiveLyricToCenter('smooth')
+}
+
+defineExpose({
+  cancelUserScroll
+})
 
 // --- 手动滚动定位与跳转播放 ---
 
@@ -404,7 +418,7 @@ watch([showPronunciation, showTranslation], () => {
 </script>
 
 <template>
-  <section class="lyrics-panel" :style="themeVars">
+  <section class="lyrics-panel" :style="themeVars" @contextmenu="cancelUserScroll">
     <div v-if="lyricDebug" class="lyric-debug-hud">
       <div>clock(currentTime): {{ Math.round(playerStore.currentTime) }} ms</div>
       <div>
@@ -595,8 +609,9 @@ watch([showPronunciation, showTranslation], () => {
     black 80%,
     transparent 100%
   );
-  /* 启用硬件加速 */
+  /* 启用硬件加速与滚动吸附 */
   will-change: scroll-position;
+  scroll-snap-type: y mandatory;
 }
 
 .lyrics-panel.snapping .lyrics-scroll-container {
@@ -612,6 +627,8 @@ watch([showPronunciation, showTranslation], () => {
   padding: 10px 0;
   line-height: 1.4;
   text-align: center;
+  scroll-snap-align: center;
+  scroll-snap-stop: normal;
 
   /* 基础过渡，不包含 GPU 密集型属性 */
   transition:
