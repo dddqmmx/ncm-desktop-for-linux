@@ -283,69 +283,81 @@ const onImageLoad = (): void => {
               <span class="time-text">{{ formatTime(playerStore.duration) }}</span>
             </div>
 
-            <!-- 控制按钮 -->
+            <!-- 控制按钮：左右两侧是可选开关，中间是走带三键。
+                 用三列网格（1fr auto 1fr）而不是单个居中 flex 行——否则打开软件
+                 音量、喜欢、播放模式这些开关会让行宽变化，居中的播放键随之被挤偏。 -->
             <div class="btns-row">
-              <button
-                v-if="configStore.fullscreenShowFavorite"
-                class="icon-btn secondary aux-btn favorite-btn"
-                :class="{ active: isCurrentSongFavorite }"
-                :disabled="!playerStore.currentSong || isCurrentSongLocal"
-                :title="favoriteTitle"
-                @click="toggleCurrentFavorite"
-              >
-                <AppIcon :name="isCurrentSongFavorite ? 'heart-fill' : 'heart'" :size="20" />
-              </button>
-
-              <button class="icon-btn secondary" @click="playerStore.playPrev()">
-                <AppIcon name="prev" :size="24" />
-              </button>
-
-              <button
-                class="play-main-btn"
-                :class="`is-${playButtonState}`"
-                :disabled="playButtonState === 'loading'"
-                @click="playerStore.togglePlay"
-              >
-                <div v-if="playButtonState === 'loading'" class="loading-spinner"></div>
-                <AppIcon v-else-if="playButtonState === 'playing'" name="pause" :size="32" />
-                <AppIcon v-else name="play" :size="32" />
-              </button>
-
-              <button class="icon-btn secondary" @click="playerStore.playNext()">
-                <AppIcon name="next" :size="24" />
-              </button>
-
-              <button
-                v-if="configStore.fullscreenShowPlayMode"
-                class="icon-btn secondary aux-btn"
-                :title="playModeTitle"
-                @click="playerStore.togglePlayMode()"
-              >
-                <AppIcon :name="playModeIcon" :size="20" />
-              </button>
-
-              <!-- 应用级软件音量：全屏同样可达，否则退出全屏前音量完全不可调 -->
-              <div v-if="playerStore.canAdjustVolume" ref="volumeControlRef" class="volume-control">
-                <Transition name="volume-fade">
-                  <div v-if="isVolumePanelVisible" class="volume-popup">
-                    <VolumeRow
-                      v-model="playerStore.volumePercent"
-                      :disabled="playerStore.sessionVolumeLocked"
-                      locked-hint="BitPerfect 直通中，音量将在下一曲生效"
-                    />
-                  </div>
-                </Transition>
+              <div class="btns-side btns-side-left">
                 <button
-                  class="icon-btn secondary aux-btn"
-                  :class="{ active: isVolumePanelVisible }"
-                  :title="volumeTitle"
-                  @click.stop="toggleVolumePanel"
+                  v-if="configStore.fullscreenShowFavorite"
+                  class="icon-btn secondary aux-btn favorite-btn"
+                  :class="{ active: isCurrentSongFavorite }"
+                  :disabled="!playerStore.currentSong || isCurrentSongLocal"
+                  :title="favoriteTitle"
+                  @click="toggleCurrentFavorite"
                 >
-                  <AppIcon
-                    :name="playerStore.volumePercent <= 0 ? 'volume-mute' : 'volume'"
-                    :size="20"
-                  />
+                  <AppIcon :name="isCurrentSongFavorite ? 'heart-fill' : 'heart'" :size="20" />
                 </button>
+              </div>
+
+              <div class="btns-transport">
+                <button class="icon-btn secondary" @click="playerStore.playPrev()">
+                  <AppIcon name="prev" :size="24" />
+                </button>
+
+                <button
+                  class="play-main-btn"
+                  :class="`is-${playButtonState}`"
+                  :disabled="playButtonState === 'loading'"
+                  @click="playerStore.togglePlay"
+                >
+                  <div v-if="playButtonState === 'loading'" class="loading-spinner"></div>
+                  <AppIcon v-else-if="playButtonState === 'playing'" name="pause" :size="32" />
+                  <AppIcon v-else name="play" :size="32" />
+                </button>
+
+                <button class="icon-btn secondary" @click="playerStore.playNext()">
+                  <AppIcon name="next" :size="24" />
+                </button>
+              </div>
+
+              <div class="btns-side btns-side-right">
+                <button
+                  v-if="configStore.fullscreenShowPlayMode"
+                  class="icon-btn secondary aux-btn"
+                  :title="playModeTitle"
+                  @click="playerStore.togglePlayMode()"
+                >
+                  <AppIcon :name="playModeIcon" :size="20" />
+                </button>
+
+                <!-- 应用级软件音量：全屏同样可达，否则退出全屏前音量完全不可调 -->
+                <div
+                  v-if="playerStore.canAdjustVolume"
+                  ref="volumeControlRef"
+                  class="volume-control"
+                >
+                  <Transition name="volume-fade">
+                    <div v-if="isVolumePanelVisible" class="volume-popup">
+                      <VolumeRow
+                        v-model="playerStore.volumePercent"
+                        :disabled="playerStore.sessionVolumeLocked"
+                        locked-hint="BitPerfect 直通中，音量将在下一曲生效"
+                      />
+                    </div>
+                  </Transition>
+                  <button
+                    class="icon-btn secondary aux-btn"
+                    :class="{ active: isVolumePanelVisible }"
+                    :title="volumeTitle"
+                    @click.stop="toggleVolumePanel"
+                  >
+                    <AppIcon
+                      :name="playerStore.volumePercent <= 0 ? 'volume-mute' : 'volume'"
+                      :size="20"
+                    />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -615,11 +627,38 @@ const onImageLoad = (): void => {
 }
 
 .btns-row {
+  /* 三列：两侧开关列等宽（minmax(0, 1fr)），中间走带列按内容宽度。播放键的
+     中心由网格决定，与两侧开关的数量、是否显示无关。
+     两侧列间距比走带三键（40px）小：450px 的控件宽度里要塞下两侧开关，
+     等宽列 + 40px 列间距会把右侧音量键挤出容器。 */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 24px;
+}
+
+.btns-side {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 24px;
+  min-width: 0;
+}
+
+/* 开关列向中间靠拢，视觉上仍紧贴走带键 */
+.btns-side-left {
+  justify-content: flex-end;
+}
+
+.btns-side-right {
+  justify-content: flex-start;
+}
+
+.btns-transport {
+  display: flex;
+  align-items: center;
   gap: 40px;
 }
+
 .btns-row button {
   -webkit-app-region: no-drag;
 }
