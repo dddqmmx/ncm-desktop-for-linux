@@ -107,6 +107,8 @@ interface CustomApi {
   close_settings_window: () => Promise<unknown>
   open_dialog_window: (options: DialogWindowOptions) => Promise<boolean>
   get_app_info: () => Promise<AppInfo>
+  /** 让主窗口底色跟随当前主题（页面透明，窗口底色会从边缘缝隙透出） */
+  set_window_background: (color: string) => Promise<void>
   select_library_folder: () => Promise<string | null>
   scan_library_folders: (paths: string[]) => Promise<LibraryScanResult>
   check_library_files: (paths: string[]) => Promise<LibraryFileCheckResult>

@@ -80,6 +80,7 @@ const api = {
   close_settings_window: invoke('ui:closeSettingsWindow'),
   open_dialog_window: invoke('ui:openDialogWindow'),
   get_app_info: invoke('ui:getAppInfo'),
+  set_window_background: invoke('ui:setWindowBackground'),
 
   // 本地曲库
   select_library_folder: (): Promise<unknown> => ipcRenderer.invoke('library:selectFolder'),

@@ -22,6 +22,11 @@ function createWindow(): BrowserWindow {
     minHeight: 960,
     show: false,
     frame: false,
+    // 页面 html/body 是透明的（玻璃材质需要），窗口自身底色于是会从边缘的
+    // 亚像素缝里透出来——Electron 默认是纯白，表现就是贴着上沿的一条白边。
+    // 这里给暗色底做初值，渲染层拿到当前主题后经 ui:setWindowBackground 对齐；
+    // 不设的话首帧还会闪一下白。
+    backgroundColor: '#101217',
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon: iconPath } : {}),
     webPreferences: {
