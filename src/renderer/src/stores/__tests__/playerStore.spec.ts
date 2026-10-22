@@ -3,6 +3,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { useConfigStore } from '../configStore'
 import { usePlaybackStore } from '../player/playback'
 import { usePlayerStore } from '../playerStore'
+import type { CurrentSong } from '@renderer/types/player'
 
 class MemoryStorage implements Storage {
   private readonly store = new Map<string, string>()
@@ -1091,5 +1092,346 @@ describe('playerStore device switch sequencing', () => {
     await new Promise((resolve) => setTimeout(resolve, 150))
 
     expect(setVolumeCalls).toContain(0.3)
+  })
+
+  /**
+   * 快速连点「播放全部」：第一次点击的请求还在途中（目标歌已乐观显示在 UI 上、
+   * 尚未装载），第二次点击同一目标时**不得**把这次请求当成"已装载且已暂停"
+   * 去 resume —— 那样续上的是上一首，界面切了歌、声音还是旧歌。
+   *
+   * 不变式：只有「引擎里装载的正是这首歌、且没有请求在途」才允许恢复播放。
+   */
+  it('plays the newly targeted song instead of resuming the old session on a second rapid playAll', async () => {
+    const calls: string[] = []
+    let releaseUrlFetch: (() => void) | undefined
+    let urlFetchGate: Promise<void> | undefined
+
+    const makeSong = (id: number): CurrentSong => ({
+      id,
+      name: `Song ${id}`,
+      artists: [{ id: 1, name: 'Artist' }],
+      cover: 'cover',
+      duration: 180000
+    })
+
+    vi.stubGlobal(
+      'setInterval',
+      vi.fn(() => 1 as unknown as ReturnType<typeof setInterval>)
+    )
+    vi.stubGlobal('clearInterval', vi.fn())
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        song_detail: vi.fn(async ({ ids }: { ids: number[] }) => ({
+          body: {
+            songs: [
+              {
+                id: ids[0],
+                name: `Song ${ids[0]}`,
+                dt: 180000,
+                ar: [{ id: 1, name: 'Artist' }],
+                al: { id: 1, name: 'Album', picUrl: 'cover' },
+                h: null,
+                sq: null,
+                hr: null
+              }
+            ],
+            privileges: [{ id: ids[0], playMaxBrLevel: 'standard', chargeInfoList: [] }]
+          }
+        })),
+        song_url: vi.fn(async ({ id }: { id: number }) => {
+          // 第一次点「播放全部」时把 URL 请求卡住，制造"请求在途、目标歌尚未装载"的窗口
+          if (urlFetchGate) {
+            const gate = urlFetchGate
+            urlFetchGate = undefined
+            await gate
+          }
+          return { body: { data: [{ url: `https://example.com/${id}.mp3`, level: 'standard' }] } }
+        }),
+        prepare_cached_song_source: vi.fn(async ({ songId }: { songId: number }) => ({
+          type: 'file',
+          value: `/tmp/${songId}.flac`
+        })),
+        get_output_devices: vi.fn(async () => [
+          { id: 'default', name: 'System Default', isDefault: true, isCurrent: true }
+        ]),
+        switch_output_device: vi.fn(async () => undefined),
+        stop: vi.fn(async () => {
+          calls.push('stop')
+        }),
+        play_file: vi.fn(async (path: string) => {
+          calls.push(`play_file:${path}`)
+        }),
+        resume: vi.fn(async () => {
+          calls.push('resume')
+        }),
+        get_progress: vi.fn(async () => 0),
+        is_buffering: vi.fn(async () => false),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 0 })),
+        wait_finished: vi.fn(() => new Promise(() => undefined))
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+
+    await playerStore.playMusic(1)
+    expect(calls).toContain('play_file:/tmp/1.flac')
+
+    urlFetchGate = new Promise<void>((resolve) => {
+      releaseUrlFetch = resolve
+    })
+    const firstClick = playerStore.playAll([makeSong(2)])
+    // UI 已经显示第二首（loading 期间列表要立即高亮），但引擎里仍是第一首
+    for (let i = 0; i < 500 && playerStore.currentSongId !== 2; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    expect(playerStore.currentSongId).toBe(2)
+
+    await playerStore.playAll([makeSong(2)])
+    releaseUrlFetch?.()
+    await firstClick
+
+    expect(calls).toContain('play_file:/tmp/2.flac')
+    expect(calls).not.toContain('resume')
+    expect(playerStore.currentSongId).toBe(2)
+    expect(playerStore.isPlaying).toBe(true)
+  })
+
+  /**
+   * 被取代的开播请求不得回写任何 UI 状态：它在 await 之后才发现自己过期，
+   * 如果继续写 currentSong / isPlaying，界面就会停在那个已经没人要的歌上。
+   */
+  it('drops a superseded playback request instead of writing its song to the UI', async () => {
+    let releaseDetail: (() => void) | undefined
+    let detailGate: Promise<void> | undefined
+    const played: string[] = []
+
+    vi.stubGlobal(
+      'setInterval',
+      vi.fn(() => 1 as unknown as ReturnType<typeof setInterval>)
+    )
+    vi.stubGlobal('clearInterval', vi.fn())
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        song_detail: vi.fn(async ({ ids }: { ids: number[] }) => {
+          // 第二首的详情请求被卡住，期间用户又点了第三首
+          if (ids[0] === 2 && detailGate) {
+            const gate = detailGate
+            detailGate = undefined
+            await gate
+          }
+          return {
+            body: {
+              songs: [
+                {
+                  id: ids[0],
+                  name: `Song ${ids[0]}`,
+                  dt: 180000,
+                  ar: [{ id: 1, name: 'Artist' }],
+                  al: { id: 1, name: 'Album', picUrl: 'cover' },
+                  h: null,
+                  sq: null,
+                  hr: null
+                }
+              ],
+              privileges: [{ id: ids[0], playMaxBrLevel: 'standard', chargeInfoList: [] }]
+            }
+          }
+        }),
+        song_url: vi.fn(async ({ id }: { id: number }) => ({
+          body: { data: [{ url: `https://example.com/${id}.mp3`, level: 'standard' }] }
+        })),
+        prepare_cached_song_source: vi.fn(async ({ songId }: { songId: number }) => ({
+          type: 'file',
+          value: `/tmp/${songId}.flac`
+        })),
+        get_output_devices: vi.fn(async () => [
+          { id: 'default', name: 'System Default', isDefault: true, isCurrent: true }
+        ]),
+        switch_output_device: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        play_file: vi.fn(async (path: string) => {
+          played.push(path)
+        }),
+        resume: vi.fn(async () => undefined),
+        get_progress: vi.fn(async () => 0),
+        is_buffering: vi.fn(async () => false),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 0 })),
+        wait_finished: vi.fn(() => new Promise(() => undefined))
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+
+    detailGate = new Promise<void>((resolve) => {
+      releaseDetail = resolve
+    })
+    const superseded = playerStore.playMusic(2)
+    await Promise.resolve()
+
+    await playerStore.playMusic(3)
+    expect(playerStore.currentSongId).toBe(3)
+
+    releaseDetail?.()
+    await superseded
+
+    expect(playerStore.currentSongId).toBe(3)
+    expect(playerStore.currentSong?.name).toBe('Song 3')
+    expect(played).toEqual(['/tmp/3.flac'])
+  })
+
+  /**
+   * 用户点停止时若正好有一次开播请求在途中，请求完成也不能把歌重新播起来。
+   * 停止必须先作废会话，再 await 引擎停止。
+   */
+  it('does not let an in-flight start resurrect playback after stop', async () => {
+    let releaseDetail: (() => void) | undefined
+    let detailGate: Promise<void> | undefined
+    const played: string[] = []
+
+    vi.stubGlobal(
+      'setInterval',
+      vi.fn(() => 1 as unknown as ReturnType<typeof setInterval>)
+    )
+    vi.stubGlobal('clearInterval', vi.fn())
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        song_detail: vi.fn(async ({ ids }: { ids: number[] }) => {
+          if (detailGate) {
+            const gate = detailGate
+            detailGate = undefined
+            await gate
+          }
+          return {
+            body: {
+              songs: [
+                {
+                  id: ids[0],
+                  name: `Song ${ids[0]}`,
+                  dt: 180000,
+                  ar: [{ id: 1, name: 'Artist' }],
+                  al: { id: 1, name: 'Album', picUrl: 'cover' },
+                  h: null,
+                  sq: null,
+                  hr: null
+                }
+              ],
+              privileges: [{ id: ids[0], playMaxBrLevel: 'standard', chargeInfoList: [] }]
+            }
+          }
+        }),
+        song_url: vi.fn(async ({ id }: { id: number }) => ({
+          body: { data: [{ url: `https://example.com/${id}.mp3`, level: 'standard' }] }
+        })),
+        prepare_cached_song_source: vi.fn(async ({ songId }: { songId: number }) => ({
+          type: 'file',
+          value: `/tmp/${songId}.flac`
+        })),
+        get_output_devices: vi.fn(async () => [
+          { id: 'default', name: 'System Default', isDefault: true, isCurrent: true }
+        ]),
+        switch_output_device: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        play_file: vi.fn(async (path: string) => {
+          played.push(path)
+        }),
+        resume: vi.fn(async () => undefined),
+        get_progress: vi.fn(async () => 0),
+        is_buffering: vi.fn(async () => false),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 0 })),
+        wait_finished: vi.fn(() => new Promise(() => undefined))
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+
+    detailGate = new Promise<void>((resolve) => {
+      releaseDetail = resolve
+    })
+    const pending = playerStore.playMusic(1)
+    await Promise.resolve()
+
+    await playerStore.stopMusic()
+    releaseDetail?.()
+    await pending
+
+    expect(played).toEqual([])
+    expect(playerStore.currentSongId).toBeNull()
+    expect(playerStore.isPlaying).toBe(false)
+  })
+
+  it('still resumes a genuinely paused song without reloading it', async () => {
+    const playFile = vi.fn(async () => undefined)
+    const resume = vi.fn(async () => undefined)
+    const pause = vi.fn(async () => undefined)
+
+    vi.stubGlobal(
+      'setInterval',
+      vi.fn(() => 1 as unknown as ReturnType<typeof setInterval>)
+    )
+    vi.stubGlobal('clearInterval', vi.fn())
+    vi.stubGlobal('window', {
+      requestAnimationFrame: vi.fn(() => 1),
+      cancelAnimationFrame: vi.fn(),
+      api: {
+        song_detail: vi.fn(async ({ ids }: { ids: number[] }) => ({
+          body: {
+            songs: [
+              {
+                id: ids[0],
+                name: `Song ${ids[0]}`,
+                dt: 180000,
+                ar: [{ id: 1, name: 'Artist' }],
+                al: { id: 1, name: 'Album', picUrl: 'cover' },
+                h: null,
+                sq: null,
+                hr: null
+              }
+            ],
+            privileges: [{ id: ids[0], playMaxBrLevel: 'standard', chargeInfoList: [] }]
+          }
+        })),
+        song_url: vi.fn(async ({ id }: { id: number }) => ({
+          body: { data: [{ url: `https://example.com/${id}.mp3`, level: 'standard' }] }
+        })),
+        prepare_cached_song_source: vi.fn(async ({ songId }: { songId: number }) => ({
+          type: 'file',
+          value: `/tmp/${songId}.flac`
+        })),
+        get_output_devices: vi.fn(async () => [
+          { id: 'default', name: 'System Default', isDefault: true, isCurrent: true }
+        ]),
+        switch_output_device: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        play_file: playFile,
+        pause,
+        resume,
+        get_progress: vi.fn(async () => 5_000),
+        is_buffering: vi.fn(async () => false),
+        get_cached_song_progress: vi.fn(async () => ({ percent: 0 })),
+        wait_finished: vi.fn(() => new Promise(() => undefined))
+      }
+    } as unknown as Window & typeof globalThis)
+
+    const playerStore = usePlayerStore()
+
+    await playerStore.playMusic(1)
+    expect(playFile).toHaveBeenCalledTimes(1)
+
+    await playerStore.togglePlay()
+    expect(pause).toHaveBeenCalledTimes(1)
+    expect(playerStore.isPlaying).toBe(false)
+
+    await playerStore.playMusic(1)
+
+    // 同一会话恢复：不重新装载，只 resume
+    expect(playFile).toHaveBeenCalledTimes(1)
+    expect(resume).toHaveBeenCalledTimes(1)
+    expect(playerStore.isPlaying).toBe(true)
   })
 })

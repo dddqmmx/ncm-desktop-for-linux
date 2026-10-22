@@ -16,6 +16,7 @@ import { preparePlaybackCache, startPlaybackBackgroundCache } from '@renderer/ut
 import { createCurrentSongArtists, normalizeCurrentSong } from './utils'
 import { isSoundQualityLevel, getFallbackQualities } from './quality'
 import { webAudioEngine } from './webAudioEngine'
+import { PlaybackSessionTracker, type PlayAttempt } from './playbackSession'
 
 function loadPersistedCurrentSong(): CurrentSong | null {
   try {
@@ -33,15 +34,25 @@ export const usePlaybackStore = defineStore('playback', () => {
   const currentSongId = ref<number | null>(Number(localStorage.getItem('currentSongId')) || null)
   const currentTime = ref(Number(localStorage.getItem('currentTime') || 0))
   const isPlaying = ref(false)
-  const isHistorySong = ref(true)
   const isSeeking = ref(false)
   const isBuffering = ref(false)
-  const isSwitching = ref(false)
   const isLoading = ref(false)
   // [调试] 后端上报的原始播放位置（未经媒体时钟处理），用于定位延迟到底卡在哪一环
   const rawProgressMs = ref(0)
   const playbackError = ref('')
   const bufferedPercent = ref(0)
+
+  // 会话身份的唯一权威：哪首歌真正装载在引擎里、是否有请求在途。
+  // isHistorySong / isSwitching 都从它派生，不再各自维护布尔标志——两个标志
+  // 由不同代码路径分别赋值时总有先后顺序，任何一次"目标歌已是 currentSongId
+  // 但还没装载"的交集都会被读成"目标歌已装载且已暂停"，于是 resume 到上一首。
+  const session = new PlaybackSessionTracker()
+  /** UI 正在显示一首尚未装载进引擎的歌（历史回放 / 已停止 / 播完）。 */
+  const isHistorySong = computed(
+    () => session.loadedSongId === null || session.loadedSongId !== currentSongId.value
+  )
+  /** 切换中：有播放请求在途。 */
+  const isSwitching = computed(() => session.isBusy)
 
   const userStore = useUserStore()
   const configStore = useConfigStore()
@@ -53,7 +64,6 @@ export const usePlaybackStore = defineStore('playback', () => {
   let lastSyncedProgressMs = currentTime.value
   let lastSyncedAt = performance.now()
   let lastPersistedCurrentTime = Math.floor(currentTime.value)
-  let playToken = 0
   let activeCacheMetadataPath = ''
   let lastCachePlaybackPositionMs = -1
   let pendingCachePlaybackPositionMs: number | null = null
@@ -224,7 +234,8 @@ export const usePlaybackStore = defineStore('playback', () => {
     playbackError.value = message
     resetPlaybackLoadState()
     isPlaying.value = false
-    isHistorySong.value = true
+    // 引擎里的会话已经不可用：作废在途请求，也别让下一次点击把它当成可恢复会话。
+    session.clear()
     stopTimer()
 
     try {
@@ -587,43 +598,53 @@ export const usePlaybackStore = defineStore('playback', () => {
    * 异步等待当前音频播放结束。底层会返回会话结束的原因，
    * 不再依赖“进度是否接近时长”的启发式来区分自然播完与中断。
    * @param songId 触发等待时的歌曲 ID
-   * @param token 触发等待时的播放请求 token
+   * @param attempt 触发等待时的播放请求
    */
-  const waitForEnd = async (songId: number, token: number): Promise<void> => {
+  const waitForEnd = async (songId: number, attempt: PlayAttempt): Promise<void> => {
     try {
       // 阻塞式等待底层播放会话结束，返回结束原因
       const reason = await window.api.wait_finished()
 
-      // 验证环境：如果 token 或歌曲 ID 已变，说明此监听已过期，不触发自动切换
-      if (token !== playToken) return
-      if (isSwitching.value) return
+      // 验证环境：请求已被后来的播放取代、或歌曲 ID 已变，说明此监听已过期
+      if (!session.isCurrent(attempt)) return
+      if (session.isBusy) return
       if (currentSongId.value !== songId) return
 
-      // 主动 Stop / 被新播放替换 / 通道中断：不是这首歌的自然终点，由发起方负责后续
+      // 主动 Stop / 被新播放替换 / 通道中断：不是这首歌的自然终点，由发起方负责后续。
+      // 这些原因下都不能 clear——"被替换"意味着新会话已经在路上，清了就把它的
+      // 装载身份一起抹掉。
       if (reason !== 'ended' && reason !== 'error') return
 
       if (reason === 'error') {
+        // 失败同样终结会话（stopAfterPlaybackFailure 内部会 clear）。
         await stopAfterPlaybackFailure('播放中断，请检查网络连接或音频输出设备是否已断开。')
         return
       }
 
-      // 播放结束后的状态清理
-      isPlaying.value = false
-      isHistorySong.value = true
-      resetPlaybackLoadState()
-      stopTimer()
-      currentTime.value = duration.value
-      bufferedPercent.value = 100
-
-      // 自动播放下一首
-      await syncSongCachePlaybackPosition(duration.value)
-      await playNext(true)
+      await finishNaturalEnd()
     } catch {
       // 播放中断或 API 调用失败，通常不处理
     }
   }
 
   // --- 公开操作 (Actions) ---
+
+  /**
+   * 自然播完后的收尾：会话终结、进度钉在结尾、自动切下一首。native 的
+   * waitForEnd 与 WebAPI 的 onEnded 共用，避免两份清理各自漂移——这两处曾经
+   * 分别维护，改动一边就出现「一边自动切歌、另一边不切」。
+   */
+  const finishNaturalEnd = async (): Promise<void> => {
+    isPlaying.value = false
+    // 会话已自然播完：引擎里不再有可恢复的会话（派生 isHistorySong）。
+    session.clear()
+    resetPlaybackLoadState()
+    stopTimer()
+    currentTime.value = duration.value
+    bufferedPercent.value = 100
+    await syncSongCachePlaybackPosition(duration.value)
+    await playNext(true)
+  }
 
   /**
    * 确保输出设备就绪并按实际生效的端点算独占/BitPerfect 选项。
@@ -749,20 +770,48 @@ export const usePlaybackStore = defineStore('playback', () => {
   const isWebEngine = computed(() => shouldUseWebEngine.value && !isLocalSong(currentSong.value))
 
   /**
+   * 一次开播的公共入口：作废在途请求（最后一次点击生效）、亮 loading、清掉
+   * 上一首的后台缓存。三条引擎路径（native 网络 / 本地文件 / WebAPI）都从这里
+   * 进入——「begin + loading + cancel」三连散落在各处时，任何一处漏掉都会让恢复
+   * 分支看到一个"已装载但暂停"的假象。
+   */
+  const beginPlaybackAttempt = async (
+    songId: number,
+    startTime: number,
+    initialBufferedPercent: number
+  ): Promise<PlayAttempt> => {
+    const attempt = session.begin(songId)
+    beginPlaybackLoadState(startTime)
+    isPlaying.value = false
+    bufferedPercent.value = initialBufferedPercent
+    await cancelActiveSongCacheDownload()
+    return attempt
+  }
+
+  /**
+   * 把一次成功的开播落到状态上：先 `commit`（确认请求仍是最新的、并把这首歌记为
+   * 「已装载」），再执行状态写入。顺序写反会让过期请求把新会话的装载身份改掉；
+   * 漏掉 commit 则 isHistorySong 永远为 true，下一次点击会重新开播而不是恢复。
+   * 返回 false 表示这次请求已被取代，调用方必须直接返回。
+   */
+  const commitPlaybackStart = (attempt: PlayAttempt, apply: () => void): boolean => {
+    if (!session.commit(attempt)) return false
+    apply()
+    return true
+  }
+
+  /**
    * WebAPI 引擎播放：作为 native 引擎的对照路径，底层走 <audio> + 浏览器内置缓冲。
    * 复用缓存系统，优先播放已缓存的本地文件；未命中缓存时由浏览器拉取网络 URL，
    * 同时后台启动边播边存。
    */
   const playWithWebEngine = async (song_id: number, startTime: number): Promise<void> => {
-    playToken++
-    const currentToken = playToken
-    isSwitching.value = true
-    beginPlaybackLoadState(startTime)
-    isPlaying.value = false
-    bufferedPercent.value = 0
-    await cancelActiveSongCacheDownload()
+    const attempt = await beginPlaybackAttempt(song_id, startTime, 0)
 
     try {
+      // begin 到这里的 await 期间可能已有更新的请求：它的会话正被建立，
+      // 这次过期请求不许再去 stop 别人的引擎。
+      if (!session.isCurrent(attempt)) return
       // 关掉 native 输出，避免两套引擎同时出声
       try {
         await window.api.stop()
@@ -771,14 +820,14 @@ export const usePlaybackStore = defineStore('playback', () => {
       }
 
       const detailData = await getSongDetailData(song_id)
-      if (currentToken !== playToken) return
+      if (!session.isCurrent(attempt)) return
       if (!detailData) throw new Error('无法获取歌曲详情')
 
       currentTime.value = startTime
       setPlayerData(detailData.song, false)
 
       const songUrl = await fetchSongUrl(song_id, configStore.soundQuality)
-      if (currentToken !== playToken) return
+      if (!session.isCurrent(attempt)) return
       if (!songUrl.url) {
         console.warn(
           `[playback] fetchSongUrl 返回空 URL: song_id=${song_id}, level=${configStore.soundQuality}, cookie=${userStore.cookie ? '已设置' : '未设置（未登录）'}`
@@ -792,19 +841,21 @@ export const usePlaybackStore = defineStore('playback', () => {
         songUrl,
         detailData.song.dt
       )
-      if (currentToken !== playToken) return
+      if (!session.isCurrent(attempt)) return
       await activatePlaybackCache(playbackCache, song_id)
 
       await webAudioEngine.load(playbackCache.source, startTime / 1000)
-      if (currentToken !== playToken) {
+      if (!session.isCurrent(attempt)) {
         webAudioEngine.stop()
         return
       }
 
-      setPlayerData(detailData.song, true)
-      isHistorySong.value = false
-      currentTime.value = startTime
-      resetPlaybackLoadState()
+      const committed = commitPlaybackStart(attempt, () => {
+        setPlayerData(detailData.song, true)
+        currentTime.value = startTime
+        resetPlaybackLoadState()
+      })
+      if (!committed) return
 
       const exists = playlistStore.playlist.some((s) => s.id === song_id)
       if (!exists) {
@@ -817,46 +868,39 @@ export const usePlaybackStore = defineStore('playback', () => {
         })
       }
     } catch (error) {
-      if (currentToken === playToken) {
+      if (session.isCurrent(attempt)) {
         console.error('WebAPI 播放失败:', error)
         playbackError.value = error instanceof Error ? error.message : '音乐播放失败。'
         webAudioEngine.stop()
         isPlaying.value = false
-        isHistorySong.value = true
+        session.clear()
         resetPlaybackLoadState()
         stopTimer()
         await cancelActiveSongCacheDownload()
-      }
-    } finally {
-      if (currentToken === playToken) {
-        isSwitching.value = false
       }
     }
   }
 
   const playLocalSong = async (song: LocalSong, startTime: number): Promise<void> => {
-    playToken++
-    const currentToken = playToken
-    isSwitching.value = true
-    beginPlaybackLoadState(startTime)
-    bufferedPercent.value = 100
-    await cancelActiveSongCacheDownload()
+    const attempt = await beginPlaybackAttempt(song.id, startTime, 100)
 
     try {
+      // 过期请求不许停下更新请求正在建立的会话。
+      if (!session.isCurrent(attempt)) return
       webAudioEngine.stop()
       try {
         await window.api.stop()
       } catch {
         // ignore
       }
-      if (currentToken !== playToken) return
+      if (!session.isCurrent(attempt)) return
 
       // 用实际生效的端点算独占/BitPerfect（见 resolveActiveOutputOptions）。
       const { outputOptions } = await resolveActiveOutputOptions()
-      if (currentToken !== playToken) return
+      if (!session.isCurrent(attempt)) return
 
       const playableSong = await resolveLocalSongDuration(song)
-      if (currentToken !== playToken) return
+      if (!session.isCurrent(attempt)) return
 
       currentTime.value = startTime
       lastSyncedProgressMs = startTime
@@ -877,22 +921,19 @@ export const usePlaybackStore = defineStore('playback', () => {
         PLAYBACK_OPERATION_TIMEOUT_MS,
         '本地音乐播放启动超时'
       )
-      if (currentToken !== playToken) return
 
-      setLocalPlayerData(playableSong, true)
-      isHistorySong.value = false
-      currentTime.value = startTime
-      playlistStore.addToPlaylist(playableSong)
-      void waitForEnd(playableSong.id, currentToken)
+      const committed = commitPlaybackStart(attempt, () => {
+        setLocalPlayerData(playableSong, true)
+        currentTime.value = startTime
+        playlistStore.addToPlaylist(playableSong)
+        void waitForEnd(playableSong.id, attempt)
+      })
+      if (!committed) return
     } catch (error) {
-      if (currentToken === playToken) {
+      if (session.isCurrent(attempt)) {
         console.error('播放本地音乐失败:', error)
         const message = error instanceof Error ? error.message : '本地音乐播放失败。'
         await stopAfterPlaybackFailure(message)
-      }
-    } finally {
-      if (currentToken === playToken) {
-        isSwitching.value = false
       }
     }
   }
@@ -908,8 +949,11 @@ export const usePlaybackStore = defineStore('playback', () => {
     startTime: number = 0,
     forceRestart: boolean = false
   ): Promise<void> => {
-    // 1. 状态检查：如果是当前正在播放的同一首歌，且没有强制重启，则直接返回
-    if (!forceRestart && currentSongId.value === song_id && isPlaying.value) {
+    // 1. 状态检查：引擎里装载的正是这首歌且此刻正在播放，且没有强制重启，则直接返回。
+    // 判断依据是「引擎里装载的那首」而不是 UI 的 currentSongId：后者在切歌流程
+    // 一开始就被乐观改成目标歌了（loading 期间列表要高亮），拿它判断会把上一首的
+    // 会话错认成目标歌。
+    if (!forceRestart && session.loadedSongId === song_id && isPlaying.value) {
       return
     }
 
@@ -935,36 +979,39 @@ export const usePlaybackStore = defineStore('playback', () => {
     console.log(`开始播放歌曲 ID ${song_id}，起始时间 ${startTime}ms，强制重启: ${forceRestart}`)
 
     // 2. 准备开始切换流程
-    // 允许新任务中断正在进行的旧任务。我们通过 playToken 来标识每个任务的唯一性。
-    playToken++
-    const currentToken = playToken
-    isSwitching.value = true
-    // 先亮 loading，再做 cancel/网络请求，避免 UI 在长等待里完全无反馈
-    beginPlaybackLoadState(startTime)
-    isPlaying.value = false
-    bufferedPercent.value = 0
-    await cancelActiveSongCacheDownload()
+    // 可恢复性必须在 begin 之前取样：begin 立刻把这次请求标为在途，而在途请求
+    // 期间旧会话随时可能被它替换（native stop + 重开），不能再 resume。
+    const resumable = !forceRestart && !isPlaying.value && session.canResume(song_id)
+    // 允许新任务中断正在进行的旧任务：begin 作废此前所有在途请求（最后一次点击
+    // 生效），同时让 isSwitching 立即为真、可恢复会话立即失效。
+    const attempt = await beginPlaybackAttempt(song_id, startTime, 0)
 
     try {
-      // 3. 继续播放逻辑：如果是同一首歌但处于暂停状态，且非历史回放，直接恢复播放
-      if (
-        !forceRestart &&
-        currentSongId.value === song_id &&
-        !isPlaying.value &&
-        !isHistorySong.value
-      ) {
+      // 3. 继续播放逻辑：引擎里装载的正是这首歌、且没有新请求在途（canResume），
+      // 说明它只是被暂停了，直接恢复播放。
+      //
+      // 这里曾经写的是「currentSongId 是这首歌 + 不是历史回放」，而这两个标志在
+      // 切歌开始时就已被乐观改写：请求还在途中（目标歌尚未装载）时它们同样成立，
+      // 于是 resume 续上的是**上一首**——快速连点「播放全部」时界面切了歌、声音
+      // 还是旧歌，就是这个分支。
+      if (resumable) {
+        // 取样之后到这里的 await 期间可能有更新的请求：过期请求既不能 resume
+        // 旧会话，也不必再走完整的开播流程。
+        if (!session.isCurrent(attempt)) return
         await withTimeout(
           configStore.ensureConfiguredOutputDevice(),
           PLAYBACK_OPERATION_TIMEOUT_MS,
           '音频设备准备超时'
         )
         await withTimeout(window.api.resume(), PLAYBACK_OPERATION_TIMEOUT_MS, '恢复播放超时')
-        if (currentToken === playToken) {
+        // commit 结束这次请求的在途态（isSwitching）；会话本身就是这首歌，
+        // 装载身份不变。
+        if (session.commit(attempt)) {
           isPlaying.value = true
           resetPlaybackLoadState()
-          // 播放会话跨越暂停/恢复存续，但本函数开头的 playToken++ 已作废原先挂的
-          // waitForEnd 监听；这里必须以新 token 重挂，否则自然播完后不会自动切歌。
-          void waitForEnd(song_id, currentToken)
+          // 播放会话跨越暂停/恢复存续，但本函数开头的 begin 已作废原先挂的
+          // waitForEnd 监听；这里必须以新请求重挂，否则自然播完后不会自动切歌。
+          void waitForEnd(song_id, attempt)
         }
         return
       }
@@ -976,7 +1023,7 @@ export const usePlaybackStore = defineStore('playback', () => {
         '获取歌曲详情超时'
       )
       // 在每一个异步步长后，都要检查任务是否已过期
-      if (currentToken !== playToken) return
+      if (!session.isCurrent(attempt)) return
 
       if (!detailData) {
         throw new Error('无法获取歌曲详情')
@@ -997,7 +1044,7 @@ export const usePlaybackStore = defineStore('playback', () => {
         PLAYBACK_OPERATION_TIMEOUT_MS,
         '获取播放 URL 超时'
       )
-      if (currentToken !== playToken) return
+      if (!session.isCurrent(attempt)) return
       if (!songUrl.url) {
         console.warn(
           `[playback] fetchSongUrl 返回空 URL: song_id=${song_id}, level=${targetLevel}, cookie=${userStore.cookie ? '已设置' : '未设置（未登录）'}`
@@ -1005,18 +1052,18 @@ export const usePlaybackStore = defineStore('playback', () => {
         throw new Error('获取播放 URL 失败')
       }
 
-      // 7. 停止当前正在播放的所有音频
+      // 7. 停止当前正在播放的所有音频（此前已确认这次请求仍是最新的）
       try {
         await window.api.stop()
       } catch {
         // 忽略停止时的报错
       }
-      if (currentToken !== playToken) return
+      if (!session.isCurrent(attempt)) return
 
       // 8. 确保输出设备已就绪，独占/BitPerfect 按实际生效的端点算
       //（见 resolveActiveOutputOptions）。
       const { outputOptions } = await resolveActiveOutputOptions()
-      if (currentToken !== playToken) return
+      if (!session.isCurrent(attempt)) return
 
       // 9. 准备播放源：处理缓存逻辑 (可能是本地文件，也可能是带缓存的 URL)
       const playbackCache = await withTimeout(
@@ -1024,7 +1071,7 @@ export const usePlaybackStore = defineStore('playback', () => {
         PLAYBACK_OPERATION_TIMEOUT_MS,
         '准备播放缓存超时'
       )
-      if (currentToken !== playToken) return
+      if (!session.isCurrent(attempt)) return
       await activatePlaybackCache(playbackCache, song_id)
 
       // 10. 执行底层播放指令
@@ -1077,31 +1124,32 @@ export const usePlaybackStore = defineStore('playback', () => {
         )
       }
 
-      // 再次检查 token，确保在调用播放 API 期间没有新请求进入
-      if (currentToken !== playToken) return
+      // 11. 更新播放器状态。commitPlaybackStart 校验「调用播放 API 期间没有新请求
+      // 进入」，并把这首歌记为「已装载」——之后 isHistorySong 才会变成 false、
+      // 恢复分支才允许命中它。
+      const committed = commitPlaybackStart(attempt, () => {
+        setPlayerData(song, true)
+        currentTime.value = startTime
 
-      // 11. 更新播放器状态
-      setPlayerData(song, true)
-      isHistorySong.value = false
-      currentTime.value = startTime
+        // 12. 自动将该歌曲加入播放列表 (如果不在列表中)
+        const exists = playlistStore.playlist.some((s) => s.id === song_id)
+        if (!exists) {
+          playlistStore.addToPlaylist({
+            id: song.id,
+            name: song.name,
+            artists: createCurrentSongArtists(song.ar),
+            cover: song.al.picUrl,
+            duration: song.dt
+          })
+        }
 
-      // 12. 自动将该歌曲加入播放列表 (如果不在列表中)
-      const exists = playlistStore.playlist.some((s) => s.id === song_id)
-      if (!exists) {
-        playlistStore.addToPlaylist({
-          id: song.id,
-          name: song.name,
-          artists: createCurrentSongArtists(song.ar),
-          cover: song.al.picUrl,
-          duration: song.dt
-        })
-      }
-
-      // 13. 注册监听：当歌曲自然结束时自动播放下一首
-      waitForEnd(song_id, currentToken)
+        // 13. 注册监听：当歌曲自然结束时自动播放下一首
+        waitForEnd(song_id, attempt)
+      })
+      if (!committed) return
     } catch (error) {
       // 只有当前任务未过期时才更新错误状态
-      if (currentToken === playToken) {
+      if (session.isCurrent(attempt)) {
         console.error('播放全流程失败:', error)
         const message = error instanceof Error ? error.message : '音乐播放失败。'
         await stopAfterPlaybackFailure(message)
@@ -1118,11 +1166,6 @@ export const usePlaybackStore = defineStore('playback', () => {
             confirmText: '确定'
           })
         }
-      }
-    } finally {
-      // 14. 仅当当前任务是最新任务时，才重置切换标记
-      if (currentToken === playToken) {
-        isSwitching.value = false
       }
     }
   }
@@ -1257,6 +1300,9 @@ export const usePlaybackStore = defineStore('playback', () => {
    * 停止播放并清空状态
    */
   const stop = async (): Promise<void> => {
+    // 先作废会话，再真正停引擎：停引擎是 await，期间在途的开播请求若还「有效」
+    // 就会把刚停掉的歌重新播起来。clear 之后它们一律看到自己已过期。
+    session.clear()
     if (isWebEngine.value) {
       webAudioEngine.stop()
     } else {
@@ -1270,7 +1316,6 @@ export const usePlaybackStore = defineStore('playback', () => {
     currentSongId.value = null
     isPlaying.value = false
     currentTime.value = 0
-    isHistorySong.value = true
     playbackError.value = ''
     bufferedPercent.value = 0
     isBuffering.value = false
@@ -1289,20 +1334,18 @@ export const usePlaybackStore = defineStore('playback', () => {
   const initFromStorage = async (): Promise<void> => {
     if (!currentSongId.value) return
 
+    // 启动时引擎里没有装载任何会话，isHistorySong 由会话身份派生，无需显式置位。
     if (isLocalSong(currentSong.value) && currentSong.value.id === currentSongId.value) {
       currentSong.value = await resolveLocalSongDuration(currentSong.value)
-      isHistorySong.value = true
       return
     }
 
     // 如果缓存中有歌曲数据，先显示缓存数据，避免界面空白
     if (currentSong.value && currentSong.value.id === currentSongId.value) {
-      isHistorySong.value = true
       // 仍然尝试异步更新一下最新详情 (后台执行，不阻塞 UI)
       getSongDetailData(currentSongId.value).then((data) => {
         if (data && data.song) {
           setPlayerData(data.song, false)
-          isHistorySong.value = true
         }
       })
       return
@@ -1312,7 +1355,6 @@ export const usePlaybackStore = defineStore('playback', () => {
     const data = await getSongDetailData(currentSongId.value)
     if (data && data.song) {
       setPlayerData(data.song, false)
-      isHistorySong.value = true
     }
   }
 
@@ -1386,16 +1428,7 @@ export const usePlaybackStore = defineStore('playback', () => {
   webAudioEngine.setCallbacks({
     onEnded: () => {
       if (!isWebEngine.value) return
-      isPlaying.value = false
-      isHistorySong.value = true
-      resetPlaybackLoadState()
-      stopTimer()
-      currentTime.value = duration.value
-      bufferedPercent.value = 100
-      void (async () => {
-        await syncSongCachePlaybackPosition(duration.value)
-        await playNext(true)
-      })()
+      void finishNaturalEnd()
     },
     onBuffering: (buffering) => {
       if (isWebEngine.value) isBuffering.value = buffering
@@ -1408,7 +1441,7 @@ export const usePlaybackStore = defineStore('playback', () => {
       if (!isWebEngine.value) return
       playbackError.value = message
       isPlaying.value = false
-      isHistorySong.value = true
+      session.clear()
       resetPlaybackLoadState()
       stopTimer()
       void cancelActiveSongCacheDownload()
