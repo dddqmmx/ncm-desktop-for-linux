@@ -13,8 +13,16 @@ const userStore = useUserStore()
 const playerStore = usePlayerStore()
 const recommendPlaylists = ref<RecommendItem[]>([])
 const dailySongs = ref<Song[]>([])
+// 两个板块各自加载：谁先回来谁先替换掉自己的骨架，不必互相等。
+const playlistsLoading = ref(true)
+const songsLoading = ref(true)
 
-onMounted(async (): Promise<void> => {
+// 骨架数量按常见窗口宽度铺满一行以上，加载完成后卡片替换骨架时高度不变，
+// 下面的板块不会被顶下去再弹回来。
+const PLAYLIST_SKELETON_COUNT = 6
+const SONG_SKELETON_COUNT = 8
+
+const loadRecommendPlaylists = async (): Promise<void> => {
   try {
     const recommendResource = (await window.api.recommend_resource({
       cookie: userStore.cookie
@@ -33,7 +41,15 @@ onMounted(async (): Promise<void> => {
         )
       )
     }
+  } catch (error) {
+    console.error('获取推荐歌单失败:', error)
+  } finally {
+    playlistsLoading.value = false
+  }
+}
 
+const loadDailySongs = async (): Promise<void> => {
+  try {
     const recommendSongsRes = (await window.api.recommend_songs({
       cookie: userStore.cookie
     })) as { body?: RecommendSongs }
@@ -51,8 +67,14 @@ onMounted(async (): Promise<void> => {
       )
     }
   } catch (error) {
-    console.error('获取推荐内容失败:', error)
+    console.error('获取每日推荐歌曲失败:', error)
+  } finally {
+    songsLoading.value = false
   }
+}
+
+onMounted(async (): Promise<void> => {
+  await Promise.all([loadRecommendPlaylists(), loadDailySongs()])
 })
 
 /**
@@ -86,15 +108,22 @@ const playSong = (song: Song): void => {
         <h2>每日推荐歌单</h2>
       </div>
 
-      <div ref="playlistRow" class="horizontal-scroll-container" @wheel="handleWheel">
-        <div class="cards-grid">
+      <div
+        ref="playlistRow"
+        class="horizontal-scroll-container"
+        :aria-busy="playlistsLoading"
+        @wheel="handleWheel"
+      >
+        <div v-if="playlistsLoading" class="cards-grid" aria-hidden="true">
+          <div v-for="n in PLAYLIST_SKELETON_COUNT" :key="n" class="card-skeleton"></div>
+        </div>
+        <div v-else class="cards-grid">
           <MediaCard
-            v-for="(item, index) in recommendPlaylists"
+            v-for="item in recommendPlaylists"
             :key="item.id"
             :title="item.name"
             :desc="item.copywriter || item.creator.nickname"
             :image="item.picUrl"
-            :is-first="index === 0"
             type="playlist"
             @click="router.push('/playlist/' + item.id)"
           />
@@ -108,9 +137,20 @@ const playSong = (song: Song): void => {
         <h2>每日推荐歌曲</h2>
       </div>
 
-      <div ref="songsRow" class="horizontal-scroll-container" @wheel="handleWheel">
-        <div v-if="dailySongs.length === 0" class="loading-text">加载中...</div>
-        <div class="albums-row">
+      <div
+        ref="songsRow"
+        class="horizontal-scroll-container"
+        :aria-busy="songsLoading"
+        @wheel="handleWheel"
+      >
+        <div v-if="songsLoading" class="albums-row" aria-hidden="true">
+          <div v-for="n in SONG_SKELETON_COUNT" :key="n" class="album-skeleton">
+            <div class="album-skeleton-cover"></div>
+            <div class="album-skeleton-title"></div>
+            <div class="album-skeleton-artist"></div>
+          </div>
+        </div>
+        <div v-else class="albums-row">
           <AlbumItem
             v-for="song in dailySongs"
             :key="song.id"
@@ -226,9 +266,73 @@ const playSong = (song: Song): void => {
   width: 176px; /* 推荐歌曲卡片宽度，与 AlbumItem 内部一致 */
 }
 
-.loading-text {
-  color: var(--sys-text-tertiary);
-  padding: 40px 0;
+/* 骨架：尺寸与真实卡片一致（歌单卡 200×250，歌曲卡 176 宽 + 封面 + 两行文字），
+   替换时不改变行高，下方的板块不会被顶下去。只用既有中性色，不引入新色相。 */
+.card-skeleton,
+.album-skeleton-cover,
+.album-skeleton-title,
+.album-skeleton-artist {
+  background: var(--sys-control);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 一道低对比度的扫光，表示"正在加载"而不是"加载失败" */
+.card-skeleton::after,
+.album-skeleton-cover::after,
+.album-skeleton-title::after,
+.album-skeleton-artist::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--sys-surface-muted) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+
+.card-skeleton {
+  aspect-ratio: 1 / 1.25;
+  border-radius: 18px;
+}
+
+.album-skeleton-cover {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 28px;
+  margin-bottom: 14px;
+}
+
+.album-skeleton-title {
+  height: 18px;
+  border-radius: 6px;
+  margin: 0 6px;
+}
+
+.album-skeleton-artist {
+  height: 14px;
+  width: 60%;
+  border-radius: 6px;
+  margin: 12px 6px 0;
+}
+
+@keyframes skeleton-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-skeleton::after,
+  .album-skeleton-cover::after,
+  .album-skeleton-title::after,
+  .album-skeleton-artist::after {
+    animation: none;
+  }
 }
 
 .spacer-bottom {

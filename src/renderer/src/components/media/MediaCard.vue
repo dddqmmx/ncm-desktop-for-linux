@@ -8,7 +8,6 @@ defineProps<{
   bgClass?: string
   image?: string | null
   logo?: string
-  isFirst?: boolean
 }>()
 </script>
 
@@ -31,8 +30,9 @@ defineProps<{
         <p v-if="desc">{{ desc }}</p>
         <div v-if="type === 'station'" class="station-tag">{{ title }}</div>
       </div>
-      <!-- 只有第一个卡片显示播放按钮 -->
-      <button v-if="isFirst" class="play-btn-circle">
+      <!-- 播放按钮在悬浮时出现：之前只有第一张卡片常驻显示，既让首卡看起来
+           比其他卡片"特殊"，也在视觉上压住了封面右下角的内容 -->
+      <button class="play-btn-circle" aria-label="播放">
         <AppIcon name="play" :size="20" />
       </button>
     </div>
@@ -131,5 +131,30 @@ defineProps<{
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.large-card:hover .play-btn-circle,
+.play-btn-circle:focus-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 触摸/键盘以外没有悬浮的场景下，按钮不能永远不可见 */
+@media (hover: none) {
+  .play-btn-circle {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play-btn-circle {
+    transition: opacity 0.25s ease;
+  }
 }
 </style>
