@@ -179,7 +179,7 @@ const filteredTracks = computed(() => {
   border: 1px solid var(--sys-border);
   color: var(--sys-text-secondary);
   padding: 0 16px;
-  height: 38px;
+  height: var(--sys-control-height);
   border-radius: 100px;
   display: flex;
   align-items: center;

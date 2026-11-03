@@ -223,7 +223,7 @@ onBeforeUnmount(() => {
 
 .local-action-button,
 .local-icon-button {
-  height: 44px;
+  height: var(--sys-control-height);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -245,8 +245,8 @@ onBeforeUnmount(() => {
 }
 
 .local-icon-button {
-  width: 40px;
-  height: 40px;
+  width: var(--sys-control-height);
+  height: var(--sys-control-height);
   border: none;
   border-radius: 50%;
   transition:

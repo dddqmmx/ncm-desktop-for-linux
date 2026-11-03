@@ -23,6 +23,8 @@
   --sys-control-hover: rgba(23, 25, 31, 0.1);
   --sys-control-active: rgba(var(--theme-color-rgb), 0.16);
   --sys-control-selected: rgba(255, 255, 255, 0.94);
+  /* 详情页操作栏（播放按钮、搜索框、胶囊按钮）的统一控件高度 */
+  --sys-control-height: 44px;
   --sys-shadow-soft: 0 10px 32px rgba(25, 32, 46, 0.08);
   --sys-shadow-elevated: 0 24px 56px rgba(25, 32, 46, 0.16);
   --sys-scrollbar-size: 12px;

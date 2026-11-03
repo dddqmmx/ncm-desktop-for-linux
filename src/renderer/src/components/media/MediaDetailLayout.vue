@@ -234,7 +234,7 @@ defineEmits<{
   background: var(--theme-color);
   color: #fff;
   border: none;
-  height: 44px; /* 设定固定高度 */
+  height: var(--sys-control-height); /* 与搜索框、胶囊按钮同高 */
   padding: 0 28px;
   border-radius: 100px; /* 完全圆角 */
   font-size: 15px;
@@ -267,7 +267,7 @@ defineEmits<{
   background: var(--sys-control);
   border-radius: 100px; /* 改为药丸形 */
   padding: 0 16px;
-  height: 44px;
+  height: var(--sys-control-height);
   transition: all 0.3s ease;
   width: 220px;
 }
@@ -314,8 +314,8 @@ defineEmits<{
 .icon-btn {
   background: transparent;
   border: none;
-  width: 44px;
-  height: 44px;
+  width: var(--sys-control-height);
+  height: var(--sys-control-height);
   border-radius: 50%;
   display: flex;
   align-items: center;
