@@ -15,6 +15,9 @@ const SETTINGS_ONLY = process.argv.includes('--settings-window')
 const HOVER_ONLY = process.argv.includes('--sidebar-hover')
 const LOGIN_ONLY = process.argv.includes('--login-modal')
 const FULLSCREEN_ONLY = process.argv.includes('--fullscreen-player')
+const ARTIST_ONLY = process.argv.includes('--artist-view')
+let artistFixture
+if (ARTIST_ONLY) app.setPath('userData', fs.mkdtempSync('/tmp/ncm-artist-electron-'))
 const HOME_ONLY = process.argv.includes('--home-view')
 if (HOME_ONLY) app.setPath('userData', fs.mkdtempSync('/tmp/ncm-home-electron-'))
 if (FULLSCREEN_ONLY) app.setPath('userData', fs.mkdtempSync('/tmp/ncm-fullscreen-electron-'))
@@ -182,7 +185,7 @@ function registerMockIpc() {
         songs: MOCK_TRACKS
       }
     }),
-    'music:artistDetail': () => ({
+    'music:artistDetail': () => artistFixture ? ({ body: artistFixture.detail }) : ({
       body: {
         code: 200,
         data: {
@@ -198,10 +201,10 @@ function registerMockIpc() {
         }
       }
     }),
-    'music:artistTopSong': () => ({
+    'music:artistTopSong': () => artistFixture ? ({ body: artistFixture.top }) : ({
       body: { code: 200, songs: MOCK_TRACKS.slice(0, 5) }
     }),
-    'music:artistAlbum': () => ({
+    'music:artistAlbum': () => artistFixture ? ({ body: artistFixture.album }) : ({
       body: {
         code: 200,
         hotAlbums: [
@@ -212,7 +215,7 @@ function registerMockIpc() {
         ]
       }
     }),
-    'music:artistMv': () => ({
+    'music:artistMv': () => artistFixture ? ({ body: artistFixture.mv }) : ({
       body: {
         code: 200,
         mvs: [
@@ -454,6 +457,58 @@ app.whenReady().then(async () => {
     true;
   `
   await win.webContents.executeJavaScript(collectHelper)
+
+  if (ARTIST_ONLY) {
+    const report = { cases: [] }
+    const folder = process.env.NCM_ELECTRON_SCREENSHOT_DIR
+    if (folder) fs.mkdirSync(folder, { recursive: true })
+    const fixtures = [
+      { name: 'short', songs: 5, albums: 2, eps: 2, mvs: 2, summary: '法国电子与梦幻流行乐团，由 Anthony Gonzalez 于 1999 年在昂蒂布创立。' },
+      { name: 'long', songs: 50, albums: 12, eps: 7, mvs: 7, summary: '这是一段用于检查歌手介绍自动换行的文字。音乐作品涵盖电子、流行与电影配乐，持续探索不同的声音和表达方式。'.repeat(5) },
+      { name: 'empty', songs: 0, albums: 0, eps: 0, mvs: 0, summary: '' }
+    ]
+    let routeId = 100
+    for (const spec of fixtures) {
+      const album = (i, ep) => ({ id: (ep ? 500 : 400) + i, name: i === 1 ? '一张标题很长的专辑用于检查换行和下一行之间的间距' : (ep ? 'Single ' : 'Album ') + (i + 1), picUrl: DATA_SVG, publishTime: Date.UTC(2024 - i, 2, 1), type: ep ? 'EP' : '专辑' })
+      artistFixture = {
+        detail: { data: { artist: { id: routeId, name: 'M83', avatar: DATA_SVG, albumSize: spec.albums + spec.eps, mvSize: spec.mvs, briefDesc: spec.summary } } },
+        top: { songs: Array.from({length: spec.songs}, (_, i) => ({...MOCK_TRACKS[i % MOCK_TRACKS.length], id: i + 1})) },
+        album: { hotAlbums: [...Array.from({length: spec.albums}, (_, i) => album(i, false)), ...Array.from({length: spec.eps}, (_, i) => album(i, true))] },
+        mv: { mvs: Array.from({length: spec.mvs}, (_, i) => ({ id: 600 + i, name: i === 1 ? '一段标题很长的音乐录像用于检查两行标题的展示效果' : 'Music Video ' + (i + 1), imgurl16v9: DATA_SVG, publishTime: '2023-02-07' })) }
+      }
+      for (const width of [1340, 1435, 1800]) {
+        win.setContentSize(width, 1000)
+        await win.webContents.executeJavaScript(`window.location.hash = '#/artist/${++routeId}'; true;`)
+        await wait(500)
+        await win.webContents.executeJavaScript(`document.querySelector('.artist-page .scroll-container').scrollTop = 0; true;`)
+        await wait(80)
+        const geometry = await win.webContents.executeJavaScript(`(() => {
+          const rect = el => { const r = el.getBoundingClientRect(); return { x:r.x, y:r.y, width:r.width, height:r.height } }
+          const one = selector => { const el = document.querySelector(selector); if (!el) throw Error('Missing ' + selector); return rect(el) }
+          return {
+            main: one('.artist-page .main-content'), header: one('.artist-header'), avatar: one('.artist-avatar-col'),
+            name: one('.artist-name'), summary: one('.artist-summary'), pills: one('.pill-row'), actions: one('.cta-row'),
+            sections: [...document.querySelectorAll('.artist-page section')].map(section => ({ title:section.querySelector('h2').textContent, ...rect(section), items:[...section.querySelectorAll('.latest-item, .song-row, .media-tile')].map(rect), covers:[...section.querySelectorAll('.latest-img-wrap-wrapper, .song-thumb-wrapper, .tile-img-wrap-wrapper')].map(rect) })),
+            songsCard: document.querySelector('.songs-card') ? one('.songs-card') : null,
+            scrollHeight: document.querySelector('.artist-page .scroll-container').scrollHeight
+          }
+        })()`)
+        report.cases.push({ name:spec.name, width, fixture:artistFixture, geometry })
+        if (folder) {
+          fs.writeFileSync(path.join(folder, `artist-${spec.name}-${width}.png`), (await win.webContents.capturePage()).toPNG())
+          if (spec.name === 'long') {
+            await win.webContents.executeJavaScript(`document.querySelector('.media-grid').scrollIntoView(); true;`)
+            await wait(100)
+            fs.writeFileSync(path.join(folder, `artist-grid-${width}.png`), (await win.webContents.capturePage()).toPNG())
+          }
+        }
+      }
+    }
+    const output = path.join(__dirname, '../tests/artist-ground-truth.json')
+    fs.writeFileSync(output, JSON.stringify(report, null, 2) + '\n')
+    console.log('EXTRACTED_ARTIST_GROUND_TRUTH_TO', output)
+    win.destroy(); app.quit(); return
+  }
 
   if (HOME_ONLY) {
     const folder = process.env.NCM_ELECTRON_SCREENSHOT_DIR || '/tmp/ncm-home-reference'

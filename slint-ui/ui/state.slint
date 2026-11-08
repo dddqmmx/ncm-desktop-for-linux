@@ -365,6 +365,9 @@ export global AppState {
     in-out property <string> local-description: "保存在此设备上的音乐，导入记录会保留在本地曲库中。";
 
     // 歌手页状态
+    in-out property <int> active-artist-id: -1;
+    in-out property <bool> artist-loading: false;
+    in-out property <string> artist-load-error;
     in-out property <string> artist-name: "M83";
     in-out property <image> artist-avatar: Icons.cover-indigo;
     in-out property <[string]> artist-pills: ["8 张专辑", "12 张 EP / 单曲", "16 支 MV"];

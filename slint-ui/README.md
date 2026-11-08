@@ -103,7 +103,7 @@ npx electron-vite build
 node_modules/.bin/electron --no-sandbox slint-ui/scripts/extract-electron-metrics.cjs --playlist-management
 ```
 
-输出为 `tests/playlist-management-ground-truth.json`，选择器缺失时会失败，不会把缺失控件当作通过。其余页面仍使用 `tests/electron-ground-truth.json` 中的历史基准，歌单控件在回归测试中使用新采集值覆盖。
+输出为 `tests/playlist-management-ground-truth.json`，选择器缺失时会失败，不会把缺失控件当作通过。歌手页使用新采集的 `tests/artist-ground-truth.json`，动态布局及验证见 [歌手页记录](tests/artist-display.md)。其余页面仍使用 `tests/electron-ground-truth.json` 中的历史基准，歌单控件在回归测试中使用新采集值覆盖。
 
 采集设置窗口基准：在构建 Electron 后执行 `node_modules/.bin/electron --no-sandbox slint-ui/scripts/extract-electron-metrics.cjs --settings-window`，输出到 `tests/settings-window-ground-truth.json`。同时采集八个标签页内部布局，等待切换动画结束；用户气泡基准使用 `--sidebar-hover`。均使用本地模拟 IPC，支持以下截图环境变量。
 

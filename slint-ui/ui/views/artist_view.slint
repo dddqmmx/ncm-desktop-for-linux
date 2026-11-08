@@ -1,699 +1,376 @@
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
 import { AppState, ArtistReleaseItem, ArtistSongItem } from "../state.slint";
-import { AppIcon, RoundedCover, CoverRequest } from "../components/common.slint";
+import { AppIcon, RoundedCover, CoverRequest, PlaybackSpinner } from "../components/common.slint";
 
-// 对应 ArtistView.vue .media-tile (album 188x188, mv 329.33x185.23, hover translateY(-4px) 0.3s cubic-bezier(0.25, 1, 0.5, 1))
+// Match ArtistView.vue's CSS line boxes, including wrapped descriptions/titles.
+component ArtistText inherits Text {
+    x: 0px; y: 0px;
+    in property <length> line-height: self.font-size * 1.6;
+    line-height-factor: root.line-height / (font-probe.font-metrics.ascent - font-probe.font-metrics.descent);
+    font-probe := Text { visible: false; font-size: root.font-size; font-weight: root.font-weight; }
+    height: Math.max(1, Math.round(self.preferred-height / root.line-height)) * root.line-height;
+    color: Theme.sys-text;
+    vertical-alignment: center;
+}
+
+component ArtistPill inherits Rectangle {
+    in property <string> label;
+    in property <length> padding-x: 16px;
+    width: label-text.preferred-width + root.padding-x * 2 + 2px;
+    height: 34.8px;
+    border-radius: self.height / 2;
+    background: Theme.sys-surface;
+    border-width: 1px;
+    border-color: Theme.sys-border;
+    label-text := Text {
+        text: root.label;
+        font-size: 13px; font-weight: 600;
+        color: Theme.sys-text-secondary;
+        horizontal-alignment: center; vertical-alignment: center;
+    }
+}
+
+component ArtistSectionHeader inherits Rectangle {
+    x: 0px; y: 0px;
+    in property <string> eyebrow;
+    in property <string> title;
+    in property <string> count;
+    height: root.eyebrow == "" ? 44.4px : 60.4px;
+    if root.eyebrow != "" : ArtistText {
+        text: root.eyebrow; font-size: 10px; font-weight: 700;
+        letter-spacing: 1.6px; color: Theme.sys-text-secondary;
+    }
+    ArtistText {
+        y: root.eyebrow == "" ? 6px : 22px;
+        text: root.title; font-size: 24px; font-weight: 700;
+    }
+    if root.count != "" : ArtistPill {
+        x: parent.width - self.width; y: parent.height - self.height;
+        label: root.count; padding-x: 14px;
+    }
+}
+
+component ArtistReleaseInfo inherits Rectangle {
+    in property <bool> latest: false;
+    in property <ArtistReleaseItem> item;
+    height: release-year.y + release-year.height;
+    ArtistText {
+        width: 100%; text: root.item.kind == "Album" ? "ALBUM" : root.item.kind == "Music Video" ? "MUSIC VIDEO" : root.item.kind == "Single / EP" ? "SINGLE / EP" : "EP / SINGLE";
+        font-size: 11px; font-weight: 600; letter-spacing: 0.88px;
+        color: Theme.sys-text-tertiary;
+    }
+    release-title := Rectangle {
+        x: 0px; y: root.latest ? 25.6px : 21.6px; width: 100%;
+        height: Math.min(2, Math.max(1, Math.round(title-text.preferred-height / 19.5px))) * 19.5px;
+        title-text := ArtistText {
+            width: 100%; text: root.item.title;
+            font-size: 15px; font-weight: 600; line-height: 19.5px;
+            // Tight CSS line boxes can give CJK glyphs negative leading. Pad the drawing box so
+            // Slint's elision does not discard the first line, keeping the grid's line boxes intact.
+            y: -4px; height: self.preferred-height + 8px; vertical-alignment: center;
+            wrap: word-wrap; max-lines: 2; overflow: elide;
+        }
+    }
+    release-year := ArtistText {
+        y: release-title.y + release-title.height + (root.latest ? 8px : 4px);
+        width: 100%; text: root.item.year; font-size: 13px;
+        color: Theme.sys-text-secondary;
+    }
+}
+
 component ArtistMediaTile inherits Rectangle {
-    CoverRequest { cover-id: root.item.id; missing: root.item.cover.width == 0; }
     in property <ArtistReleaseItem> item;
     in property <bool> is-mv: false;
+    in property <bool> populated: true;
     in-out property <bool> force-hover: false;
     callback clicked();
-
-    width: root.is-mv ? 329.33px : 188px;
-    height: root.is-mv ? 255.23px : 258px;
-
+    preferred-height: root.populated ? root.cover-height + 14px + info.height : 0px;
+    property <length> cover-height: root.is-mv ? root.width * 9 / 16 : root.width;
     property <bool> is-hovered: tile-ta.has-hover || root.force-hover;
     property <length> img-offset-y: self.is-hovered ? -4px : 0px;
-    property <float> mv-btn-opacity: self.is-hovered ? 1.0 : 0.0;
+    property <float> mv-btn-opacity: self.is-hovered ? 1 : 0;
     property <length> mv-btn-size: self.is-hovered ? 40px : 36px;
-
-    animate img-offset-y { duration: 300ms; easing: cubic-bezier(0.25, 1.0, 0.5, 1.0); }
+    animate img-offset-y { duration: 300ms; easing: cubic-bezier(0.25, 1, 0.5, 1); }
     animate mv-btn-opacity { duration: 300ms; easing: ease; }
-    animate mv-btn-size { duration: 300ms; easing: cubic-bezier(0.25, 1.0, 0.5, 1.0); }
-
-    tile-ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-
-    // 封面容器 (.tile-img-wrap-wrapper: radius 16px, margin-bottom 14px)
+    animate mv-btn-size { duration: 300ms; easing: cubic-bezier(0.25, 1, 0.5, 1); }
+    visible: root.populated;
+    CoverRequest { cover-id: root.populated ? root.item.id : -1; missing: root.item.cover.width == 0; }
+    tile-ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
     tile-img-wrapper := Rectangle {
-        x: 0px;
-        y: root.img-offset-y;
-        width: root.is-mv ? 329.33px : 188px;
-        height: root.is-mv ? 185.23px : 188px;
-        border-radius: 16px;
-        background: Theme.sys-control;
-        border-width: 1px;
-        border-color: Theme.sys-border;
+        y: root.img-offset-y; width: 100%; height: root.cover-height;
+        border-radius: 16px; background: Theme.sys-control;
+        border-width: 1px; border-color: Theme.sys-border;
         drop-shadow-blur: root.is-hovered ? 36px : 22px;
         drop-shadow-offset-y: root.is-hovered ? 14px : 8px;
         drop-shadow-color: root.is-hovered ? Theme.sys-shadow-elevated : Theme.sys-shadow-soft;
         clip: true;
-
-        Image {
-            width: 100%;
-            height: 100%;
-            source: root.item.cover;
-            image-fit: cover;
-        }
-
-        // MV 左下角播放圆钮 (.mv-play-btn: bottom 12px, left 12px, 40x40, scale(0.9 -> 1.0) -> 36x36 at rest at x=15, y=height-12-38=134.23)
+        Image { width: 100%; height: 100%; source: root.item.cover; image-fit: cover; }
         if root.is-mv : mv-play-btn := Rectangle {
             x: 12px + (40px - root.mv-btn-size) / 2;
-            y: parent.height - 12px - 40px + (40px - root.mv-btn-size) / 2;
-            width: root.mv-btn-size;
-            height: root.mv-btn-size;
-            border-radius: root.mv-btn-size / 2;
-            background: Theme.sys-surface-strong;
+            y: parent.height - 52px + (40px - root.mv-btn-size) / 2;
+            width: root.mv-btn-size; height: root.mv-btn-size;
+            border-radius: self.width / 2; background: Theme.sys-surface-strong;
             opacity: root.mv-btn-opacity;
-
             AppIcon {
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
-                source: Icons.play-mv;
-                icon-size: 22px;
-                tint: Theme.sys-text;
+                x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                source: Icons.play-mv; icon-size: 22px; tint: Theme.sys-text;
             }
         }
     }
+    info := ArtistReleaseInfo { y: root.cover-height + 14px; width: 100%; item: root.item; }
+}
 
-    VerticalLayout {
-        x: 0px;
-        y: (root.is-mv ? 185.23px : 188px) + 14px;
-        width: 100%;
-        spacing: 4px;
-
-        Text {
-            text: root.item.kind;
-            font-size: 11px;
-            font-weight: 600;
-            color: Theme.sys-text-tertiary;
-        }
-
-        Text {
-            text: root.item.title;
-            font-size: 15px;
-            font-weight: 600;
-            color: Theme.sys-text;
-            overflow: elide;
-        }
-
-        Text {
-            text: root.item.year;
-            font-size: 13px;
-            color: Theme.sys-text-secondary;
+// CSS grid auto-fill: each row takes the tallest title, with a 24px row/column gap.
+component ArtistMediaGrid inherits Rectangle {
+    in property <[ArtistReleaseItem]> items;
+    in property <bool> is-mv: false;
+    callback selected(ArtistReleaseItem);
+    property <int> columns: Math.max(1, Math.floor((root.width + 24px) / (root.is-mv ? 284px : 204px)));
+    height: rows.preferred-height;
+    rows := VerticalLayout {
+        width: 100%; spacing: 24px; alignment: start;
+        for row in Math.ceil(root.items.length / root.columns) : HorizontalLayout {
+            spacing: 24px;
+            for col in root.columns : ArtistMediaTile {
+                width: (root.width - (root.columns - 1) * 24px) / root.columns;
+                populated: row * root.columns + col < root.items.length;
+                item: root.items[row * root.columns + col]; is-mv: root.is-mv;
+                clicked => { root.selected(self.item); }
+            }
         }
     }
 }
 
+component ArtistSongRow inherits Rectangle {
+    in property <ArtistSongItem> song;
+    height: 76px; border-radius: 14px;
+    background: ta.has-hover ? Theme.sys-control-hover : transparent;
+    animate background { duration: 200ms; easing: ease; }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { AppState.play-song(root.song.id, root.song.title, AppState.artist-name, root.song.cover, false, true); }
+    }
+    Text {
+        x: 16px; width: 40px; height: 100%; text: root.song.index-str;
+        font-size: 14px; font-weight: 600; color: Theme.sys-text-tertiary;
+        horizontal-alignment: right; vertical-alignment: center;
+    }
+    RoundedCover {
+        x: 72px; y: 10px; width: 56px; height: 56px; radius: 10px;
+        source: root.song.cover; cover-id: root.song.id;
+        border-width: 1px; border-color: Theme.sys-border;
+    }
+    song-info := Rectangle {
+        x: 144px; y: (parent.height - self.height) / 2;
+        width: duration.x - 16px - self.x; height: 44.8px;
+        song-name := ArtistText {
+            width: Math.min(self.preferred-width, parent.width - (root.song.badge == "" ? 0px : 45px));
+            text: root.song.title; font-size: 15px; font-weight: 600; overflow: elide;
+        }
+        if root.song.badge != "" : Rectangle {
+            x: song-name.width + 8px; y: 1px; width: 37px; height: 22px;
+            border-radius: 6px; background: root.song.badge == "hot" ? Theme.theme-color : Theme.sys-control;
+            Text {
+                text: root.song.badge == "hot" ? "最热" : "推荐";
+                font-size: 10px; font-weight: 700;
+                color: root.song.badge == "hot" ? #fff : Theme.sys-text-secondary;
+                horizontal-alignment: center; vertical-alignment: center;
+            }
+        }
+        ArtistText {
+            y: 24px; width: 100%; text: root.song.album; font-size: 13px;
+            color: Theme.sys-text-secondary; overflow: elide;
+        }
+    }
+    duration := Text {
+        x: parent.width - 16px - self.width; width: self.preferred-width; height: 100%;
+        text: root.song.duration; font-size: 14px; font-weight: 500;
+        color: Theme.sys-text-tertiary; vertical-alignment: center;
+    }
+}
+
+component ArtistButton inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <bool> primary;
+    in property <bool> enabled: true;
+    callback clicked();
+    width: button-label.preferred-width + 74px + (root.primary ? 0px : 2px);
+    height: 44px; border-radius: 22px; opacity: root.enabled ? 1 : 0.5;
+    background: root.primary ? (ta.has-hover ? Theme.theme-color-strong : Theme.theme-color)
+        : (ta.has-hover ? Theme.sys-control-hover : Theme.sys-surface);
+    border-width: root.primary ? 0px : 1px; border-color: Theme.sys-border;
+    animate background { duration: 200ms; easing: ease; }
+    HorizontalLayout {
+        alignment: center; spacing: 8px;
+        AppIcon { y: (parent.height - self.height) / 2; source: root.icon; icon-size: 18px; tint: root.primary ? #fff : Theme.sys-text; }
+        button-label := Text { text: root.label; font-size: 15px; font-weight: 600; color: root.primary ? #fff : Theme.sys-text; vertical-alignment: center; }
+    }
+    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
 export component ArtistView inherits Rectangle {
-    width: 100%;
-    height: 100%;
-
-    // .scroll-container (scrollbar-gutter: stable -> 10px, content area = 1149px, .main-content max-width 1100px centered at x = 24.5px -> window x = 276 + 24.5 = 300.5px)
-    property <length> avail-w: root.width - 10px;
-    property <length> main-w: Math.min(self.avail-w, 1100px);
-    property <length> main-x: (self.avail-w - self.main-w) / 2;
-
-    Flickable {
-        width: 100%;
-        height: 100%;
-        content-width: root.width;
-        content-height: 2423.45px;
-
-        // .main-content (x=300.5, y=0, width=1100, padding 56px 32px 120px, gap 60px)
+    width: 100%; height: 100%;
+    property <length> main-w: Math.min(root.width - 10px, 1100px);
+    property <bool> loading: AppState.artist-loading;
+    property <int> artist-id: AppState.active-artist-id;
+    changed artist-id => { artist-scroll.content-y = 0px; }
+    changed loading => { if root.loading { artist-scroll.content-y = 0px; } }
+    artist-scroll := Flickable {
+        width: 100%; height: 100%; content-width: root.width;
+        content-height: artist-main-content.height;
+        changed content-height => { self.content-y = Math.max(Math.min(0px, self.height - self.content-height), Math.min(0px, self.content-y)); }
         artist-main-content := Rectangle {
-            x: root.main-x;
-            y: 0px;
+            x: (root.width - 10px - root.main-w) / 2;
             width: root.main-w;
-            height: 2423.45px;
-
-            // ───── 1. ARTIST HEADER (.artist-header: x=332.5, y=56, width=1036, height=222.59, gap 48px) ─────
-            artist-header := Rectangle {
-                x: 32px;
-                y: 56px;
-                width: 1036px;
-                height: 222.59px;
-
-                // 200x200 圆形头像 + 光晕 (.artist-avatar-col: x=332.5, y=56, 200x200)
-                artist-avatar-col := Rectangle {
-                    x: 0px;
-                    y: 0px;
-                    width: 200px;
-                    height: 200px;
-
-                    Rectangle {
-                        x: -20px;
-                        y: -20px;
-                        width: 240px;
-                        height: 240px;
-                        border-radius: 120px;
-                        background: @radial-gradient(circle, Theme.theme-color-soft 0%, transparent 72%);
-                    }
-
-                    RoundedCover {
-                        width: 200px;
-                        height: 200px;
-                        radius: 100px;
-                        source: AppState.artist-avatar;
+            height: content.preferred-height + 176px;
+            content := VerticalLayout {
+                x: 32px; y: 56px; width: parent.width - 64px;
+                spacing: 60px; alignment: start;
+                if root.loading || AppState.artist-load-error != "" : artist-state := Rectangle {
+                    height: 280px;
+                    VerticalLayout {
+                        alignment: center; spacing: 12px; padding: 32px;
+                        if root.loading : Rectangle {
+                            height: 36px;
+                            artist-loading-spinner := PlaybackSpinner {
+                                x: (parent.width - self.width) / 2; y: 0px;
+                                width: 36px; tint: Theme.theme-color; track-color: Theme.sys-control-hover;
+                            }
+                        }
+                        Text {
+                            text: root.loading ? "正在加载歌手信息" : "页面加载失败";
+                            font-size: 20px; font-weight: 700; color: Theme.sys-text;
+                            horizontal-alignment: center;
+                        }
+                        ArtistText {
+                            text: root.loading ? "正在获取热门歌曲、专辑和 MV 数据。" : AppState.artist-load-error;
+                            font-size: 15px; color: Theme.sys-text-secondary; horizontal-alignment: center; wrap: word-wrap;
+                        }
+                        if !root.loading : Rectangle {
+                            height: 44px;
+                            ArtistButton {
+                                x: (parent.width - self.width) / 2; y: 0px;
+                                label: "重试"; primary: true; icon: Icons.loop;
+                                clicked => { AppState.runtime-action("artist-retry", -1, ""); }
+                            }
+                        }
                     }
                 }
-
-                // .artist-body (x = 200 + 48 = 248px -> window x=580.5, width=788, height=222.59)
-                Rectangle {
-                    x: 248px;
-                    y: 0px;
-                    width: 788px;
-                    height: 222.59px;
-
-                    // .artist-name (x=580.5, y=56, width=788, height=67.8, font-size 64.575px, weight 800)
-                    artist-name-box := Rectangle {
-                        x: 0px;
-                        y: 0px;
-                        width: 788px;
-                        height: 67.8px;
-
-                        Text {
-                            width: 100%;
-                            height: 100%;
-                            text: AppState.artist-name;
-                            font-size: 64.575px;
-                            font-weight: 800;
-                            color: Theme.sys-text;
-                            vertical-alignment: center;
+                if !root.loading && AppState.artist-load-error == "" : artist-header := Rectangle {
+                    height: Math.max(200px, artist-body.height);
+                    artist-avatar-col := Rectangle {
+                        x: 0px; y: 0px; width: 200px; height: 200px;
+                        RoundedCover {
+                            width: 200px; height: 200px; radius: 100px;
+                            source: AppState.artist-avatar.width > 0 ? AppState.artist-avatar : Icons.artist-fallback;
+                        }
+                        Rectangle {
+                            x: -20px; y: -20px; width: 240px; height: 240px; border-radius: 120px;
+                            background: @radial-gradient(circle, Theme.theme-color-soft 0%, transparent 72%);
                         }
                     }
-
-                    // .pill-row (y = 67.8 + 16 = 83.8px -> window y=139.8, height=34.8px, gap 8px)
-                    HorizontalLayout {
-                        x: 0px;
-                        y: 83.8px;
-                        height: 34.8px;
-                        spacing: 8px;
-                        alignment: start;
-
-                        artist-pill-0 := Rectangle {
-                            width: 83.84px;
-                            height: 34.8px;
-                            border-radius: 17.4px;
-                            background: Theme.sys-surface;
-                            border-width: 1px;
-                            border-color: Theme.sys-border;
-
-                            Text {
-                                text: AppState.artist-pills[0];
-                                font-size: 13px;
-                                font-weight: 600;
-                                color: Theme.sys-text-secondary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                            }
+                    artist-body := Rectangle {
+                        x: 248px; y: 0px; width: parent.width - 248px;
+                        height: Math.max(200px, artist-actions.y + artist-actions.height);
+                        artist-name-box := ArtistText {
+                            width: 100%; text: AppState.artist-name;
+                            font-size: Math.max(40px, Math.min(AppState.window-width * 0.045, 67.2px));
+                            line-height: self.font-size * 1.05; font-weight: 800; wrap: word-wrap;
                         }
-
-                        for pill in [AppState.artist-pills[1], AppState.artist-pills[2]] : Rectangle {
-                            width: pill-txt.preferred-width + 32px;
-                            height: 34.8px;
-                            border-radius: 17.4px;
-                            background: Theme.sys-surface;
-                            border-width: 1px;
-                            border-color: Theme.sys-border;
-
-                            pill-txt := Text {
-                                text: pill;
-                                font-size: 13px;
-                                font-weight: 600;
-                                color: Theme.sys-text-secondary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                            }
+                        artist-pills := HorizontalLayout {
+                            y: artist-name-box.height + 16px; width: 100%; height: 34.8px; spacing: 8px; alignment: start;
+                            artist-pill-0 := ArtistPill { label: AppState.artist-pills[0]; }
+                            for pill in [AppState.artist-pills[1], AppState.artist-pills[2]] : ArtistPill { label: pill; }
                         }
-                    }
-
-                    // .artist-summary (y = 83.8 + 34.8 + 16 = 134.6px, height 24px, font-size 15px)
-                    Text {
-                        x: 0px;
-                        y: 134.6px;
-                        width: 680px;
-                        text: AppState.artist-summary;
-                        font-size: 15px;
-                        color: Theme.sys-text-secondary;
-                        wrap: word-wrap;
-                    }
-
-                    // .cta-row (y = 222.59 - 44 = 178.59px -> window y=234.59, height 44px, gap 12px)
-                    HorizontalLayout {
-                        x: 0px;
-                        y: 178.59px;
-                        height: 44px;
-                        spacing: 12px;
-                        alignment: start;
-
-                        // .btn-play (x=580.5, y=234.59, width=104.02, height=44, radius 22px, transition 0.2s cubic-bezier(0.25, 1, 0.5, 1))
-                        artist-btn-play := Rectangle {
-                            width: 104.02px;
-                            height: 44px;
-                            border-radius: 22px;
-                            background: btn-p-ta.has-hover ? Theme.theme-color-strong : Theme.theme-color;
-                            drop-shadow-blur: 22px;
-                            drop-shadow-offset-y: 8px;
-                            drop-shadow-color: Theme.sys-shadow-soft;
-                            animate background { duration: 200ms; easing: cubic-bezier(0.25, 1.0, 0.5, 1.0); }
-
-                            btn-p-ta := TouchArea {
-                                mouse-cursor: pointer;
+                        artist-summary := ArtistText {
+                            y: artist-pills.y + artist-pills.height + 16px;
+                            width: Math.min(parent.width, 680px); text: AppState.artist-summary;
+                            font-size: 15px; line-height: 24px; color: Theme.sys-text-secondary; wrap: word-wrap;
+                        }
+                        artist-actions := HorizontalLayout {
+                            y: artist-summary.y + artist-summary.height + 20px; width: 100%; height: 44px;
+                            spacing: 12px; alignment: start;
+                            artist-btn-play := ArtistButton {
+                                label: "播放"; primary: true; icon: Icons.play-alt; enabled: AppState.artist-top-songs.length > 0;
                                 clicked => {
-                                    if AppState.runtime-enabled { AppState.runtime-action("play-all", -1, ""); } else { AppState.play-song(1, "Midnight City Lights", AppState.artist-name, AppState.artist-avatar, false, true); }
+                                    if AppState.runtime-enabled { AppState.runtime-action("play-all", -1, ""); }
+                                    else { AppState.play-song(AppState.artist-top-songs[0].id, AppState.artist-top-songs[0].title, AppState.artist-name, AppState.artist-top-songs[0].cover, false, true); }
                                 }
                             }
-
-                            HorizontalLayout {
-                                alignment: center;
-                                spacing: 8px;
-
-                                AppIcon {
-                                    y: (parent.height - self.height) / 2;
-                                    source: Icons.play-alt;
-                                    icon-size: 18px;
-                                    tint: #ffffff;
-                                }
-
-                                Text {
-                                    text: "播放";
-                                    font-size: 15px;
-                                    font-weight: 600;
-                                    color: #ffffff;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
-
-                        // .btn-shuffle (x=696.52, y=234.59, width=136.02, height=44, radius 22px)
-                        artist-btn-shuffle := Rectangle {
-                            width: 136.02px;
-                            height: 44px;
-                            border-radius: 22px;
-                            background: btn-s-ta.has-hover ? Theme.sys-control-hover : Theme.sys-surface;
-                            border-width: 1px;
-                            border-color: Theme.sys-border;
-                            animate background { duration: 200ms; easing: cubic-bezier(0.25, 1.0, 0.5, 1.0); }
-
-                            btn-s-ta := TouchArea {
-                                mouse-cursor: pointer;
+                            artist-btn-shuffle := ArtistButton {
+                                label: "随机播放"; icon: Icons.shuffle; enabled: AppState.artist-top-songs.length > 0;
                                 clicked => {
                                     AppState.play-mode = "random";
-                                    if AppState.runtime-enabled { AppState.runtime-action("play-all", -1, ""); } else { AppState.play-song(2, "Wait", AppState.artist-name, Icons.cover-cyan, false, true); }
-                                }
-                            }
-
-                            HorizontalLayout {
-                                alignment: center;
-                                spacing: 8px;
-
-                                AppIcon {
-                                    y: (parent.height - self.height) / 2;
-                                    source: Icons.shuffle;
-                                    icon-size: 18px;
-                                    tint: Theme.sys-text;
-                                }
-
-                                Text {
-                                    text: "随机播放";
-                                    font-size: 15px;
-                                    font-weight: 600;
-                                    color: Theme.sys-text;
-                                    vertical-alignment: center;
+                                    if AppState.runtime-enabled { AppState.runtime-action("play-all", -1, ""); }
+                                    else { AppState.play-song(AppState.artist-top-songs[0].id, AppState.artist-top-songs[0].title, AppState.artist-name, AppState.artist-top-songs[0].cover, false, true); }
                                 }
                             }
                         }
                     }
                 }
-            }
-
-            // ───── 2. LATEST RELEASES (.latest-grid: y = 56 + 222.59 + 60 = 338.59, header 60.39 + 24 = 84.39 -> items at y=422.98) ─────
-            Rectangle {
-                x: 32px;
-                y: 338.59px;
-                width: 1036px;
-                height: 164.39px;
-
-                Text {
-                    x: 0px;
-                    y: 0px;
-                    text: "LATEST";
-                    font-size: 10px;
-                    font-weight: 700;
-                    color: Theme.sys-text-secondary;
-                }
-
-                Text {
-                    x: 0px;
-                    y: 22px;
-                    text: "最新发布";
-                    font-size: 24px;
-                    font-weight: 700;
-                    color: Theme.sys-text;
-                }
-
-                // .latest-grid (y = 84.39 -> window y=422.98, 2 columns of 506x80, gap 24px)
-                HorizontalLayout {
-                    x: 0px;
-                    y: 84.39px;
-                    width: 1036px;
-                    height: 80px;
-                    spacing: 24px;
-
-                    for item in AppState.artist-latest : Rectangle {
-                        width: 506px;
-                        height: 80px;
-
-                        TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => {
-                                AppState.album-title = item.title;
-                                AppState.album-cover = item.cover;
-                                if AppState.runtime-enabled { AppState.runtime-action("album", item.id, ""); } else { AppState.current-route = "album"; }
-                            }
-                        }
-
-                        HorizontalLayout {
-                            spacing: 16px;
-
-                            RoundedCover {
-                                width: 80px;
-                                height: 80px;
-                                radius: 12px;
-                                source: item.cover;
-                                cover-id: item.id;
-                            }
-
-                            VerticalLayout {
-                                alignment: center;
-                                spacing: 4px;
-                                horizontal-stretch: 1;
-
-                                Text {
-                                    text: item.kind;
-                                    font-size: 11px;
-                                    font-weight: 600;
-                                    color: Theme.sys-text-tertiary;
-                                }
-
-                                Text {
-                                    text: item.title;
-                                    font-size: 15px;
-                                    font-weight: 600;
-                                    color: Theme.sys-text;
-                                    overflow: elide;
-                                }
-
-                                Text {
-                                    text: item.year;
-                                    font-size: 13px;
-                                    color: Theme.sys-text-secondary;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ───── 3. TOP SONGS (.songs-card: y = 422.98 + 80 + 60 + 84.4 = 647.38, width=1036, height=414, radius 24px, padding 12px) ─────
-            Rectangle {
-                x: 32px;
-                y: 562.98px;
-                width: 1036px;
-                height: 498.4px;
-
-                Text {
-                    x: 0px;
-                    y: 0px;
-                    text: "TOP TRACKS";
-                    font-size: 10px;
-                    font-weight: 700;
-                    color: Theme.sys-text-secondary;
-                }
-
-                Text {
-                    x: 0px;
-                    y: 22px;
-                    text: "热门歌曲";
-                    font-size: 24px;
-                    font-weight: 700;
-                    color: Theme.sys-text;
-                }
-
-                Rectangle {
-                    x: 1036px - 64px;
-                    y: 30px;
-                    width: 64px;
-                    height: 30px;
-                    border-radius: 15px;
-                    background: Theme.sys-surface;
-                    border-width: 1px;
-                    border-color: Theme.sys-border;
-
-                    Text {
-                        text: AppState.artist-top-songs.length + " 首";
-                        font-size: 13px;
-                        font-weight: 600;
-                        color: Theme.sys-text-secondary;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
-
-                // .songs-card (x=332.5, y=647.38, width=1036, height=414, border 1px, padding 12px -> first row at x=345.5, y=660.38, width=1010, height=76)
-                artist-songs-card := Rectangle {
-                    x: 0px;
-                    y: 84.4px;
-                    width: 1036px;
-                    height: 414px;
-                    border-radius: 24px;
-                    background: Theme.sys-surface;
-                    border-width: 1px;
-                    border-color: Theme.sys-border;
-                    drop-shadow-blur: 32px;
-                    drop-shadow-offset-y: 10px;
-                    drop-shadow-color: Theme.sys-shadow-soft;
-
-                    VerticalLayout {
-                        x: 13px;
-                        y: 13px;
-                        width: 1010px;
-                        height: 388px;
-                        spacing: 2px;
-
-                        for song in AppState.artist-top-songs : Rectangle {
-                            width: 1010px;
-                            height: 76px;
-                            border-radius: 14px;
-                            background: ts-ta.has-hover ? Theme.sys-control-hover : transparent;
-                            animate background { duration: 200ms; easing: ease; }
-
-                            ts-ta := TouchArea {
+                if !root.loading && AppState.artist-load-error == "" && AppState.artist-latest.length > 0 : artist-latest-section := Rectangle {
+                    height: 84.4px + latest-row.preferred-height;
+                    ArtistSectionHeader { width: 100%; eyebrow: "LATEST"; title: "最新发布"; }
+                    latest-row := HorizontalLayout {
+                        y: 84.4px; width: 100%; spacing: 24px;
+                        for item in AppState.artist-latest : latest-item := Rectangle {
+                            width: (parent.width - 24px) / 2; height: Math.max(80px, latest-info.height);
+                            latest-cover := RoundedCover { x: 0px; width: 80px; height: 80px; radius: 12px; source: item.cover; cover-id: item.id; }
+                            latest-info := ArtistReleaseInfo { x: 96px; y: (parent.height - self.height) / 2; width: parent.width - 96px; item: item; latest: true; }
+                            TouchArea {
                                 mouse-cursor: pointer;
                                 clicked => {
-                                    AppState.play-song(song.id, song.title, AppState.artist-name, song.cover, false, true);
+                                    AppState.album-title = item.title; AppState.album-cover = item.cover;
+                                    if AppState.runtime-enabled { AppState.runtime-action("album", item.id, ""); } else { AppState.current-route = "album"; }
                                 }
                             }
-
-                            // .song-num (x=+16px, width=40px)
-                            Text {
-                                x: 16px;
-                                y: 0px;
-                                width: 40px;
-                                height: 76px;
-                                text: song.index-str;
-                                font-size: 14px;
-                                font-weight: 600;
-                                color: Theme.sys-text-tertiary;
-                                horizontal-alignment: right;
-                                vertical-alignment: center;
-                            }
-
-                            // .song-thumb-wrapper (x = 16 + 40 + 16 = 72px -> window x = 345.5 + 72 = 417.5, y = 660.38 + 10 = 670.38, 56x56, radius 10px)
-                            RoundedCover {
-                                x: 72px;
-                                y: 10px;
-                                width: 56px;
-                                height: 56px;
-                                radius: 10px;
-                                source: song.cover;
-                                cover-id: song.id;
-                                border-width: 1px;
-                                border-color: Theme.sys-border;
-                            }
-
-                            // .song-info (x = 72 + 56 + 16 = 144px)
-                            VerticalLayout {
-                                x: 144px;
-                                y: 14px;
-                                width: 780px;
-                                spacing: 4px;
-
-                                HorizontalLayout {
-                                    spacing: 8px;
-                                    alignment: start;
-
-                                    Text {
-                                        text: song.title;
-                                        font-size: 15px;
-                                        font-weight: 600;
-                                        color: Theme.sys-text;
-                                        vertical-alignment: center;
-                                    }
-
-                                    if song.badge != "" : Rectangle {
-                                        width: 36.81px;
-                                        height: 22px;
-                                        border-radius: 6px;
-                                        background: song.badge == "hot" ? Theme.theme-color : Theme.sys-control;
-
-                                        Text {
-                                            text: song.badge == "hot" ? "最热" : "推荐";
-                                            font-size: 10px;
-                                            font-weight: 700;
-                                            color: song.badge == "hot" ? #ffffff : Theme.sys-text-secondary;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
-                                        }
-                                    }
-                                }
-
-                                Text {
-                                    text: song.album;
-                                    font-size: 13px;
-                                    color: Theme.sys-text-secondary;
-                                }
-                            }
-
-                            Text {
-                                x: 1010px - 16px - 50px;
-                                y: 0px;
-                                width: 50px;
-                                height: 76px;
-                                text: song.duration;
-                                font-size: 14px;
-                                font-weight: 500;
-                                color: Theme.sys-text-tertiary;
-                                horizontal-alignment: right;
-                                vertical-alignment: center;
-                            }
+                        }
+                        if AppState.artist-latest.length == 1 : Rectangle { horizontal-stretch: 1; }
+                    }
+                }
+                if !root.loading && AppState.artist-load-error == "" && AppState.artist-top-songs.length > 0 : artist-songs-section := Rectangle {
+                    height: 84.4px + artist-songs-card.height;
+                    ArtistSectionHeader { width: 100%; eyebrow: "TOP TRACKS"; title: "热门歌曲"; count: AppState.artist-top-songs.length + " 首"; }
+                    artist-songs-card := Rectangle {
+                        y: 84.4px; width: 100%; height: 24px + AppState.artist-top-songs.length * 78px;
+                        border-radius: 24px; background: Theme.sys-surface;
+                        border-width: 1px; border-color: Theme.sys-border;
+                        drop-shadow-blur: 32px; drop-shadow-offset-y: 10px; drop-shadow-color: Theme.sys-shadow-soft;
+                        for song[i] in AppState.artist-top-songs : ArtistSongRow {
+                            x: 13px; y: 13px + i * 78px; width: parent.width - 26px; song: song;
                         }
                     }
                 }
-            }
-
-            // ───── 4. ALBUMS (Discography: y = 647.38 + 414 + 60 = 1121.38, tiles at y = 1121.38 + 84.39 = 1205.77, 5 columns of 188x188, gap 24px) ─────
-            Rectangle {
-                x: 32px;
-                y: 1121.38px;
-                width: 1036px;
-                height: 342.39px;
-
-                Text {
-                    x: 0px;
-                    y: 0px;
-                    text: "DISCOGRAPHY";
-                    font-size: 10px;
-                    font-weight: 700;
-                    color: Theme.sys-text-secondary;
-                }
-
-                Text {
-                    x: 0px;
-                    y: 22px;
-                    text: "专辑";
-                    font-size: 24px;
-                    font-weight: 700;
-                    color: Theme.sys-text;
-                }
-
-                HorizontalLayout {
-                    x: 0px;
-                    y: 84.39px;
-                    width: 1036px;
-                    height: 258px;
-                    spacing: 24px;
-
-                    for album in AppState.artist-albums : ArtistMediaTile {
-                        item: album;
-                        is-mv: false;
-                        clicked => {
-                            AppState.album-title = album.title;
-                            AppState.album-cover = album.cover;
-                            if AppState.runtime-enabled { AppState.runtime-action("album", self.item.id, ""); } else { AppState.current-route = "album"; }
+                if !root.loading && AppState.artist-load-error == "" && AppState.artist-albums.length > 0 : artist-albums-section := Rectangle {
+                    height: 84.4px + album-grid.height;
+                    ArtistSectionHeader { width: 100%; eyebrow: "DISCOGRAPHY"; title: "专辑"; count: AppState.artist-albums.length + " 张"; }
+                    album-grid := ArtistMediaGrid {
+                        y: 84.4px; width: 100%; items: AppState.artist-albums;
+                        selected(item) => {
+                            AppState.album-title = item.title; AppState.album-cover = item.cover;
+                            if AppState.runtime-enabled { AppState.runtime-action("album", item.id, ""); } else { AppState.current-route = "album"; }
                         }
                     }
                 }
-            }
-
-            // ───── 5. EPS & SINGLES (y = 1121.38 + 342.39 + 60 = 1523.77) ─────
-            Rectangle {
-                x: 32px;
-                y: 1523.77px;
-                width: 1036px;
-                height: 342.39px;
-
-                Text {
-                    x: 0px;
-                    y: 0px;
-                    text: "SINGLES";
-                    font-size: 10px;
-                    font-weight: 700;
-                    color: Theme.sys-text-secondary;
-                }
-
-                Text {
-                    x: 0px;
-                    y: 22px;
-                    text: "EP 和单曲";
-                    font-size: 24px;
-                    font-weight: 700;
-                    color: Theme.sys-text;
-                }
-
-                HorizontalLayout {
-                    x: 0px;
-                    y: 84.39px;
-                    width: 1036px;
-                    height: 258px;
-                    spacing: 24px;
-                    alignment: start;
-
-                    for ep in AppState.artist-eps : ArtistMediaTile {
-                        item: ep;
-                        is-mv: false;
-                        clicked => {
-                            AppState.album-title = ep.title;
-                            AppState.album-cover = ep.cover;
-                            if AppState.runtime-enabled { AppState.runtime-action("album", self.item.id, ""); } else { AppState.current-route = "album"; }
+                if !root.loading && AppState.artist-load-error == "" && AppState.artist-eps.length > 0 : artist-eps-section := Rectangle {
+                    height: 84.4px + ep-grid.height;
+                    ArtistSectionHeader { width: 100%; eyebrow: "SINGLES"; title: "EP 和单曲"; count: AppState.artist-eps.length + " 张"; }
+                    ep-grid := ArtistMediaGrid {
+                        y: 84.4px; width: 100%; items: AppState.artist-eps;
+                        selected(item) => {
+                            AppState.album-title = item.title; AppState.album-cover = item.cover;
+                            if AppState.runtime-enabled { AppState.runtime-action("album", item.id, ""); } else { AppState.current-route = "album"; }
                         }
                     }
                 }
-            }
-
-            // ───── 6. MUSIC VIDEOS (mvTileImg at x=332.5, y=2014.33, width=329.33, height=185.23) ─────
-            Rectangle {
-                x: 32px;
-                y: 1951.94px;
-                width: 1036px;
-                height: 318px;
-
-                Text {
-                    x: 0px;
-                    y: 0px;
-                    text: "MV";
-                    font-size: 24px;
-                    font-weight: 700;
-                    color: Theme.sys-text;
-                }
-
-                HorizontalLayout {
-                    x: 0px;
-                    y: 62.39px;
-                    width: 1036px;
-                    height: 255.23px;
-                    spacing: 24px;
-                    alignment: start;
-
-                    for mv in AppState.artist-mvs : ArtistMediaTile {
-                        item: mv;
-                        is-mv: true;
-                        clicked => { if AppState.runtime-enabled { AppState.runtime-action("mv", mv.id, ""); } }
+                if !root.loading && AppState.artist-load-error == "" && AppState.artist-mvs.length > 0 : artist-mvs-section := Rectangle {
+                    height: 68.4px + mv-grid.height + 24px;
+                    ArtistSectionHeader { width: 100%; title: "MV"; count: AppState.artist-mvs.length + " 部"; }
+                    mv-grid := ArtistMediaGrid {
+                        y: 68.4px; width: 100%; items: AppState.artist-mvs; is-mv: true;
+                        selected(item) => { if AppState.runtime-enabled { AppState.runtime-action("mv", item.id, ""); } }
                     }
                 }
             }

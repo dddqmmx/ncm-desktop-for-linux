@@ -27,11 +27,42 @@ fn cancel_playlist_loading(state: &AppState<'_>) {
         state.set_home_charts_loading(false);
         state.set_home_charts_loaded(false);
     }
+    if state.get_artist_loading() {
+        state.set_artist_loading(false);
+        state.set_artist_load_error("登录状态已变化，请重新加载歌手".into());
+    }
     if state.get_playlist_loading() {
         state.set_playlist_loading(false);
         state.set_playlist_metadata_loading(false);
         state.set_playlist_load_error("登录状态已变化，请重新加载歌单".into());
     }
+}
+fn artist_is_single(album: &Value) -> bool {
+    let kind = format!("{} {}", text(&album["type"]), text(&album["subType"])).to_lowercase();
+    kind.contains("single") || kind.contains("ep") || kind.contains("单曲")
+}
+fn artist_release_year(value: &Value) -> String {
+    if let Some(value) = value.as_str() {
+        return value
+            .as_bytes()
+            .windows(4)
+            .find(|year| year.iter().all(u8::is_ascii_digit))
+            .map(|year| String::from_utf8_lossy(year).into_owned())
+            .unwrap_or_else(|| {
+                if value.is_empty() {
+                    "--".into()
+                } else {
+                    value.into()
+                }
+            });
+    }
+    use chrono::{Datelike, TimeZone};
+    value
+        .as_i64()
+        .filter(|ms| *ms != 0)
+        .and_then(|ms| chrono::Local.timestamp_millis_opt(ms).single())
+        .map(|date| date.year().to_string())
+        .unwrap_or_else(|| "--".into())
 }
 pub struct View {
     #[cfg(test)]
@@ -446,6 +477,21 @@ impl View {
     fn page(&mut self, app: &AppWindow, kind: &str, id: &str, autoplay: bool) {
         self.route = kind.into();
         let s = app.global::<AppState>();
+        s.set_artist_loading(kind == "artist");
+        s.set_artist_load_error("".into());
+        if kind == "artist" {
+            s.set_active_artist_id(self.ids.intern("artist", id));
+            self.image_targets.remove("artist");
+            s.set_artist_avatar(slint::Image::default());
+            s.set_artist_name("".into());
+            s.set_artist_summary("".into());
+            s.set_artist_pills(strings(vec![]));
+            s.set_artist_latest(cover_model(vec![]));
+            s.set_artist_albums(cover_model(vec![]));
+            s.set_artist_eps(cover_model(vec![]));
+            s.set_artist_mvs(cover_model(vec![]));
+            s.set_artist_top_songs(cover_model(vec![]));
+        }
         s.set_playlist_loading(kind == "playlist");
         s.set_playlist_metadata_loading(kind == "playlist");
         s.set_playlist_load_error("".into());
@@ -613,6 +659,15 @@ impl View {
                     self.page(app, "artist", &artist, false)
                 }
             }
+            "artist-retry" => {
+                if let Some(id) = self
+                    .ids
+                    .get(s.get_active_artist_id(), "artist")
+                    .map(str::to_owned)
+                {
+                    self.page(app, "artist", &id, false);
+                }
+            }
             "mv" => {
                 if let Some(id) = self.ids.get(id, "mv").map(str::to_owned) {
                     self.send("mv", json!({ "id" : id }))
@@ -640,6 +695,7 @@ impl View {
                     return;
                 }
                 self.route = arg.into();
+                s.set_artist_loading(false);
                 *self.tokens.entry("page".into()).or_default() += 1;
                 s.set_playlist_loading(false);
                 s.set_playlist_metadata_loading(false);
@@ -1111,6 +1167,10 @@ impl View {
                 "home" => {
                     s.set_home_playlists_loading(false);
                     s.set_home_songs_loading(false);
+                }
+                "page" if self.route == "artist" => {
+                    s.set_artist_loading(false);
+                    s.set_artist_load_error(error.clone().into());
                 }
                 "page" if self.route == "playlist" => {
                     s.set_playlist_loading(false);
@@ -1643,63 +1703,129 @@ impl View {
             }
             "artist" => {
                 let a = &b["detail"]["data"]["artist"];
-                s.set_artist_name(text(&a["name"]).into());
-                s.set_artist_summary(text(&a["briefDesc"]).into());
-                s.set_artist_avatar(self.target_image("artist", &text(&a["cover"])));
-                s.set_artist_pills(strings(vec![
-                    format!("{} 张专辑", text(&a["albumSize"])),
-                    format!("{} 首歌曲", text(&a["musicSize"])),
-                    format!("{} 支 MV", text(&a["mvSize"])),
-                ]));
-                let albums: Vec<_> = items(&b["album"]["hotAlbums"])
+                s.set_artist_loading(false);
+                if !a.is_object() {
+                    s.set_artist_load_error("未获取到歌手详情".into());
+                    return;
+                }
+                s.set_artist_load_error("".into());
+                s.set_artist_name(a["name"].as_str().unwrap_or("未知歌手").into());
+                let avatar = text(&a["avatar"]);
+                s.set_artist_avatar(self.target_image(
+                    "artist",
+                    &if avatar.is_empty() {
+                        text(&a["cover"])
+                    } else {
+                        avatar
+                    },
+                ));
+                let mut raw_albums: Vec<_> = items(&b["album"]["hotAlbums"]).iter().collect();
+                raw_albums
+                    .sort_by_key(|a| std::cmp::Reverse(a["publishTime"].as_i64().unwrap_or(0)));
+                let albums: Vec<_> = raw_albums
                     .iter()
                     .map(|a| ArtistReleaseItem {
                         id: self.entity_cover("album", &text(&a["id"]), &text(&a["picUrl"])),
                         title: text(&a["name"]).into(),
-                        kind: text(&a["type"]).into(),
-                        year: String::new().into(),
+                        kind: if artist_is_single(a) {
+                            "EP / Single"
+                        } else {
+                            "Album"
+                        }
+                        .into(),
+                        year: artist_release_year(&a["publishTime"]).into(),
                         cover: self.image(&text(&a["picUrl"])),
                     })
                     .collect();
-                s.set_artist_latest(cover_model(albums.iter().take(2).cloned().collect()));
-                s.set_artist_albums(cover_model(
-                    albums
-                        .iter()
-                        .filter(|a| a.kind == "专辑" || a.kind == "Album")
-                        .cloned()
-                        .collect(),
-                ));
-                s.set_artist_eps(cover_model(
-                    albums
-                        .into_iter()
-                        .filter(|a| a.kind != "专辑" && a.kind != "Album")
-                        .collect(),
-                ));
-                s.set_artist_mvs(cover_model(
-                    items(&b["mv"]["mvs"])
-                        .iter()
-                        .map(|m| ArtistReleaseItem {
-                            id: self.entity_cover("mv", &text(&m["id"]), &text(&m["imgurl"])),
+                let eps: Vec<_> = albums
+                    .iter()
+                    .filter(|a| a.kind == "EP / Single")
+                    .cloned()
+                    .collect();
+                let full_albums: Vec<_> = albums
+                    .iter()
+                    .filter(|a| a.kind == "Album")
+                    .cloned()
+                    .collect();
+                let mvs: Vec<_> = items(&b["mv"]["mvs"])
+                    .iter()
+                    .map(|m| {
+                        let wide = text(&m["imgurl16v9"]);
+                        let cover = if wide.is_empty() {
+                            text(&m["imgurl"])
+                        } else {
+                            wide
+                        };
+                        ArtistReleaseItem {
+                            id: self.entity_cover("mv", &text(&m["id"]), &cover),
                             title: text(&m["name"]).into(),
                             kind: "Music Video".into(),
-                            year: text(&m["publishTime"]).into(),
-                            cover: self.image(&text(&m["imgurl"])),
+                            year: artist_release_year(&m["publishTime"]).into(),
+                            cover: self.image(&cover),
+                        }
+                    })
+                    .collect();
+                s.set_artist_pills(strings(vec![
+                    format!(
+                        "{} 张专辑",
+                        a["albumSize"].as_u64().unwrap_or(full_albums.len() as u64)
+                    ),
+                    format!("{} 张 EP / 单曲", eps.len()),
+                    format!("{} 支 MV", a["mvSize"].as_u64().unwrap_or(mvs.len() as u64)),
+                ]));
+                let songs = self.api_songs(&b["top"]["songs"]);
+                let summary = text(&a["briefDesc"]);
+                s.set_artist_summary(
+                    if !summary.trim().is_empty() {
+                        summary.trim().to_owned()
+                    } else if let Some(latest) = albums.first() {
+                        format!(
+                            "最新发布《{}》，当前已收录 {} 首热门歌曲。",
+                            latest.title,
+                            songs.len()
+                        )
+                    } else {
+                        format!(
+                            "当前已收录 {} 首热门歌曲、{} 张专辑。",
+                            songs.len(),
+                            full_albums.len()
+                        )
+                    }
+                    .into(),
+                );
+                s.set_artist_latest(cover_model(
+                    albums
+                        .iter()
+                        .take(2)
+                        .cloned()
+                        .map(|mut a| {
+                            if a.kind == "EP / Single" {
+                                a.kind = "Single / EP".into();
+                            }
+                            a
                         })
                         .collect(),
                 ));
-                let songs = self.api_songs(&b["top"]["songs"]);
+                s.set_artist_albums(cover_model(full_albums));
+                s.set_artist_eps(cover_model(eps));
+                s.set_artist_mvs(cover_model(mvs));
                 s.set_artist_top_songs(cover_model(
                     songs
                         .iter()
                         .enumerate()
-                        .map(|(i, s)| ArtistSongItem {
-                            id: self.ids.intern("song", &s.id),
+                        .map(|(i, song)| ArtistSongItem {
+                            id: self.ids.intern("song", &song.id),
                             index_str: format!("{:02}", i + 1).into(),
-                            title: s.name.clone().into(),
-                            album: s.album.clone().into(),
-                            duration: time(s.duration).into(),
-                            cover: self.image(&s.cover),
-                            badge: "".into(),
+                            title: song.name.clone().into(),
+                            album: song.album.clone().into(),
+                            duration: time(song.duration).into(),
+                            cover: self.image(&song.cover),
+                            badge: match i {
+                                0 => "hot",
+                                1 => "rec",
+                                _ => "",
+                            }
+                            .into(),
                         })
                         .collect(),
                 ));

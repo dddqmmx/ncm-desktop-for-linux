@@ -1,4 +1,6 @@
 mod api;
+#[cfg(test)]
+mod artist_tests;
 mod backend;
 mod covers;
 mod data;

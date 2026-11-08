@@ -3334,6 +3334,7 @@ name = "ncm-slint-ui"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "futures-util",
  "i-slint-backend-testing",
  "image",
