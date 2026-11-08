@@ -1,0 +1,89 @@
+export global Theme {
+    callback theme-changed(string);
+    in-out property <bool> is-dark: false;
+    in-out property <string> theme-mode: "light"; // "light" | "dark" | "adaptive"
+
+    in-out property <color> theme-color: #6366f1;
+    in-out property <color> theme-color-soft: rgba(99, 102, 241, 0.12);
+    in-out property <color> theme-color-muted: rgba(99, 102, 241, 0.20);
+    in-out property <color> theme-color-strong: #5154c5;
+    in-out property <color> theme-color-tint: #e0e0fd;
+    changed is-dark => { self.theme-changed("is-dark"); }
+    changed theme-mode => { self.theme-changed("theme-mode"); }
+    changed theme-color => { self.theme-changed("theme-color"); }
+    changed theme-color-soft => { self.theme-changed("theme-color-soft"); }
+    changed theme-color-muted => { self.theme-changed("theme-color-muted"); }
+    changed theme-color-strong => { self.theme-changed("theme-color-strong"); }
+    changed theme-color-tint => { self.theme-changed("theme-color-tint"); }
+
+    out property <color> sys-bg: is-dark ? #101217 : #eef1f6;
+    out property <color> sys-bg-elevated: is-dark ? #1a1d24 : #ffffff;
+    out property <color> sys-bg-soft: is-dark ? #151821 : #f7f8fb;
+    out property <color> sys-bg-muted: is-dark ? #222632 : #e7ebf2;
+
+    out property <color> sys-surface: is-dark ? rgba(28, 31, 39, 0.72) : rgba(255, 255, 255, 0.68);
+    out property <color> sys-surface-strong: is-dark ? rgba(32, 36, 46, 0.90) : rgba(255, 255, 255, 0.86);
+    out property <color> sys-surface-muted: is-dark ? rgba(255, 255, 255, 0.08) : rgba(255, 255, 255, 0.44);
+
+    out property <color> sys-text: is-dark ? rgba(248, 250, 252, 0.94) : #17191f;
+    out property <color> sys-text-secondary: is-dark ? rgba(248, 250, 252, 0.68) : rgba(23, 25, 31, 0.68);
+    out property <color> sys-text-tertiary: is-dark ? rgba(248, 250, 252, 0.46) : rgba(23, 25, 31, 0.46);
+    out property <color> sys-text-disabled: is-dark ? rgba(248, 250, 252, 0.32) : rgba(23, 25, 31, 0.32);
+
+    out property <color> sys-border: is-dark ? rgba(248, 250, 252, 0.10) : rgba(23, 25, 31, 0.08);
+    out property <color> sys-border-strong: is-dark ? rgba(248, 250, 252, 0.18) : rgba(23, 25, 31, 0.14);
+
+    out property <color> sys-control: is-dark ? rgba(248, 250, 252, 0.08) : rgba(23, 25, 31, 0.06);
+    out property <color> sys-control-hover: is-dark ? rgba(248, 250, 252, 0.13) : rgba(23, 25, 31, 0.10);
+    out property <color> sys-control-active: is-dark ? rgba(99, 102, 241, 0.24) : rgba(99, 102, 241, 0.16);
+    out property <color> sys-control-selected: is-dark ? rgba(248, 250, 252, 0.14) : rgba(255, 255, 255, 0.94);
+
+    out property <color> sys-shadow-soft: is-dark ? rgba(0, 0, 0, 0.22) : rgba(25, 32, 46, 0.08);
+    out property <color> sys-shadow-elevated: is-dark ? rgba(0, 0, 0, 0.34) : rgba(25, 32, 46, 0.16);
+
+    out property <color> sys-scrollbar-thumb: is-dark ? rgba(248, 250, 252, 0.24) : rgba(23, 25, 31, 0.22);
+    out property <color> sys-scrollbar-thumb-hover: is-dark ? rgba(248, 250, 252, 0.38) : rgba(23, 25, 31, 0.34);
+
+    out property <color> sys-danger: #dc2626;
+    out property <color> sys-danger-soft: rgba(220, 38, 38, 0.10);
+    out property <color> sys-success: #15803d;
+    out property <color> sys-success-soft: rgba(21, 128, 61, 0.10);
+    out property <color> sys-on-accent: #ffffff;
+
+    out property <color> sys-category-warm: #d9480f;
+    out property <color> sys-category-sun: #f59f00;
+    out property <color> sys-category-red: #f97316;
+    out property <color> sys-category-cyan: #0e7490;
+    out property <color> sys-category-sky: #38bdf8;
+    out property <color> sys-category-mint: #34d399;
+    out property <color> sys-category-rose: #fb7185;
+    out property <color> sys-category-ink: #0f172a;
+
+    out property <brush> glass-fill: is-dark
+        ? rgba(28, 31, 39, 0.72)
+        : @linear-gradient(
+            157deg,
+            rgba(255, 255, 255, 0.74) 0%,
+            rgba(255, 255, 255, 0.56) 42%,
+            rgba(255, 255, 255, 0.50) 66%,
+            rgba(255, 255, 255, 0.64) 100%
+        );
+
+    out property <brush> glass-fill-strong: is-dark
+        ? rgba(32, 36, 46, 0.90)
+        : @linear-gradient(
+            157deg,
+            rgba(255, 255, 255, 0.88) 0%,
+            rgba(255, 255, 255, 0.68) 100%
+        );
+
+    out property <color> glass-border: is-dark ? rgba(248, 250, 252, 0.10) : rgba(255, 255, 255, 0.98);
+    out property <color> glass-highlight: is-dark ? transparent : #ffffff;
+    out property <color> glass-shade: is-dark ? transparent : rgba(23, 25, 31, 0.08);
+    out property <color> glass-shadow: is-dark ? rgba(0, 0, 0, 0.22) : rgba(25, 32, 46, 0.16);
+    out property <color> glass-shadow-elevated: is-dark ? rgba(0, 0, 0, 0.34) : rgba(25, 32, 46, 0.18);
+
+    out property <brush> app-background: is-dark
+        ? @linear-gradient(168deg, #101217 0%, #151821 100%)
+        : @linear-gradient(168deg, #eef1f6 0%, #e7ebf2 100%);
+}

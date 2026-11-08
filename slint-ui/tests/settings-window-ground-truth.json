@@ -1,0 +1,1820 @@
+{
+  "1000x800": {
+    "window": {
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1000,
+        "height": 800
+      },
+      "style": {
+        "borderRadius": "20px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "sidebar": {
+      "rect": {
+        "x": 1,
+        "y": 1,
+        "width": 240,
+        "height": 798
+      },
+      "style": {
+        "borderRadius": "0px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "32px",
+        "paddingRight": "16px",
+        "paddingBottom": "32px",
+        "paddingLeft": "16px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "navIndicator": {
+      "rect": {
+        "x": 17,
+        "y": 82.59,
+        "width": 207,
+        "height": 44
+      },
+      "style": {
+        "borderRadius": "10px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.4s",
+        "transitionTimingFunction": "cubic-bezier(0.2, 1, 0.3, 1)",
+        "transitionProperty": "transform",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "navItem": {
+      "rect": {
+        "x": 17,
+        "y": 82.59,
+        "width": 207,
+        "height": 44
+      },
+      "style": {
+        "borderRadius": "10px",
+        "fontSize": "14px",
+        "fontWeight": "600",
+        "paddingTop": "0px",
+        "paddingRight": "16px",
+        "paddingBottom": "0px",
+        "paddingLeft": "16px",
+        "gap": "12px",
+        "columnGap": "12px",
+        "rowGap": "12px",
+        "opacity": "1",
+        "transitionDuration": "0.2s, 0.2s",
+        "transitionTimingFunction": "ease, ease",
+        "transitionProperty": "color, background-color",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "mainHeader": {
+      "rect": {
+        "x": 241,
+        "y": 1,
+        "width": 758,
+        "height": 88.8
+      },
+      "style": {
+        "borderRadius": "0px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "28px",
+        "paddingRight": "40px",
+        "paddingBottom": "16px",
+        "paddingLeft": "40px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "closeBtn": {
+      "rect": {
+        "x": 923,
+        "y": 33.39,
+        "width": 36,
+        "height": 36
+      },
+      "style": {
+        "borderRadius": "50%",
+        "fontSize": "13.3333px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.3s",
+        "transitionTimingFunction": "cubic-bezier(0.25, 0.8, 0.25, 1)",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "contentScroll": {
+      "rect": {
+        "x": 241,
+        "y": 89.8,
+        "width": 758,
+        "height": 709.2
+      },
+      "style": {
+        "borderRadius": "0px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "16px",
+        "paddingRight": "40px",
+        "paddingBottom": "48px",
+        "paddingLeft": "40px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "controlCard": {
+      "rect": {
+        "x": 281,
+        "y": 136.98,
+        "width": 678,
+        "height": 173.38
+      },
+      "style": {
+        "borderRadius": "20px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "8px",
+        "paddingRight": "20px",
+        "paddingBottom": "8px",
+        "paddingLeft": "20px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "controlRow": {
+      "rect": {
+        "x": 302,
+        "y": 145.98,
+        "width": 636,
+        "height": 78.19
+      },
+      "style": {
+        "borderRadius": "0px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "16px",
+        "paddingRight": "0px",
+        "paddingBottom": "16px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "modernSwitch": {
+      "rect": {
+        "x": 894,
+        "y": 168.78,
+        "width": 44,
+        "height": 24
+      },
+      "style": {
+        "borderRadius": "12px",
+        "fontSize": "13.3333px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.3s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    }
+  },
+  "1200x900": {
+    "window": {
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1200,
+        "height": 900
+      },
+      "style": {
+        "borderRadius": "20px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "sidebar": {
+      "rect": {
+        "x": 1,
+        "y": 1,
+        "width": 240,
+        "height": 898
+      },
+      "style": {
+        "borderRadius": "0px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "32px",
+        "paddingRight": "16px",
+        "paddingBottom": "32px",
+        "paddingLeft": "16px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "navIndicator": {
+      "rect": {
+        "x": 17,
+        "y": 82.59,
+        "width": 207,
+        "height": 44
+      },
+      "style": {
+        "borderRadius": "10px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.4s",
+        "transitionTimingFunction": "cubic-bezier(0.2, 1, 0.3, 1)",
+        "transitionProperty": "transform",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "navItem": {
+      "rect": {
+        "x": 17,
+        "y": 82.59,
+        "width": 207,
+        "height": 44
+      },
+      "style": {
+        "borderRadius": "10px",
+        "fontSize": "14px",
+        "fontWeight": "600",
+        "paddingTop": "0px",
+        "paddingRight": "16px",
+        "paddingBottom": "0px",
+        "paddingLeft": "16px",
+        "gap": "12px",
+        "columnGap": "12px",
+        "rowGap": "12px",
+        "opacity": "1",
+        "transitionDuration": "0.2s, 0.2s",
+        "transitionTimingFunction": "ease, ease",
+        "transitionProperty": "color, background-color",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "mainHeader": {
+      "rect": {
+        "x": 241,
+        "y": 1,
+        "width": 958,
+        "height": 88.8
+      },
+      "style": {
+        "borderRadius": "0px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "28px",
+        "paddingRight": "40px",
+        "paddingBottom": "16px",
+        "paddingLeft": "40px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "closeBtn": {
+      "rect": {
+        "x": 1123,
+        "y": 33.39,
+        "width": 36,
+        "height": 36
+      },
+      "style": {
+        "borderRadius": "50%",
+        "fontSize": "13.3333px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.3s",
+        "transitionTimingFunction": "cubic-bezier(0.25, 0.8, 0.25, 1)",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "contentScroll": {
+      "rect": {
+        "x": 241,
+        "y": 89.8,
+        "width": 958,
+        "height": 809.2
+      },
+      "style": {
+        "borderRadius": "0px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "16px",
+        "paddingRight": "40px",
+        "paddingBottom": "48px",
+        "paddingLeft": "40px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "controlCard": {
+      "rect": {
+        "x": 281,
+        "y": 136.98,
+        "width": 878,
+        "height": 173.38
+      },
+      "style": {
+        "borderRadius": "20px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "8px",
+        "paddingRight": "20px",
+        "paddingBottom": "8px",
+        "paddingLeft": "20px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "controlRow": {
+      "rect": {
+        "x": 302,
+        "y": 145.98,
+        "width": 836,
+        "height": 78.19
+      },
+      "style": {
+        "borderRadius": "0px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "16px",
+        "paddingRight": "0px",
+        "paddingBottom": "16px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "modernSwitch": {
+      "rect": {
+        "x": 1094,
+        "y": 168.78,
+        "width": 44,
+        "height": 24
+      },
+      "style": {
+        "borderRadius": "12px",
+        "fontSize": "13.3333px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.3s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    }
+  },
+  "tabs": {
+    "1000x800": {
+      "general": {
+        "rows": [
+          {
+            "x": 302,
+            "y": 145.984375,
+            "width": 636,
+            "height": 78.1875
+          },
+          {
+            "x": 302,
+            "y": 224.171875,
+            "width": 636,
+            "height": 77.1875
+          }
+        ],
+        "titles": [
+          {
+            "x": 302,
+            "y": 161.984375,
+            "width": 180.015625,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 240.171875,
+            "width": 192.015625,
+            "height": 24
+          }
+        ],
+        "descriptions": [
+          {
+            "x": 302,
+            "y": 187.984375,
+            "width": 180.015625,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 266.171875,
+            "width": 192.015625,
+            "height": 19.1875
+          }
+        ],
+        "actions": [
+          {
+            "x": 894,
+            "y": 168.78125,
+            "width": 44,
+            "height": 31.59375
+          },
+          {
+            "x": 894,
+            "y": 246.96875,
+            "width": 44,
+            "height": 31.59375
+          }
+        ],
+        "cards": [
+          {
+            "x": 281,
+            "y": 136.984375,
+            "width": 678,
+            "height": 173.375
+          }
+        ],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 678,
+            "height": 204.5625
+          }
+        ],
+        "tips": [],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [],
+        "scrollHeight": 709
+      },
+      "audio": {
+        "rows": [
+          {
+            "x": 302,
+            "y": 145.984375,
+            "width": 626,
+            "height": 77.1875
+          },
+          {
+            "x": 302,
+            "y": 435.140625,
+            "width": 626,
+            "height": 78.1875
+          },
+          {
+            "x": 302,
+            "y": 513.328125,
+            "width": 626,
+            "height": 77.1875
+          },
+          {
+            "x": 302,
+            "y": 671.703125,
+            "width": 626,
+            "height": 97.375
+          },
+          {
+            "x": 302,
+            "y": 769.078125,
+            "width": 626,
+            "height": 78.1875
+          },
+          {
+            "x": 302,
+            "y": 847.265625,
+            "width": 626,
+            "height": 78.1875
+          },
+          {
+            "x": 302,
+            "y": 925.453125,
+            "width": 626,
+            "height": 77.1875
+          }
+        ],
+        "titles": [
+          {
+            "x": 302,
+            "y": 161.984375,
+            "width": 204.015625,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 451.140625,
+            "width": 418.703125,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 529.328125,
+            "width": 228.015625,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 687.703125,
+            "width": 156.984375,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 785.078125,
+            "width": 216.015625,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 863.265625,
+            "width": 464,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 941.453125,
+            "width": 356.703125,
+            "height": 24
+          }
+        ],
+        "descriptions": [
+          {
+            "x": 302,
+            "y": 187.984375,
+            "width": 204.015625,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 477.140625,
+            "width": 418.703125,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 555.328125,
+            "width": 228.015625,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 713.703125,
+            "width": 156.984375,
+            "height": 38.375
+          },
+          {
+            "x": 302,
+            "y": 811.078125,
+            "width": 216.015625,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 889.265625,
+            "width": 464,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 967.453125,
+            "width": 356.703125,
+            "height": 19.1875
+          }
+        ],
+        "actions": [
+          {
+            "x": 721,
+            "y": 167.078125,
+            "width": 207,
+            "height": 35
+          },
+          {
+            "x": 884,
+            "y": 457.9375,
+            "width": 44,
+            "height": 31.59375
+          },
+          {
+            "x": 662,
+            "y": 541.921875,
+            "width": 266,
+            "height": 20
+          },
+          {
+            "x": 458.984375,
+            "y": 692.890625,
+            "width": 469.015625,
+            "height": 54
+          },
+          {
+            "x": 782.453125,
+            "y": 794.875,
+            "width": 145.546875,
+            "height": 25.59375
+          },
+          {
+            "x": 884,
+            "y": 870.0625,
+            "width": 44,
+            "height": 31.59375
+          },
+          {
+            "x": 884,
+            "y": 948.25,
+            "width": 44,
+            "height": 31.59375
+          }
+        ],
+        "cards": [
+          {
+            "x": 281,
+            "y": 136.984375,
+            "width": 668,
+            "height": 95.1875
+          },
+          {
+            "x": 281,
+            "y": 426.140625,
+            "width": 668,
+            "height": 173.375
+          },
+          {
+            "x": 281,
+            "y": 662.703125,
+            "width": 668,
+            "height": 348.9375
+          }
+        ],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 668,
+            "height": 126.375
+          },
+          {
+            "x": 281,
+            "y": 264.171875,
+            "width": 668,
+            "height": 98.78125
+          },
+          {
+            "x": 281,
+            "y": 394.953125,
+            "width": 668,
+            "height": 204.5625
+          },
+          {
+            "x": 281,
+            "y": 631.515625,
+            "width": 668,
+            "height": 380.125
+          }
+        ],
+        "tips": [
+          {
+            "x": 281,
+            "y": 345.359375,
+            "width": 668,
+            "height": 17.59375
+          }
+        ],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [],
+        "scrollHeight": 1002
+      },
+      "appearance": {
+        "rows": [
+          {
+            "x": 302,
+            "y": 249.171875,
+            "width": 636,
+            "height": 78.1875
+          },
+          {
+            "x": 302,
+            "y": 327.359375,
+            "width": 636,
+            "height": 77.1875
+          }
+        ],
+        "titles": [
+          {
+            "x": 302,
+            "y": 265.171875,
+            "width": 132.015625,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 343.359375,
+            "width": 180.015625,
+            "height": 24
+          }
+        ],
+        "descriptions": [
+          {
+            "x": 302,
+            "y": 291.171875,
+            "width": 132.015625,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 369.359375,
+            "width": 180.015625,
+            "height": 19.1875
+          }
+        ],
+        "actions": [
+          {
+            "x": 894,
+            "y": 271.96875,
+            "width": 44,
+            "height": 31.59375
+          },
+          {
+            "x": 898,
+            "y": 352.65625,
+            "width": 40,
+            "height": 26.59375
+          }
+        ],
+        "cards": [
+          {
+            "x": 281,
+            "y": 240.171875,
+            "width": 678,
+            "height": 173.375
+          },
+          {
+            "x": 281,
+            "y": 476.734375,
+            "width": 678,
+            "height": 159.59375
+          }
+        ],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 678,
+            "height": 71.1875
+          },
+          {
+            "x": 281,
+            "y": 208.984375,
+            "width": 678,
+            "height": 204.5625
+          },
+          {
+            "x": 281,
+            "y": 445.546875,
+            "width": 678,
+            "height": 190.78125
+          }
+        ],
+        "tips": [],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [],
+        "scrollHeight": 709
+      },
+      "library": {
+        "rows": [],
+        "titles": [],
+        "descriptions": [],
+        "actions": [],
+        "cards": [],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 678,
+            "height": 243.78125
+          }
+        ],
+        "tips": [
+          {
+            "x": 281,
+            "y": 331.984375,
+            "width": 678,
+            "height": 17.59375
+          }
+        ],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [
+          {
+            "x": 281,
+            "y": 136.984375,
+            "width": 678,
+            "height": 61
+          },
+          {
+            "x": 281,
+            "y": 205.984375,
+            "width": 678,
+            "height": 61
+          }
+        ],
+        "scrollHeight": 709
+      },
+      "cache": {
+        "rows": [],
+        "titles": [],
+        "descriptions": [],
+        "actions": [],
+        "cards": [],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 678,
+            "height": 587.890625
+          }
+        ],
+        "tips": [
+          {
+            "x": 281,
+            "y": 676.09375,
+            "width": 678,
+            "height": 17.59375
+          }
+        ],
+        "cache": [
+          {
+            "x": 281,
+            "y": 136.984375,
+            "width": 678,
+            "height": 529.109375
+          }
+        ],
+        "cacheItems": [
+          {
+            "x": 301,
+            "y": 434.15625,
+            "width": 313,
+            "height": 99.96875
+          },
+          {
+            "x": 626,
+            "y": 434.15625,
+            "width": 313,
+            "height": 99.96875
+          },
+          {
+            "x": 301,
+            "y": 546.125,
+            "width": 313,
+            "height": 99.96875
+          },
+          {
+            "x": 626,
+            "y": 546.125,
+            "width": 313,
+            "height": 99.96875
+          }
+        ],
+        "paths": [],
+        "scrollHeight": 709
+      },
+      "shortcuts": {
+        "rows": [],
+        "titles": [],
+        "descriptions": [],
+        "actions": [],
+        "cards": [],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 678,
+            "height": 108.78125
+          }
+        ],
+        "tips": [],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [],
+        "scrollHeight": 709
+      },
+      "debug": {
+        "rows": [
+          {
+            "x": 302,
+            "y": 145.984375,
+            "width": 636,
+            "height": 77.1875
+          }
+        ],
+        "titles": [
+          {
+            "x": 302,
+            "y": 161.984375,
+            "width": 228.015625,
+            "height": 24
+          }
+        ],
+        "descriptions": [
+          {
+            "x": 302,
+            "y": 187.984375,
+            "width": 228.015625,
+            "height": 19.1875
+          }
+        ],
+        "actions": [
+          {
+            "x": 894,
+            "y": 168.78125,
+            "width": 44,
+            "height": 31.59375
+          }
+        ],
+        "cards": [
+          {
+            "x": 281,
+            "y": 136.984375,
+            "width": 678,
+            "height": 95.1875
+          }
+        ],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 678,
+            "height": 126.375
+          }
+        ],
+        "tips": [],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [],
+        "scrollHeight": 709
+      },
+      "about": {
+        "rows": [
+          {
+            "x": 302,
+            "y": 350.328125,
+            "width": 636,
+            "height": 67
+          }
+        ],
+        "titles": [
+          {
+            "x": 302,
+            "y": 371.828125,
+            "width": 60.015625,
+            "height": 24
+          }
+        ],
+        "descriptions": [],
+        "actions": [
+          {
+            "x": 853.984375,
+            "y": 366.328125,
+            "width": 84.015625,
+            "height": 35
+          }
+        ],
+        "cards": [
+          {
+            "x": 281,
+            "y": 341.328125,
+            "width": 678,
+            "height": 85
+          }
+        ],
+        "groups": [
+          {
+            "x": 281,
+            "y": 341.328125,
+            "width": 678,
+            "height": 85
+          }
+        ],
+        "tips": [],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [],
+        "scrollHeight": 709
+      }
+    },
+    "1200x900": {
+      "general": {
+        "rows": [
+          {
+            "x": 302,
+            "y": 145.984375,
+            "width": 836,
+            "height": 78.1875
+          },
+          {
+            "x": 302,
+            "y": 224.171875,
+            "width": 836,
+            "height": 77.1875
+          }
+        ],
+        "titles": [
+          {
+            "x": 302,
+            "y": 161.984375,
+            "width": 180.015625,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 240.171875,
+            "width": 192.015625,
+            "height": 24
+          }
+        ],
+        "descriptions": [
+          {
+            "x": 302,
+            "y": 187.984375,
+            "width": 180.015625,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 266.171875,
+            "width": 192.015625,
+            "height": 19.1875
+          }
+        ],
+        "actions": [
+          {
+            "x": 1094,
+            "y": 168.78125,
+            "width": 44,
+            "height": 31.59375
+          },
+          {
+            "x": 1094,
+            "y": 246.96875,
+            "width": 44,
+            "height": 31.59375
+          }
+        ],
+        "cards": [
+          {
+            "x": 281,
+            "y": 136.984375,
+            "width": 878,
+            "height": 173.375
+          }
+        ],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 878,
+            "height": 204.5625
+          }
+        ],
+        "tips": [],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [],
+        "scrollHeight": 809
+      },
+      "audio": {
+        "rows": [
+          {
+            "x": 302,
+            "y": 145.984375,
+            "width": 826,
+            "height": 77.1875
+          },
+          {
+            "x": 302,
+            "y": 435.140625,
+            "width": 826,
+            "height": 78.1875
+          },
+          {
+            "x": 302,
+            "y": 513.328125,
+            "width": 826,
+            "height": 77.1875
+          },
+          {
+            "x": 302,
+            "y": 671.703125,
+            "width": 826,
+            "height": 78.1875
+          },
+          {
+            "x": 302,
+            "y": 749.890625,
+            "width": 826,
+            "height": 78.1875
+          },
+          {
+            "x": 302,
+            "y": 828.078125,
+            "width": 826,
+            "height": 78.1875
+          },
+          {
+            "x": 302,
+            "y": 906.265625,
+            "width": 826,
+            "height": 77.1875
+          }
+        ],
+        "titles": [
+          {
+            "x": 302,
+            "y": 161.984375,
+            "width": 204.015625,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 451.140625,
+            "width": 418.703125,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 529.328125,
+            "width": 228.015625,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 687.703125,
+            "width": 204.015625,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 765.890625,
+            "width": 216.015625,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 844.078125,
+            "width": 464,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 922.265625,
+            "width": 356.703125,
+            "height": 24
+          }
+        ],
+        "descriptions": [
+          {
+            "x": 302,
+            "y": 187.984375,
+            "width": 204.015625,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 477.140625,
+            "width": 418.703125,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 555.328125,
+            "width": 228.015625,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 713.703125,
+            "width": 204.015625,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 791.890625,
+            "width": 216.015625,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 870.078125,
+            "width": 464,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 948.265625,
+            "width": 356.703125,
+            "height": 19.1875
+          }
+        ],
+        "actions": [
+          {
+            "x": 921,
+            "y": 167.078125,
+            "width": 207,
+            "height": 35
+          },
+          {
+            "x": 1084,
+            "y": 457.9375,
+            "width": 44,
+            "height": 31.59375
+          },
+          {
+            "x": 862,
+            "y": 541.921875,
+            "width": 266,
+            "height": 20
+          },
+          {
+            "x": 619.984375,
+            "y": 692.796875,
+            "width": 508.015625,
+            "height": 35
+          },
+          {
+            "x": 982.453125,
+            "y": 775.6875,
+            "width": 145.546875,
+            "height": 25.59375
+          },
+          {
+            "x": 1084,
+            "y": 850.875,
+            "width": 44,
+            "height": 31.59375
+          },
+          {
+            "x": 1084,
+            "y": 929.0625,
+            "width": 44,
+            "height": 31.59375
+          }
+        ],
+        "cards": [
+          {
+            "x": 281,
+            "y": 136.984375,
+            "width": 868,
+            "height": 95.1875
+          },
+          {
+            "x": 281,
+            "y": 426.140625,
+            "width": 868,
+            "height": 173.375
+          },
+          {
+            "x": 281,
+            "y": 662.703125,
+            "width": 868,
+            "height": 329.75
+          }
+        ],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 868,
+            "height": 126.375
+          },
+          {
+            "x": 281,
+            "y": 264.171875,
+            "width": 868,
+            "height": 98.78125
+          },
+          {
+            "x": 281,
+            "y": 394.953125,
+            "width": 868,
+            "height": 204.5625
+          },
+          {
+            "x": 281,
+            "y": 631.515625,
+            "width": 868,
+            "height": 360.9375
+          }
+        ],
+        "tips": [
+          {
+            "x": 281,
+            "y": 345.359375,
+            "width": 868,
+            "height": 17.59375
+          }
+        ],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [],
+        "scrollHeight": 983
+      },
+      "appearance": {
+        "rows": [
+          {
+            "x": 302,
+            "y": 249.171875,
+            "width": 836,
+            "height": 78.1875
+          },
+          {
+            "x": 302,
+            "y": 327.359375,
+            "width": 836,
+            "height": 77.1875
+          }
+        ],
+        "titles": [
+          {
+            "x": 302,
+            "y": 265.171875,
+            "width": 132.015625,
+            "height": 24
+          },
+          {
+            "x": 302,
+            "y": 343.359375,
+            "width": 180.015625,
+            "height": 24
+          }
+        ],
+        "descriptions": [
+          {
+            "x": 302,
+            "y": 291.171875,
+            "width": 132.015625,
+            "height": 19.1875
+          },
+          {
+            "x": 302,
+            "y": 369.359375,
+            "width": 180.015625,
+            "height": 19.1875
+          }
+        ],
+        "actions": [
+          {
+            "x": 1094,
+            "y": 271.96875,
+            "width": 44,
+            "height": 31.59375
+          },
+          {
+            "x": 1098,
+            "y": 352.65625,
+            "width": 40,
+            "height": 26.59375
+          }
+        ],
+        "cards": [
+          {
+            "x": 281,
+            "y": 240.171875,
+            "width": 878,
+            "height": 173.375
+          },
+          {
+            "x": 281,
+            "y": 476.734375,
+            "width": 878,
+            "height": 159.59375
+          }
+        ],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 878,
+            "height": 71.1875
+          },
+          {
+            "x": 281,
+            "y": 208.984375,
+            "width": 878,
+            "height": 204.5625
+          },
+          {
+            "x": 281,
+            "y": 445.546875,
+            "width": 878,
+            "height": 190.78125
+          }
+        ],
+        "tips": [],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [],
+        "scrollHeight": 809
+      },
+      "library": {
+        "rows": [],
+        "titles": [],
+        "descriptions": [],
+        "actions": [],
+        "cards": [],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 878,
+            "height": 243.78125
+          }
+        ],
+        "tips": [
+          {
+            "x": 281,
+            "y": 331.984375,
+            "width": 878,
+            "height": 17.59375
+          }
+        ],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [
+          {
+            "x": 281,
+            "y": 136.984375,
+            "width": 878,
+            "height": 61
+          },
+          {
+            "x": 281,
+            "y": 205.984375,
+            "width": 878,
+            "height": 61
+          }
+        ],
+        "scrollHeight": 809
+      },
+      "cache": {
+        "rows": [],
+        "titles": [],
+        "descriptions": [],
+        "actions": [],
+        "cards": [],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 878,
+            "height": 587.890625
+          }
+        ],
+        "tips": [
+          {
+            "x": 281,
+            "y": 676.09375,
+            "width": 878,
+            "height": 17.59375
+          }
+        ],
+        "cache": [
+          {
+            "x": 281,
+            "y": 136.984375,
+            "width": 878,
+            "height": 529.109375
+          }
+        ],
+        "cacheItems": [
+          {
+            "x": 301,
+            "y": 434.15625,
+            "width": 413,
+            "height": 99.96875
+          },
+          {
+            "x": 726,
+            "y": 434.15625,
+            "width": 413,
+            "height": 99.96875
+          },
+          {
+            "x": 301,
+            "y": 546.125,
+            "width": 413,
+            "height": 99.96875
+          },
+          {
+            "x": 726,
+            "y": 546.125,
+            "width": 413,
+            "height": 99.96875
+          }
+        ],
+        "paths": [],
+        "scrollHeight": 809
+      },
+      "shortcuts": {
+        "rows": [],
+        "titles": [],
+        "descriptions": [],
+        "actions": [],
+        "cards": [],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 878,
+            "height": 87.984375
+          }
+        ],
+        "tips": [],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [],
+        "scrollHeight": 809
+      },
+      "debug": {
+        "rows": [
+          {
+            "x": 302,
+            "y": 145.984375,
+            "width": 836,
+            "height": 77.1875
+          }
+        ],
+        "titles": [
+          {
+            "x": 302,
+            "y": 161.984375,
+            "width": 228.015625,
+            "height": 24
+          }
+        ],
+        "descriptions": [
+          {
+            "x": 302,
+            "y": 187.984375,
+            "width": 228.015625,
+            "height": 19.1875
+          }
+        ],
+        "actions": [
+          {
+            "x": 1094,
+            "y": 168.78125,
+            "width": 44,
+            "height": 31.59375
+          }
+        ],
+        "cards": [
+          {
+            "x": 281,
+            "y": 136.984375,
+            "width": 878,
+            "height": 95.1875
+          }
+        ],
+        "groups": [
+          {
+            "x": 281,
+            "y": 105.796875,
+            "width": 878,
+            "height": 126.375
+          }
+        ],
+        "tips": [],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [],
+        "scrollHeight": 809
+      },
+      "about": {
+        "rows": [
+          {
+            "x": 302,
+            "y": 350.328125,
+            "width": 836,
+            "height": 67
+          }
+        ],
+        "titles": [
+          {
+            "x": 302,
+            "y": 371.828125,
+            "width": 60.015625,
+            "height": 24
+          }
+        ],
+        "descriptions": [],
+        "actions": [
+          {
+            "x": 1053.984375,
+            "y": 366.328125,
+            "width": 84.015625,
+            "height": 35
+          }
+        ],
+        "cards": [
+          {
+            "x": 281,
+            "y": 341.328125,
+            "width": 878,
+            "height": 85
+          }
+        ],
+        "groups": [
+          {
+            "x": 281,
+            "y": 341.328125,
+            "width": 878,
+            "height": 85
+          }
+        ],
+        "tips": [],
+        "cache": [],
+        "cacheItems": [],
+        "paths": [],
+        "scrollHeight": 809
+      }
+    }
+  }
+}

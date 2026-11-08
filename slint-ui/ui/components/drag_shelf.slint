@@ -1,0 +1,18 @@
+// Mouse/touch dragging uses Flickable's direction lock, click cancellation and
+// inertia. Wheel events belong to the surrounding page, never to this shelf.
+export component DragShelf inherits Flickable {
+    in property <length> extent;
+    callback page-scrolled(length);
+    mouse-drag-pan-enabled: true;
+    content-width: Math.max(self.width, root.extent);
+    content-height: self.height;
+    wheel-pass := TouchArea {
+        width: root.content-width;
+        height: root.height;
+        scroll-event(event) => {
+            root.page-scrolled(event.delta-y);
+            return accept;
+        }
+        @children
+    }
+}

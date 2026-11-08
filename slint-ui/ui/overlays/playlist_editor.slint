@@ -1,0 +1,351 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState } from "../state.slint";
+import { AppIcon, RoundedCover } from "../components/common.slint";
+
+// Shared keyboard/accessibility behavior; dimensions remain specific to each Vue dialog.
+export component PlaylistButton inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <length> icon-size: 18px;
+    in property <bool> enabled: true;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    in property <bool> filled: false;
+    in property <bool> menu-item: false;
+    out property <bool> has-focus: focus.has-focus;
+    callback clicked();
+    forward-focus: focus;
+    opacity: root.enabled ? 1 : 0.45;
+    background: root.primary ? (touch.has-hover ? Theme.theme-color-strong : Theme.theme-color)
+        : touch.has-hover || focus.has-focus ? (root.danger ? Theme.sys-danger-soft : Theme.sys-control-hover)
+        : root.filled ? Theme.sys-control : transparent;
+    animate background { duration: 150ms; easing: ease; }
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" { root.clicked(); return accept; }
+            return reject;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { focus.focus(); root.clicked(); }
+    }
+    if root.icon.width > 0 : AppIcon {
+        x: root.menu-item ? 12px : (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        icon-size: root.icon-size;
+        tint: root.danger ? Theme.sys-danger : Theme.sys-text-secondary;
+    }
+    if root.icon.width == 0 || root.menu-item : Text {
+        x: root.menu-item ? 39px : 0px;
+        width: parent.width - self.x;
+        height: 100%;
+        text: root.label;
+        font-size: 13px;
+        font-weight: root.menu-item ? 400 : 600;
+        color: root.primary ? Theme.sys-on-accent : root.danger ? Theme.sys-danger : Theme.sys-text-secondary;
+        horizontal-alignment: root.menu-item ? left : center;
+        vertical-alignment: center;
+    }
+}
+
+export component PlaylistEditor inherits Rectangle {
+    property <bool> editing: AppState.playlist-editor-mode == "edit";
+    background: root.editing ? rgba(12, 15, 24, 0.32) : rgba(0, 0, 0, 0.30);
+    init => { name-input.focus(); if root.editing { name-input.select-all(); } }
+    TouchArea { clicked => { AppState.close-playlist-editor(); } }
+
+    editor-card := Rectangle {
+        width: Math.min(root.editing ? 480px : 380px, parent.width - 40px);
+        height: (root.editing ? 494.98px : 301.16px) + (AppState.playlist-editor-error == "" ? 0px : 56px);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: root.editing ? 22px : 28px;
+        border-width: 1px;
+        border-color: Theme.glass-border;
+        background: root.editing ? Theme.sys-bg-elevated : Theme.glass-fill;
+        drop-shadow-blur: 48px;
+        drop-shadow-offset-y: 22px;
+        drop-shadow-color: Theme.sys-shadow-elevated;
+        clip: true;
+        TouchArea {}
+        modal-focus := FocusScope {
+            key-pressed(event) => {
+                if event.text == Key.Escape { AppState.close-playlist-editor(); return accept; }
+                if event.text == Key.Tab || event.text == Key.Backtab {
+                    if event.modifiers.shift || event.text == Key.Backtab {
+                        if name-input.has-focus { close-button.focus(); }
+                        else if close-button.has-focus { if AppState.playlist-editor-can-submit { submit-button.focus(); } else { cancel-button.focus(); } }
+                        else if submit-button.has-focus { cancel-button.focus(); }
+                        else if cancel-button.has-focus { if root.editing { description-input.focus(); } else { privacy-focus.focus(); } }
+                        else { name-input.focus(); }
+                    } else {
+                        if name-input.has-focus { if root.editing { description-input.focus(); } else { privacy-focus.focus(); } }
+                        else if description-input.has-focus || privacy-focus.has-focus { cancel-button.focus(); }
+                        else if cancel-button.has-focus && AppState.playlist-editor-can-submit { submit-button.focus(); }
+                        else if close-button.has-focus { name-input.focus(); }
+                        else { close-button.focus(); }
+                    }
+                    return accept;
+                }
+                return reject;
+            }
+
+            editor-header := Rectangle {
+                x: 1px; y: 1px; width: parent.width - 2px;
+                height: root.editing ? 74.39px : 93.19px;
+                Text {
+                    x: root.editing ? 28px : 24px; y: 24px;
+                    height: root.editing ? 30.39px : 32px;
+                    text: root.editing ? "编辑歌单" : "新建歌单";
+                    font-size: root.editing ? 19px : 20px;
+                    font-weight: root.editing ? 700 : 800;
+                    color: Theme.sys-text;
+                    vertical-alignment: center;
+                }
+                if !root.editing : Text {
+                    x: 24px; y: 58px; height: 19.19px;
+                    text: "创建后可在侧边栏直接找到";
+                    font-size: 12px; font-weight: 600; color: Theme.sys-text-tertiary;
+                    vertical-alignment: center;
+                }
+                close-button := PlaylistButton {
+                    x: parent.width - (root.editing ? 56px : 60px);
+                    y: root.editing ? 25.195px : 24px;
+                    width: root.editing ? 28px : 36px;
+                    height: self.width; border-radius: self.width / 2;
+                    label: "关闭"; icon: Icons.close;
+                    icon-size: root.editing ? 18px : 20px; filled: true;
+                    clicked => { AppState.close-playlist-editor(); }
+                }
+            }
+
+            if root.editing : Rectangle {
+                x: 29px; y: 75.39px; width: parent.width - 58px; height: 64px;
+                preview-cover := RoundedCover {
+                    x: 0px; y: 0px;
+                    width: 64px; height: 64px; radius: 10px;
+                    source: AppState.playlist-cover;
+                    is-local-fallback: AppState.playlist-cover.width == 0;
+                }
+                Text {
+                    x: 78px; y: 8.4px; width: parent.width - 78px; height: 24px;
+                    text: AppState.playlist-title; font-size: 15px; font-weight: 600;
+                    color: Theme.sys-text; overflow: elide; vertical-alignment: center;
+                }
+                Text {
+                    x: 78px; y: 36.4px; height: 19.2px;
+                    text: "歌单 · " + AppState.playlist-track-count + " 首歌曲";
+                    font-size: 12px; color: Theme.sys-text-tertiary; vertical-alignment: center;
+                }
+            }
+
+            name-field := Rectangle {
+                x: root.editing ? 29px : 25px;
+                y: root.editing ? 163.39px : 94.19px;
+                width: parent.width - 2 * self.x;
+                height: root.editing ? 72.8px : 71.19px;
+                Text {
+                    x: 0px; y: 0px;
+                    height: root.editing ? 20.8px : 19.19px;
+                    text: root.editing ? "名称" : "歌单名称";
+                    font-size: root.editing ? 13px : 12px;
+                    font-weight: root.editing ? 400 : 600;
+                    color: Theme.sys-text-secondary; vertical-alignment: center;
+                }
+                if root.editing : Text {
+                    x: 0px; y: 0px;
+                    width: 100%; height: 20.8px;
+                    text: AppState.playlist-editor-name-length + " / 40";
+                    font-size: 11px; color: Theme.sys-text-tertiary;
+                    horizontal-alignment: right; vertical-alignment: center;
+                }
+                name-box := Rectangle {
+                    y: root.editing ? 28.8px : 27.19px; width: 100%; height: 44px;
+                    border-radius: root.editing ? 10px : 14px;
+                    border-width: 1px;
+                    border-color: name-input.has-focus ? Theme.theme-color : Theme.sys-border;
+                    background: !root.editing && name-input.has-focus ? Theme.sys-control-hover : Theme.sys-control;
+                    animate border-color, background { duration: 150ms; }
+                    if AppState.playlist-editor-name == "" : Text {
+                        x: 14px; width: parent.width - 28px; height: 100%;
+                        text: root.editing ? "给歌单起个名字" : "比如「深夜循环」";
+                        font-size: root.editing ? 13px : 14px;
+                        color: Theme.sys-text-tertiary; vertical-alignment: center;
+                    }
+                    name-input := TextInput {
+                        x: 14px; width: parent.width - 28px; height: 100%;
+                        text <=> AppState.playlist-editor-name;
+                        single-line: true; font-size: root.editing ? 13px : 14px;
+                        color: Theme.sys-text; vertical-alignment: center;
+                        accessible-label: "歌单名称";
+                        edited => { AppState.playlist-input-changed(); }
+                        accepted => { AppState.submit-playlist(); }
+                    }
+                }
+            }
+
+            // Keep both fields instantiated so Tab handling can refer to them.
+            description-field := Rectangle {
+                visible: root.editing;
+                x: 29px; y: 256.19px; width: parent.width - 58px; height: 140.8px;
+                Text { x: 0px; y: 0px; height: 20.8px; text: "简介"; font-size: 13px; color: Theme.sys-text-secondary; vertical-alignment: center; }
+                Text { x: 34px; y: 0px; height: 20.8px; text: "选填"; font-size: 11px; color: Theme.sys-text-tertiary; vertical-alignment: center; }
+                Text {
+                    x: 0px; y: 0px;
+                    width: 100%; height: 20.8px;
+                    text: AppState.playlist-editor-description-length + " / 1000";
+                    font-size: 11px; color: Theme.sys-text-tertiary; horizontal-alignment: right; vertical-alignment: center;
+                }
+                description-box := Rectangle {
+                    y: 28.8px; width: 100%; height: 112px;
+                    border-radius: 10px; border-width: 1px;
+                    border-color: description-input.has-focus ? Theme.theme-color : Theme.sys-border;
+                    background: Theme.sys-control;
+                    if AppState.playlist-editor-description == "" : Text {
+                        x: 14px; y: 12px; text: "记录这份歌单的心情、故事或灵感…";
+                        font-size: 13px; color: Theme.sys-text-tertiary;
+                    }
+                    Flickable {
+                        x: 14px; y: 12px; width: parent.width - 28px; height: parent.height - 24px;
+                        content-width: self.width;
+                        content-height: Math.max(self.height, description-input.preferred-height);
+                        description-input := TextInput {
+                            x: 0px; y: 0px;
+                            width: parent.width; height: Math.max(parent.height, self.preferred-height);
+                            text <=> AppState.playlist-editor-description;
+                            wrap: word-wrap; font-size: 13px; color: Theme.sys-text;
+                            enabled: root.editing;
+                            accessible-label: "歌单简介";
+                            edited => { AppState.playlist-input-changed(); }
+                        }
+                    }
+                }
+            }
+
+            privacy-row := Rectangle {
+                visible: !root.editing;
+                x: 25px; y: 181.38px; width: parent.width - 50px; height: 38.78px;
+                Text { x: 0px; y: 0px; height: 19.19px; text: "私密歌单"; font-size: 12px; font-weight: 600; color: Theme.sys-text-secondary; vertical-alignment: center; }
+                Text { x: 0px; y: 21.19px; height: 17.59px; text: "只有自己可见，不会出现在个人主页"; font-size: 11px; color: Theme.sys-text-tertiary; vertical-alignment: center; }
+                privacy-toggle := Rectangle {
+                    x: parent.width - 44px; y: 6.39px; width: 44px; height: 26px;
+                    border-radius: 13px;
+                    background: AppState.playlist-editor-private ? Theme.theme-color : Theme.sys-control-hover;
+                    animate background { duration: 200ms; }
+                    border-width: privacy-focus.has-focus ? 1px : 0px;
+                    border-color: Theme.theme-color;
+                    accessible-role: checkbox;
+                    accessible-label: "私密歌单";
+                    accessible-checked: AppState.playlist-editor-private;
+                    accessible-action-default => { AppState.playlist-editor-private = !AppState.playlist-editor-private; }
+                    Rectangle {
+                        x: AppState.playlist-editor-private ? 21px : 3px; y: 3px;
+                        width: 20px; height: 20px; border-radius: 10px; background: Theme.sys-surface;
+                        drop-shadow-blur: 3px; drop-shadow-offset-y: 1px; drop-shadow-color: #0003;
+                        animate x { duration: 200ms; easing: ease; }
+                    }
+                }
+                privacy-focus := FocusScope {
+                    enabled: !root.editing;
+                    key-pressed(event) => {
+                        if event.text == " " { AppState.playlist-editor-private = !AppState.playlist-editor-private; return accept; }
+                        return reject;
+                    }
+                }
+                TouchArea {
+                    enabled: !root.editing; mouse-cursor: pointer;
+                    clicked => { privacy-focus.focus(); AppState.playlist-editor-private = !AppState.playlist-editor-private; }
+                }
+            }
+
+            if AppState.playlist-editor-error != "" : Rectangle {
+                x: root.editing ? 29px : 25px;
+                y: root.editing ? 410px : 236px;
+                width: parent.width - 2 * self.x; height: 40px;
+                border-radius: 10px; background: Theme.sys-danger-soft;
+                Text { x: 12px; width: parent.width - 24px; height: 100%; text: AppState.playlist-editor-error; color: Theme.sys-danger; font-size: 12px; wrap: word-wrap; vertical-alignment: center; }
+            }
+            editor-footer := Rectangle {
+                x: 1px; y: parent.height - self.height - 1px;
+                width: parent.width - 2px; height: root.editing ? 69px : 60px;
+                background: root.editing ? Theme.sys-bg-soft : transparent;
+                if root.editing : Rectangle { x: 0px; y: 0px; height: 1px; width: 100%; background: Theme.sys-border; }
+                cancel-button := PlaylistButton {
+                    x: parent.width - (root.editing ? 204.02px : 170.04px);
+                    y: root.editing ? 17px : 0px;
+                    width: root.editing ? 76px : 68.02px; height: root.editing ? 36px : 40px;
+                    border-radius: root.editing ? 9px : 20px;
+                    border-width: root.editing ? 0px : 1px; border-color: Theme.sys-border;
+                    filled: !root.editing; label: "取消";
+                    clicked => { AppState.close-playlist-editor(); }
+                }
+                submit-button := PlaylistButton {
+                    x: parent.width - (root.editing ? 118.02px : 92.02px);
+                    y: root.editing ? 17px : 0px;
+                    width: root.editing ? 90.02px : 68.02px; height: root.editing ? 36px : 40px;
+                    border-radius: root.editing ? 9px : 20px;
+                    primary: true; enabled: AppState.playlist-editor-can-submit;
+                    label: root.editing ? "保存修改" : "创建";
+                    clicked => { AppState.submit-playlist(); }
+                }
+            }
+        }
+    }
+}
+
+export component PlaylistActionsOverlay inherits Rectangle {
+    property <bool> opened: AppState.is-playlist-actions-open && AppState.playlist-can-manage;
+    property <float> reveal: root.opened ? 1 : 0;
+    animate reveal { duration: 120ms; easing: ease; }
+    property <float> menu-scale: 0.97 + 0.03 * root.reveal;
+    opacity: root.reveal;
+    visible: root.opened || root.reveal > 0.001;
+    changed opened => { if root.opened { edit-button.focus(); } }
+    public function close() { AppState.is-playlist-actions-open = false; AppState.playlist-restore-focus = 2; }
+    TouchArea { enabled: root.opened; clicked => { root.close(); } }
+    action-menu := Rectangle {
+        x: Math.clamp(AppState.playlist-actions-x + 176px - self.width, 8px, parent.width - self.width - 8px);
+        y: Math.clamp(AppState.playlist-actions-y, 8px, parent.height - 101px - 8px) - 4px * (1 - root.reveal);
+        width: 176px * root.menu-scale; height: 101px * root.menu-scale; border-radius: 14px;
+        border-width: 1px; border-color: Theme.glass-border;
+        background: Theme.sys-bg-elevated;
+        drop-shadow-blur: 44px; drop-shadow-offset-y: 18px; drop-shadow-color: Theme.sys-shadow-elevated;
+        TouchArea { enabled: root.opened; }
+        FocusScope {
+            enabled: root.opened;
+            key-pressed(event) => {
+                if event.text == Key.Escape { root.close(); return accept; }
+                if event.text == Key.DownArrow || event.text == Key.UpArrow {
+                    if edit-button.has-focus { delete-button.focus(); } else { edit-button.focus(); }
+                    return accept;
+                }
+                if event.text == Key.Tab || event.text == Key.Backtab { root.close(); return accept; }
+                return reject;
+            }
+            edit-button := PlaylistButton {
+                enabled: root.opened;
+                x: 6px * root.menu-scale; y: 6px * root.menu-scale;
+                width: 164px * root.menu-scale; height: 40px * root.menu-scale; border-radius: 9px;
+                label: "编辑歌单"; icon: Icons.edit; icon-size: 17px; menu-item: true;
+                clicked => { AppState.is-playlist-actions-open = false; AppState.open-edit-playlist(); }
+            }
+            menu-divider := Rectangle { x: 14px * root.menu-scale; y: 50px * root.menu-scale; width: 148px * root.menu-scale; height: 1px; background: Theme.sys-border; }
+            delete-button := PlaylistButton {
+                enabled: root.opened;
+                x: 6px * root.menu-scale; y: 55px * root.menu-scale;
+                width: 164px * root.menu-scale; height: 40px * root.menu-scale; border-radius: 9px;
+                label: "删除歌单"; icon: Icons.trash-outline; icon-size: 17px; menu-item: true; danger: true;
+                clicked => { AppState.is-playlist-actions-open = false; AppState.request-delete-playlist(); }
+            }
+        }
+    }
+}

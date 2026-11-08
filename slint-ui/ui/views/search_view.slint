@@ -1,0 +1,479 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState, CategoryItem, TrackItem } from "../state.slint";
+import { AppIcon, RoundedCover } from "../components/common.slint";
+import { VirtualRows } from "../components/virtual_rows.slint";
+
+// 对应 SearchView.vue .category-card (height 100px, border-radius 12px, padding 16px, hover scale(1.02) 0.2s)
+component CategoryCard inherits Rectangle {
+    in property <CategoryItem> cat;
+    in-out property <bool> force-hover: false;
+    callback clicked();
+
+    height: 100px;
+    border-radius: 12px;
+    clip: true;
+
+    property <bool> is-hovered: card-ta.has-hover || root.force-hover;
+    property <float> card-scale: self.is-hovered ? 1.02 : 1.0;
+    animate card-scale { duration: 200ms; easing: ease; }
+
+    background: root.cat.color-type == "purple"
+        ? @linear-gradient(135deg, Theme.theme-color 0%, Theme.theme-color-strong 100%)
+        : (root.cat.color-type == "orange"
+            ? @linear-gradient(135deg, Theme.sys-category-warm 0%, Theme.sys-category-sun 100%)
+            : (root.cat.color-type == "red"
+                ? @linear-gradient(135deg, Theme.sys-danger 0%, Theme.sys-category-red 100%)
+                : (root.cat.color-type == "blue"
+                    ? @linear-gradient(135deg, Theme.sys-category-cyan 0%, Theme.sys-category-sky 100%)
+                    : (root.cat.color-type == "green"
+                        ? @linear-gradient(135deg, Theme.sys-success 0%, Theme.sys-category-mint 100%)
+                        : (root.cat.color-type == "dark"
+                            ? @linear-gradient(135deg, #3b4254 0%, #1e2330 100%)
+                            : (root.cat.color-type == "pink"
+                                ? @linear-gradient(135deg, Theme.theme-color-strong 0%, Theme.sys-category-rose 100%)
+                                : @linear-gradient(135deg, Theme.theme-color 0%, Theme.sys-category-ink 100%)))))));
+
+    card-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    // 右下角 25度旋转装饰方块 (.card-decoration: right -10px, bottom -10px, 60x60 rotate(25deg) -> bounding box 79.74x79.74 at x = width - 59.87px, y = height - 59.87px)
+    card-decoration := Rectangle {
+        x: parent.width - 59.87px;
+        y: parent.height - 59.87px;
+        width: 79.74px;
+        height: 79.74px;
+        border-radius: 8px;
+        background: transparent;
+
+        Path {
+            width: 100%;
+            height: 100%;
+            fill: rgba(255, 255, 255, 0.20);
+            commands: "M 25.37 0 L 79.74 25.37 L 54.37 79.74 L 0 54.37 Z";
+        }
+    }
+
+    category-name := Text {
+        x: 16px;
+        y: 20px;
+        text: root.cat.name;
+        font-size: 18px;
+        font-weight: 700;
+        color: Theme.sys-on-accent;
+    }
+}
+
+component SearchResultSongRow inherits Rectangle {
+    in property <TrackItem> song;
+
+    property <bool> is-hovered: row-ta.has-hover || fav-ta.has-hover || more-ta.has-hover;
+
+    height: 64px;
+    background: root.is-hovered ? Theme.sys-control-hover : transparent;
+    animate background { duration: 200ms; easing: ease; }
+
+    row-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            AppState.play-song(root.song.id, root.song.name, root.song.artist, root.song.cover, false, true);
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        alignment: space-between;
+
+        // .song-left (gap 12px)
+        HorizontalLayout {
+            spacing: 12px;
+            horizontal-stretch: 1;
+
+            RoundedCover {
+                cover-id: root.song.id;
+                width: 44px;
+                height: 44px;
+                radius: 8px;
+                source: root.song.cover;
+            }
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                horizontal-stretch: 1;
+
+                Text {
+                    text: root.song.name;
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: Theme.sys-text;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: root.song.artist + " · " + root.song.album;
+                    font-size: 12px;
+                    color: Theme.sys-text-secondary;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // .song-right (gap 10px)
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: end;
+
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 14px;
+                background: fav-ta.has-hover ? Theme.sys-control-hover : transparent;
+                opacity: (root.song.is-favorite || root.is-hovered) ? 1.0 : 0.0;
+                animate opacity, background { duration: 200ms; easing: ease; }
+
+                fav-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        if AppState.runtime-enabled { AppState.toggle-favorite(root.song.id); } else if (AppState.current-song-id == root.song.id) {
+                            AppState.toggle-favorite(AppState.current-song-id);
+                        }
+                    }
+                }
+
+                AppIcon {
+                    x: 6px;
+                    y: 6px;
+                    source: root.song.is-favorite ? Icons.heart-fill : Icons.heart;
+                    icon-size: 16px;
+                    tint: (root.song.is-favorite || fav-ta.has-hover) ? Theme.theme-color-strong : Theme.sys-text-disabled;
+                }
+            }
+
+            Text {
+                text: root.song.duration;
+                font-size: 13px;
+                color: Theme.sys-text-tertiary;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                y: (parent.height - self.height) / 2;
+
+                more-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        AppState.open-menu-song-id = root.song.id;
+                        AppState.open-menu-song-name = root.song.name;
+                        AppState.open-menu-show-remove = false;
+                        AppState.open-menu-submenu = false;
+                    }
+                }
+
+                Text {
+                    text: "•••";
+                    font-size: 13px;
+                    color: (AppState.open-menu-song-id == root.song.id || more-ta.has-hover) ? Theme.sys-text : Theme.sys-text-tertiary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+export component SearchView inherits Rectangle {
+    width: 100%;
+    height: 100%;
+
+    // .search-container: padding 0 24px (可用宽度 = root.width - 48px = 1111px, 5列每列 209.4px)
+    property <length> inner-w: root.width - 48px;
+
+    search-scroll := Flickable {
+        width: 100%;
+        height: 100%;
+        content-width: root.width;
+        content-height: search-col.preferred-height;
+        changed content-height => { self.content-y = Math.max(Math.min(0px, self.height - self.content-height), Math.min(0px, self.content-y)); }
+
+        search-col := VerticalLayout {
+            width: root.width;
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-bottom: 120px;
+            spacing: 0px;
+
+            // === 头部搜索栏容器 (.search-header) ===
+            // .page-title: margin-top 10px, font-size 34px, weight 800, margin-bottom 20px, transition all 0.3s ease
+            Rectangle {
+                height: AppState.search-is-floating ? 10px : 10px;
+            }
+
+            search-page-title := Rectangle {
+                height: AppState.search-is-floating ? 0px : 54.39px;
+                opacity: AppState.search-is-floating ? 0.0 : 1.0;
+                clip: true;
+                animate height, opacity { duration: 300ms; easing: ease; }
+
+                Text {
+                    width: 100%;
+                    height: 54.39px;
+                    text: "搜索";
+                    font-size: 34px;
+                    font-weight: 800;
+                    color: Theme.sys-text;
+                    vertical-alignment: center;
+                }
+            }
+
+            Rectangle {
+                height: AppState.search-is-floating ? 0px : 20px;
+                animate height { duration: 300ms; easing: ease; }
+            }
+
+            // .search-bar-wrapper (normal: x=300, y=84.39, width=600, height=48; floating: max-width 500px, centered, transition all 0.4s ease)
+            Rectangle {
+                height: 48px;
+
+                property <length> target-bar-w: AppState.search-is-floating
+                    ? Math.min(root.inner-w, 500px)
+                    : Math.min(root.inner-w, 600px);
+                property <length> target-bar-x: AppState.search-is-floating
+                    ? (root.inner-w - self.target-bar-w) / 2
+                    : 0px;
+
+                search-bar-wrapper := Rectangle {
+                    x: parent.target-bar-x;
+                    y: 0px;
+                    width: parent.target-bar-w;
+                    height: 48px;
+                    animate x, width { duration: 400ms; easing: ease; }
+
+                    search-input-box := Rectangle {
+                        width: 100%;
+                        height: 48px;
+                        border-radius: AppState.search-is-floating ? 24px : 14px;
+                        background: AppState.search-is-floating ? Theme.glass-fill : Theme.sys-surface-strong;
+                        border-width: 1px;
+                        border-color: AppState.search-is-floating ? Theme.glass-border : Theme.sys-border;
+                        drop-shadow-blur: AppState.search-is-floating ? 36px : 12px;
+                        drop-shadow-offset-y: AppState.search-is-floating ? 14px : 4px;
+                        drop-shadow-color: AppState.search-is-floating ? Theme.glass-shadow : rgba(0, 0, 0, 0.04);
+                        animate border-radius { duration: 300ms; easing: ease; }
+
+                        AppIcon {
+                            x: 16px;
+                            y: 15px;
+                            source: Icons.search-line;
+                            icon-size: 18px;
+                            tint: Theme.sys-text-tertiary;
+                        }
+
+                        search-input := TextInput {
+                            x: 44px;
+                            y: 0px;
+                            width: parent.width - 88px;
+                            height: 48px;
+                            text <=> AppState.search-query;
+                            font-size: 16px;
+                            color: Theme.sys-text;
+                            vertical-alignment: center;
+                            single-line: true;
+                            accepted => {
+                                AppState.search-show-results = AppState.search-query != "";
+                                if AppState.runtime-enabled { AppState.runtime-action("search", -1, ""); }
+                            }
+                        }
+
+                        if AppState.search-query == "" && !search-input.has-focus : Text {
+                            x: 44px;
+                            y: 0px;
+                            height: 48px;
+                            text: "搜索歌曲、 艺人、专辑、歌词、歌单";
+                            font-size: 16px;
+                            color: Theme.sys-text-tertiary;
+                            vertical-alignment: center;
+                        }
+
+                        if AppState.search-query != "" : Rectangle {
+                            x: parent.width - 36px;
+                            y: 10px;
+                            width: 28px;
+                            height: 28px;
+
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    AppState.search-query = "";
+                                    AppState.search-show-results = false;
+                                }
+                            }
+
+                            AppIcon {
+                                x: 4px;
+                                y: 4px;
+                                source: Icons.close;
+                                icon-size: 20px;
+                                tint: Theme.sys-text-tertiary;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // === 状态 1: 浏览分类 (.browse-section: section-header margin 24px 0 16px, h2 20px/33.2px -> grid y = 84.39 + 48 + 24 + 33.23 + 16 = 205.62px) ===
+            if !AppState.search-show-results : VerticalLayout {
+                spacing: 0px;
+
+                Rectangle { height: 24px; }
+
+                Rectangle {
+                    height: 33.23px;
+                    Text {
+                        width: 100%;
+                        height: 100%;
+                        text: "专区";
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: Theme.sys-text;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle { height: 16px; }
+
+                // .categories-grid: repeat(auto-fill, minmax(180px, 1fr)), gap 16px -> 5 列 (209.39px x 100px) at 1435x1000
+                VerticalLayout {
+                    spacing: 16px;
+
+                    HorizontalLayout {
+                        spacing: 16px;
+                        for idx in [0, 1, 2, 3, 4] : CategoryCard {
+                            horizontal-stretch: 1;
+                            cat: AppState.browse-categories[idx];
+                            clicked => {
+                                AppState.search-query = AppState.browse-categories[idx].name;
+                                AppState.search-show-results = true;
+                                if AppState.runtime-enabled { AppState.runtime-action("search", -1, ""); }
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 16px;
+                        for idx in [5, 6, 7, 8, 9] : CategoryCard {
+                            horizontal-stretch: 1;
+                            cat: AppState.browse-categories[idx];
+                            clicked => {
+                                AppState.search-query = AppState.browse-categories[idx].name;
+                                AppState.search-show-results = true;
+                                if AppState.runtime-enabled { AppState.runtime-action("search", -1, ""); }
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 16px;
+                        for idx in [10, 11] : CategoryCard {
+                            horizontal-stretch: 1;
+                            cat: AppState.browse-categories[idx];
+                            clicked => {
+                                AppState.search-query = AppState.browse-categories[idx].name;
+                                AppState.search-show-results = true;
+                                if AppState.runtime-enabled { AppState.runtime-action("search", -1, ""); }
+                            }
+                        }
+                        for empty-idx in [0, 1, 2] : Rectangle {
+                            horizontal-stretch: 1;
+                            height: 100px;
+                        }
+                    }
+                }
+            }
+
+            // === 状态 2: 搜索结果 (.results-section) ===
+            if AppState.search-show-results : VerticalLayout {
+                padding-top: 24px;
+                spacing: 16px;
+
+                HorizontalLayout {
+                    alignment: space-between;
+
+                    Text {
+                        text: "歌曲 (" + AppState.detail-tracks.length + ")";
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: Theme.sys-text;
+                    }
+
+                    Rectangle {
+                        width: 84px;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: Theme.sys-control;
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                AppState.search-query = "";
+                                AppState.search-show-results = false;
+                            }
+                        }
+
+                        Text {
+                            text: "返回专区";
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: Theme.sys-text-secondary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // .songs-list (background sys-surface-muted, border-radius 16px)
+                search-results := VirtualRows {
+                    row-count: AppState.detail-tracks.length;
+                    row-height: 64px;
+                    viewport-top: search-scroll.absolute-position.y - self.absolute-position.y;
+                    viewport-height: search-scroll.height;
+                    border-radius: 16px;
+                    background: Theme.sys-surface-muted;
+                    clip: true;
+
+                    for offset in search-results.slot-count : SearchResultSongRow {
+                        property <int> target-index: search-results.row-index(offset);
+                        property <int> item-index: -1;
+                        init => { self.item-index = self.target-index; }
+                        changed target-index => { self.item-index = self.target-index; }
+                        visible: item-index < search-results.end-row;
+                        y: (item-index) * search-results.row-height;
+                        width: parent.width;
+                        song: AppState.detail-tracks[item-index];
+                    }
+                }
+
+                // .bottom-observer (.no-more)
+                Rectangle {
+                    height: 60px;
+                    TouchArea { enabled: AppState.runtime-enabled && AppState.detail-tracks.length < AppState.search-result-count; mouse-cursor: pointer; clicked => { AppState.runtime-action("more-search", -1, ""); } }
+                    Text {
+                        text: AppState.runtime-enabled && AppState.detail-tracks.length < AppState.search-result-count ? "加载更多" : "没有更多了";
+                        font-size: 13px;
+                        color: Theme.sys-text-disabled;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

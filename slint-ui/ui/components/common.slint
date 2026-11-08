@@ -1,0 +1,314 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState } from "../state.slint";
+
+export component CoverRequest inherits Rectangle {
+    in property <int> cover-id: -1;
+    in property <bool> missing: false;
+    // Allow up to 3x scaling for small row covers; cards use a larger texture.
+    in property <int> pixel-size: Math.max(self.width, self.height) <= 64px ? 128 : 800;
+    width: 100%; height: 100%;
+    visible: false;
+    property <int> requested-id: self.width > 0px && self.height > 0px
+        && self.absolute-position.y < AppState.window-height
+        && self.absolute-position.y + self.height > 0px
+        && self.absolute-position.x < AppState.window-width
+        && self.absolute-position.x + self.width > 0px ? root.cover-id : -1;
+    init => { if root.requested-id >= 0 { AppState.request-cover(root.requested-id, root.pixel-size); } }
+    changed requested-id => { if root.requested-id >= 0 { AppState.request-cover(root.requested-id, root.pixel-size); } }
+    changed pixel-size => { if root.requested-id >= 0 { AppState.request-cover(root.requested-id, root.pixel-size); } }
+    changed missing => { if root.missing && root.requested-id >= 0 { AppState.request-cover(root.requested-id, root.pixel-size); } }
+}
+
+export component AppIcon inherits Rectangle {
+    in property <image> source;
+    in property <length> icon-size: 20px;
+    in property <color> tint: Theme.sys-text;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: root.source;
+        colorize: root.tint;
+        image-fit: contain;
+    }
+}
+
+// Electron .loading-spinner: 2px border, a quarter-circle accent, 800ms linear rotation.
+export component PlaybackSpinner inherits Rectangle {
+    in property <color> tint: Theme.sys-on-accent;
+    in property <color> track-color: rgba(255, 255, 255, 0.34);
+    width: 20px;
+    height: self.width;
+    border-radius: self.width / 2;
+    border-width: 2px;
+    border-color: root.track-color;
+    accessible-role: progress-indicator;
+    accessible-label: "正在加载";
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        stroke: root.tint;
+        stroke-width: 2px;
+        property <angle> start: Math.mod(animation-tick() / 1ms, 800) / 800 * 360deg - 45deg;
+
+        MoveTo {
+            x: 50 + 50 * Math.sin(parent.start);
+            y: 50 - 50 * Math.cos(parent.start);
+        }
+        ArcTo {
+            x: 50 + 50 * Math.sin(parent.start + 90deg);
+            y: 50 - 50 * Math.cos(parent.start + 90deg);
+            radius-x: 50;
+            radius-y: 50;
+            sweep: true;
+        }
+    }
+}
+
+export component RoundedCover inherits Rectangle {
+    in property <int> cover-id: -1;
+    in property <int> requested-size: Math.max(self.width, self.height) <= 64px ? 128 : 800;
+    CoverRequest { cover-id: root.cover-id; pixel-size: root.requested-size; missing: root.source.width == 0; }
+    in property <image> source: Icons.cover-indigo;
+    in property <length> radius: 10px;
+    in property <bool> is-local-fallback: false;
+    in property <length> fallback-icon-size: 22px;
+
+    clip: true;
+    border-radius: root.radius;
+    background: Theme.sys-control;
+
+    if root.is-local-fallback : Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Theme.sys-control;
+
+        AppIcon {
+            source: Icons.music;
+            icon-size: root.fallback-icon-size;
+            tint: Theme.theme-color-strong;
+        }
+    }
+
+    if !root.is-local-fallback : Image {
+        width: 100%;
+        height: 100%;
+        source: root.source;
+        image-fit: cover;
+    }
+}
+
+// 对应 settings.css .modern-switch (44x24, border-radius 12px, transition 0.3s, knob 20x20 transition 0.3s cubic-bezier(0.2, 1, 0.3, 1))
+export component ModernSwitch inherits Rectangle {
+    in-out property <bool> checked: false;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+    background: root.checked ? Theme.theme-color : Theme.sys-control-hover;
+    opacity: root.enabled ? 1.0 : 0.55;
+    animate background { duration: 300ms; easing: ease; }
+
+    knob := Rectangle {
+        x: root.checked ? 22px : 2px;
+        y: 2px;
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        background: #ffffff;
+        animate x { duration: 300ms; easing: cubic-bezier(0.2, 1.0, 0.3, 1.0); }
+    }
+
+    TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : not-allowed;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+}
+
+// 对应 RangeSlider.vue (height 20px, track 6px, fill无动画极速跟手)
+export component RangeSlider inherits Rectangle {
+    in-out property <float> value: 50.0;
+    in property <float> minimum: 0.0;
+    in property <float> maximum: 100.0;
+    in property <bool> enabled: true;
+    callback changed(float);
+
+    height: 20px;
+    opacity: root.enabled ? 1.0 : 0.4;
+
+    property <float> ratio: Math.clamp((root.value - root.minimum) / Math.max(1.0, root.maximum - root.minimum), 0.0, 1.0);
+
+    track-rect := Rectangle {
+        width: 100%;
+        height: 6px;
+        y: (parent.height - self.height) / 2;
+        border-radius: 3px;
+        background: Theme.sys-control;
+        clip: true;
+
+        fill-rect := Rectangle {
+            x: 0px;
+            y: 0px;
+            width: parent.width * root.ratio;
+            height: 100%;
+            border-radius: 3px;
+            background: Theme.theme-color;
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : not-allowed;
+        pointer-event(ev) => {
+            if (root.enabled && (ev.kind == PointerEventKind.down || (ev.kind == PointerEventKind.move && self.pressed))) {
+                root.value = root.minimum + Math.clamp(self.mouse-x / root.width, 0.0, 1.0) * (root.maximum - root.minimum);
+                root.changed(root.value);
+            }
+        }
+    }
+}
+
+// 对应 VolumeRow.vue (.volume-row: gap 10px, .volume-slider: 120px, .volume-value: min-width 36px, font-size 12px)
+export component VolumeRow inherits HorizontalLayout {
+    in-out property <float> volume: 76.0;
+    in property <bool> disabled: false;
+    in property <length> slider-width: 120px;
+
+    spacing: 10px;
+    alignment: center;
+
+    slider := RangeSlider {
+        width: root.slider-width;
+        value <=> root.volume;
+        minimum: 0.0;
+        maximum: 100.0;
+        enabled: !root.disabled;
+    }
+
+    value-label := Text {
+        width: 36px;
+        text: Math.round(root.volume) + "%";
+        font-size: 12px;
+        font-weight: 400;
+        color: Theme.sys-text-secondary;
+        opacity: root.disabled ? 0.5 : 1.0;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+}
+
+// 对应 SegmentedSlider.vue (height 40px, padding 4px, border-radius 14px, slider-bg transition 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.1))
+export component SegmentedSlider3 inherits Rectangle {
+    in property <bool> enabled: true;
+    in property <string> label-0: "选项1";
+    in property <string> value-0: "0";
+    in property <string> label-1: "选项2";
+    in property <string> value-1: "1";
+    in property <string> label-2: "选项3";
+    in property <string> value-2: "2";
+    in-out property <string> current-value: "0";
+    callback selected(string);
+
+    height: 40px;
+    border-radius: 14px;
+    background: Theme.sys-control;
+
+    property <int> active-idx: root.current-value == root.value-0 ? 0 : (root.current-value == root.value-1 ? 1 : 2);
+    property <length> seg-w: root.width / 3;
+
+    // 滑动胶囊背景块 (.slider-bg: width calc(33.33% - 8px), left calc(idx * 33.33% + 4px))
+    slider-bg := Rectangle {
+        x: 4px + root.seg-w * root.active-idx;
+        y: 4px;
+        width: root.seg-w - 8px;
+        height: root.height - 8px;
+        border-radius: 10px;
+        background: Theme.sys-control-selected;
+        drop-shadow-blur: 4px;
+        drop-shadow-offset-y: 2px;
+        drop-shadow-color: rgba(0, 0, 0, 0.08);
+        animate x, width { duration: 400ms; easing: cubic-bezier(0.18, 0.89, 0.32, 1.1); }
+    }
+
+    HorizontalLayout {
+        padding: 4px;
+        spacing: 0px;
+
+        btn-0 := Rectangle {
+            horizontal-stretch: 1;
+            t0 := TouchArea {
+                enabled: root.enabled;
+                mouse-cursor: pointer;
+                clicked => {
+                    root.current-value = root.value-0;
+                    root.selected(root.value-0);
+                }
+            }
+            Text {
+                text: root.label-0;
+                font-size: 13px;
+                font-weight: 600;
+                color: root.active-idx == 0 ? Theme.sys-text : (t0.has-hover ? Theme.sys-text-secondary : Theme.sys-text-tertiary);
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                animate color { duration: 300ms; easing: ease; }
+            }
+        }
+
+        btn-1 := Rectangle {
+            horizontal-stretch: 1;
+            t1 := TouchArea {
+                enabled: root.enabled;
+                mouse-cursor: pointer;
+                clicked => {
+                    root.current-value = root.value-1;
+                    root.selected(root.value-1);
+                }
+            }
+            Text {
+                text: root.label-1;
+                font-size: 13px;
+                font-weight: 600;
+                color: root.active-idx == 1 ? Theme.sys-text : (t1.has-hover ? Theme.sys-text-secondary : Theme.sys-text-tertiary);
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                animate color { duration: 300ms; easing: ease; }
+            }
+        }
+
+        btn-2 := Rectangle {
+            horizontal-stretch: 1;
+            t2 := TouchArea {
+                enabled: root.enabled;
+                mouse-cursor: pointer;
+                clicked => {
+                    root.current-value = root.value-2;
+                    root.selected(root.value-2);
+                }
+            }
+            Text {
+                text: root.label-2;
+                font-size: 13px;
+                font-weight: 600;
+                color: root.active-idx == 2 ? Theme.sys-text : (t2.has-hover ? Theme.sys-text-secondary : Theme.sys-text-tertiary);
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                animate color { duration: 300ms; easing: ease; }
+            }
+        }
+    }
+}

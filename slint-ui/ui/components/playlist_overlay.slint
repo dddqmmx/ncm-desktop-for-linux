@@ -1,0 +1,284 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState, QueueSongItem } from "../state.slint";
+import { AppIcon, RoundedCover } from "common.slint";
+import { ListView } from "std-widgets.slint";
+
+component PlaylistQueueRow inherits Rectangle {
+    in property <QueueSongItem> song;
+    in property <bool> is-active: false;
+    callback play-clicked();
+    callback remove-clicked();
+
+    width: 324px;
+    height: 62px;
+    border-radius: 18px;
+    background: root.is-active
+        ? Theme.sys-control-active
+        : (row-ta.has-hover ? Theme.sys-control : transparent);
+    border-width: 1px;
+    border-color: root.is-active ? Theme.sys-border : transparent;
+    drop-shadow-blur: root.is-active ? 24px : 0px;
+    drop-shadow-offset-y: root.is-active ? 8px : 0px;
+    drop-shadow-color: root.is-active ? rgba(0, 0, 0, 0.08) : transparent;
+    animate background { duration: 200ms; easing: ease; }
+
+    row-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.play-clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+
+        // 序号或三根跳动音柱 (.item-status: bounce 0.6s infinite alternate, delays 0s / 0.2s / 0.4s, height 4px <-> 12px)
+        Rectangle {
+            width: 24px;
+            height: 24px;
+            y: (parent.height - self.height) / 2;
+
+            if root.is-active : HorizontalLayout {
+                width: 13px;
+                height: 12px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                spacing: 2px;
+                alignment: center;
+
+                // 周期 1200ms (0.6s alternate 往返), 高度在 4px 与 12px 之间线性三角波往复
+                property <float> t0: Math.mod(animation-tick() / 1ms, 1200.0) / 600.0;
+                property <float> t1: Math.mod((animation-tick() / 1ms) + 200.0, 1200.0) / 600.0;
+                property <float> t2: Math.mod((animation-tick() / 1ms) + 400.0, 1200.0) / 600.0;
+                property <float> p0: self.t0 <= 1.0 ? self.t0 : (2.0 - self.t0);
+                property <float> p1: self.t1 <= 1.0 ? self.t1 : (2.0 - self.t1);
+                property <float> p2: self.t2 <= 1.0 ? self.t2 : (2.0 - self.t2);
+
+                playing-bar-0 := Rectangle {
+                    width: 3px;
+                    height: 4px + 8px * parent.p0;
+                    y: 12px - self.height;
+                    border-radius: 1px;
+                    background: Theme.theme-color;
+                }
+                playing-bar-1 := Rectangle {
+                    width: 3px;
+                    height: 4px + 8px * parent.p1;
+                    y: 12px - self.height;
+                    border-radius: 1px;
+                    background: Theme.theme-color;
+                }
+                playing-bar-2 := Rectangle {
+                    width: 3px;
+                    height: 4px + 8px * parent.p2;
+                    y: 12px - self.height;
+                    border-radius: 1px;
+                    background: Theme.theme-color;
+                }
+            }
+
+            if !root.is-active : Text {
+                text: root.song.index;
+                font-size: 11px;
+                font-weight: 700;
+                color: Theme.sys-text-disabled;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // 40x40 封面 (.item-cover)
+        item-cover := RoundedCover {
+            cover-id: root.song.id;
+            width: 40px;
+            height: 40px;
+            y: (parent.height - self.height) / 2;
+            radius: 10px;
+            source: root.song.cover;
+            is-local-fallback: root.song.is-local && !root.song.has-cover;
+            fallback-icon-size: 20px;
+        }
+
+        // 歌曲名与歌手 (.item-info)
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                text: root.song.name;
+                font-size: 13px;
+                font-weight: 600;
+                color: root.is-active ? Theme.theme-color-strong : Theme.sys-text;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.song.artist;
+                font-size: 11px;
+                color: root.is-active ? Theme.sys-text-secondary : Theme.sys-text-tertiary;
+                overflow: elide;
+            }
+        }
+
+        // 移除按钮 (.item-actions)
+        Rectangle {
+            width: 24px;
+            height: 24px;
+            y: (parent.height - self.height) / 2;
+            opacity: (row-ta.has-hover || del-ta.has-hover) ? 1.0 : 0.0;
+            animate opacity { duration: 200ms; easing: ease; }
+
+            del-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.remove-clicked(); }
+            }
+
+            AppIcon {
+                x: 4px;
+                y: 4px;
+                source: Icons.close-fill;
+                icon-size: 16px;
+                tint: del-ta.has-hover ? Theme.sys-danger : Theme.sys-text-tertiary;
+            }
+        }
+    }
+}
+
+export component PlaylistOverlay inherits Rectangle {
+    in property <bool> presented: true;
+    width: AppState.window-width <= 650px ? (AppState.window-width - 40px) : 360px;
+    height: 520px;
+    border-radius: 28px;
+    background: Theme.glass-fill;
+    border-width: 1px;
+    border-color: Theme.glass-border;
+    drop-shadow-blur: 48px;
+    drop-shadow-offset-y: 22px;
+    drop-shadow-color: Theme.glass-shadow-elevated;
+    clip: true;
+
+    TouchArea {}
+
+    // 内部 1px 边框之内的容器 (358x518)
+    Rectangle {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: parent.height - 2px;
+
+        // 头部区域 (.playlist-header: x=+0, y=+0, width=358, height=69, padding 24px 24px 16px)
+        playlist-header := Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 100%;
+            height: 69px;
+
+            playlist-header-title := Text {
+                x: 24px;
+                y: 28px;
+                width: 72px;
+                height: 20px;
+                text: "待播清单";
+                font-size: 18px;
+                font-weight: 800;
+                color: Theme.sys-text;
+                vertical-alignment: center;
+            }
+
+            Text {
+                x: 104px;
+                y: 31px;
+                height: 16px;
+                text: AppState.queue-songs.length + " 首歌曲";
+                font-size: 12px;
+                font-weight: 600;
+                color: Theme.sys-text-tertiary;
+                vertical-alignment: center;
+            }
+
+            // 清空按钮 (.clear-btn: x=282, y=24, width=52, height=29, border-radius 10px)
+            playlist-clear-btn := Rectangle {
+                x: parent.width - 24px - 52px;
+                y: 24px;
+                width: 52px;
+                height: 29px;
+                border-radius: 10px;
+                background: clear-ta.has-hover ? Theme.sys-danger-soft : Theme.sys-control;
+                animate background { duration: 200ms; easing: ease; }
+
+                clear-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        if AppState.runtime-enabled { AppState.runtime-action("clear-queue", -1, ""); } else { AppState.queue-songs = []; }
+                        AppState.is-playing = false;
+                    }
+                }
+
+                Text {
+                    text: "清空";
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: clear-ta.has-hover ? Theme.sys-danger : Theme.sys-text;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // 滚动列表 (.playlist-scroll: padding 0 12px 20px)
+        if root.presented && AppState.queue-songs.length > 0 : queue-scroll := ListView {
+            x: 0px;
+            y: 69px;
+            width: 100%;
+            height: parent.height - 69px;
+            horizontal-scrollbar-policy: always-off;
+            vertical-scrollbar-policy: always-off;
+
+            for song[index] in AppState.queue-songs : Rectangle {
+                width: queue-scroll.visible-width;
+                height: (AppState.current-song-id == song.id ? 70px : 66px)
+                    + (index == AppState.queue-songs.length - 1 ? 20px : 0px);
+                PlaylistQueueRow {
+                    x: 12px;
+                    y: AppState.current-song-id == song.id ? 2px : 0px;
+                    width: parent.width - 34px;
+                    song: song;
+                    is-active: AppState.current-song-id == song.id;
+                    remove-clicked => { if AppState.runtime-enabled { AppState.runtime-action("remove-queue", song.id, ""); } }
+                    play-clicked => {
+                        if AppState.runtime-enabled { AppState.runtime-action("queue-play", song.id, ""); } else { AppState.play-song(song.id, song.name, song.artist, song.cover, song.is-local, song.has-cover); }
+                    }
+                }
+            }
+        }
+
+        // 空状态 (.empty-state)
+        if AppState.queue-songs.length == 0 : Rectangle {
+            x: 0px;
+            y: 69px;
+            width: 100%;
+            height: parent.height - 69px;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+
+                Text {
+                    text: "♪";
+                    font-size: 32px;
+                    color: Theme.sys-text-disabled;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "暂无待播歌曲";
+                    font-size: 14px;
+                    color: Theme.sys-text-disabled;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+}

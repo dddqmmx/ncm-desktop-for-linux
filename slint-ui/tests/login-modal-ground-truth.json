@@ -1,0 +1,1742 @@
+{
+  "initial": {
+    "card": {
+      "rect": {
+        "x": 517.5,
+        "y": 220,
+        "width": 400,
+        "height": 560
+      },
+      "style": {
+        "borderRadius": "24px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.6s",
+        "transitionTimingFunction": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "transitionProperty": "transform",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "error": null,
+    "phone": {
+      "rect": {
+        "x": 550.5,
+        "y": 479.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "secret": {
+      "rect": {
+        "x": 550.5,
+        "y": 551.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "submit": {
+      "rect": {
+        "x": 550.5,
+        "y": 680.58,
+        "width": 334,
+        "height": 54
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "700",
+        "paddingTop": "1px",
+        "paddingRight": "6px",
+        "paddingBottom": "1px",
+        "paddingLeft": "6px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.1s, 0.2s, 0.2s",
+        "transitionTimingFunction": "ease, ease, ease",
+        "transitionProperty": "transform, background, box-shadow",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "codeButton": null,
+    "remember": false,
+    "inputs": [
+      "86",
+      "",
+      ""
+    ],
+    "errorText": "",
+    "codeText": "",
+    "flipped": false,
+    "qrStatus": ""
+  },
+  "passwordError": {
+    "card": {
+      "rect": {
+        "x": 517.5,
+        "y": 220,
+        "width": 400,
+        "height": 560
+      },
+      "style": {
+        "borderRadius": "24px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.6s",
+        "transitionTimingFunction": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "transitionProperty": "transform",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "error": {
+      "rect": {
+        "x": 550.5,
+        "y": 453.78,
+        "width": 334,
+        "height": 40.8
+      },
+      "style": {
+        "borderRadius": "10px",
+        "fontSize": "13px",
+        "fontWeight": "600",
+        "paddingTop": "10px",
+        "paddingRight": "10px",
+        "paddingBottom": "10px",
+        "paddingLeft": "10px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "0.892492",
+        "transitionDuration": "0.3s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "opacity",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "phone": {
+      "rect": {
+        "x": 550.5,
+        "y": 500.58,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "secret": {
+      "rect": {
+        "x": 550.5,
+        "y": 572.58,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "submit": {
+      "rect": {
+        "x": 550.5,
+        "y": 701.38,
+        "width": 334,
+        "height": 54
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "700",
+        "paddingTop": "1px",
+        "paddingRight": "6px",
+        "paddingBottom": "1px",
+        "paddingLeft": "6px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.1s, 0.2s, 0.2s",
+        "transitionTimingFunction": "ease, ease, ease",
+        "transitionProperty": "transform, background, box-shadow",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "codeButton": null,
+    "remember": false,
+    "inputs": [
+      "44",
+      "13000000000",
+      "test-password"
+    ],
+    "errorText": "账号或密码错误",
+    "codeText": "",
+    "flipped": false,
+    "qrStatus": ""
+  },
+  "smsInitial": {
+    "card": {
+      "rect": {
+        "x": 517.5,
+        "y": 220,
+        "width": 400,
+        "height": 560
+      },
+      "style": {
+        "borderRadius": "24px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.6s",
+        "transitionTimingFunction": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "transitionProperty": "transform",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "error": null,
+    "phone": {
+      "rect": {
+        "x": 550.5,
+        "y": 479.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "secret": {
+      "rect": {
+        "x": 550.5,
+        "y": 551.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "submit": {
+      "rect": {
+        "x": 550.5,
+        "y": 680.58,
+        "width": 334,
+        "height": 54
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "700",
+        "paddingTop": "1px",
+        "paddingRight": "6px",
+        "paddingBottom": "1px",
+        "paddingLeft": "6px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.1s, 0.2s, 0.2s",
+        "transitionTimingFunction": "ease, ease, ease",
+        "transitionProperty": "transform, background, box-shadow",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "codeButton": {
+      "rect": {
+        "x": 787.48,
+        "y": 560.78,
+        "width": 88.02,
+        "height": 38
+      },
+      "style": {
+        "borderRadius": "10px",
+        "fontSize": "12px",
+        "fontWeight": "600",
+        "paddingTop": "0px",
+        "paddingRight": "14px",
+        "paddingBottom": "0px",
+        "paddingLeft": "14px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "remember": false,
+    "inputs": [
+      "86",
+      "",
+      ""
+    ],
+    "errorText": "",
+    "codeText": "获取验证码",
+    "flipped": false,
+    "qrStatus": ""
+  },
+  "smsMissingPhone": {
+    "card": {
+      "rect": {
+        "x": 517.5,
+        "y": 220,
+        "width": 400,
+        "height": 560
+      },
+      "style": {
+        "borderRadius": "24px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.6s",
+        "transitionTimingFunction": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "transitionProperty": "transform",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "error": {
+      "rect": {
+        "x": 550.5,
+        "y": 453.78,
+        "width": 334,
+        "height": 40.8
+      },
+      "style": {
+        "borderRadius": "10px",
+        "fontSize": "13px",
+        "fontWeight": "600",
+        "paddingTop": "10px",
+        "paddingRight": "10px",
+        "paddingBottom": "10px",
+        "paddingLeft": "10px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "0.741226",
+        "transitionDuration": "0.3s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "opacity",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "phone": {
+      "rect": {
+        "x": 550.5,
+        "y": 500.58,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "secret": {
+      "rect": {
+        "x": 550.5,
+        "y": 572.58,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "submit": {
+      "rect": {
+        "x": 550.5,
+        "y": 701.38,
+        "width": 334,
+        "height": 54
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "700",
+        "paddingTop": "1px",
+        "paddingRight": "6px",
+        "paddingBottom": "1px",
+        "paddingLeft": "6px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.1s, 0.2s, 0.2s",
+        "transitionTimingFunction": "ease, ease, ease",
+        "transitionProperty": "transform, background, box-shadow",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "codeButton": {
+      "rect": {
+        "x": 787.48,
+        "y": 581.58,
+        "width": 88.02,
+        "height": 38
+      },
+      "style": {
+        "borderRadius": "10px",
+        "fontSize": "12px",
+        "fontWeight": "600",
+        "paddingTop": "0px",
+        "paddingRight": "14px",
+        "paddingBottom": "0px",
+        "paddingLeft": "14px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "remember": false,
+    "inputs": [
+      "86",
+      "",
+      ""
+    ],
+    "errorText": "请输入手机号码",
+    "codeText": "获取验证码",
+    "flipped": false,
+    "qrStatus": ""
+  },
+  "smsSent": {
+    "card": {
+      "rect": {
+        "x": 517.5,
+        "y": 220,
+        "width": 400,
+        "height": 560
+      },
+      "style": {
+        "borderRadius": "24px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.6s",
+        "transitionTimingFunction": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "transitionProperty": "transform",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "error": null,
+    "phone": {
+      "rect": {
+        "x": 550.5,
+        "y": 479.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "secret": {
+      "rect": {
+        "x": 550.5,
+        "y": 551.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "submit": {
+      "rect": {
+        "x": 550.5,
+        "y": 680.58,
+        "width": 334,
+        "height": 54
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "700",
+        "paddingTop": "1px",
+        "paddingRight": "6px",
+        "paddingBottom": "1px",
+        "paddingLeft": "6px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.1s, 0.2s, 0.2s",
+        "transitionTimingFunction": "ease, ease, ease",
+        "transitionProperty": "transform, background, box-shadow",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "codeButton": {
+      "rect": {
+        "x": 786.14,
+        "y": 560.78,
+        "width": 89.36,
+        "height": 38
+      },
+      "style": {
+        "borderRadius": "10px",
+        "fontSize": "12px",
+        "fontWeight": "600",
+        "paddingTop": "0px",
+        "paddingRight": "14px",
+        "paddingBottom": "0px",
+        "paddingLeft": "14px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "remember": false,
+    "inputs": [
+      "81",
+      "09000000000",
+      "123456"
+    ],
+    "errorText": "",
+    "codeText": "60秒后获取",
+    "flipped": false,
+    "qrStatus": ""
+  },
+  "passwordRestored": {
+    "card": {
+      "rect": {
+        "x": 517.5,
+        "y": 220,
+        "width": 400,
+        "height": 560
+      },
+      "style": {
+        "borderRadius": "24px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.6s",
+        "transitionTimingFunction": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "transitionProperty": "transform",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "error": null,
+    "phone": {
+      "rect": {
+        "x": 550.5,
+        "y": 479.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "secret": {
+      "rect": {
+        "x": 550.5,
+        "y": 551.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "submit": {
+      "rect": {
+        "x": 550.5,
+        "y": 680.58,
+        "width": 334,
+        "height": 54
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "700",
+        "paddingTop": "1px",
+        "paddingRight": "6px",
+        "paddingBottom": "1px",
+        "paddingLeft": "6px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.1s, 0.2s, 0.2s",
+        "transitionTimingFunction": "ease, ease, ease",
+        "transitionProperty": "transform, background, box-shadow",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "codeButton": null,
+    "remember": false,
+    "inputs": [
+      "44",
+      "13000000000",
+      "test-password"
+    ],
+    "errorText": "",
+    "codeText": "",
+    "flipped": false,
+    "qrStatus": ""
+  },
+  "qr": {
+    "card": {
+      "rect": {
+        "x": 517.5,
+        "y": 220,
+        "width": 400,
+        "height": 560
+      },
+      "style": {
+        "borderRadius": "24px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.6s",
+        "transitionTimingFunction": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "transitionProperty": "transform",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "error": null,
+    "phone": {
+      "rect": {
+        "x": 550.5,
+        "y": 479.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "secret": {
+      "rect": {
+        "x": 550.5,
+        "y": 551.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "submit": {
+      "rect": {
+        "x": 550.5,
+        "y": 680.58,
+        "width": 334,
+        "height": 54
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "700",
+        "paddingTop": "1px",
+        "paddingRight": "6px",
+        "paddingBottom": "1px",
+        "paddingLeft": "6px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.1s, 0.2s, 0.2s",
+        "transitionTimingFunction": "ease, ease, ease",
+        "transitionProperty": "transform, background, box-shadow",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "codeButton": null,
+    "remember": false,
+    "inputs": [
+      "44",
+      "13000000000",
+      "test-password"
+    ],
+    "errorText": "",
+    "codeText": "",
+    "flipped": true,
+    "qrStatus": "请使用 App 扫码"
+  },
+  "formRestored": {
+    "card": {
+      "rect": {
+        "x": 517.5,
+        "y": 220,
+        "width": 400,
+        "height": 560
+      },
+      "style": {
+        "borderRadius": "24px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.6s",
+        "transitionTimingFunction": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "transitionProperty": "transform",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "error": null,
+    "phone": {
+      "rect": {
+        "x": 550.5,
+        "y": 479.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "secret": {
+      "rect": {
+        "x": 550.5,
+        "y": 551.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "submit": {
+      "rect": {
+        "x": 550.5,
+        "y": 680.58,
+        "width": 334,
+        "height": 54
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "700",
+        "paddingTop": "1px",
+        "paddingRight": "6px",
+        "paddingBottom": "1px",
+        "paddingLeft": "6px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.1s, 0.2s, 0.2s",
+        "transitionTimingFunction": "ease, ease, ease",
+        "transitionProperty": "transform, background, box-shadow",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "codeButton": null,
+    "remember": false,
+    "inputs": [
+      "44",
+      "13000000000",
+      "test-password"
+    ],
+    "errorText": "",
+    "codeText": "",
+    "flipped": false,
+    "qrStatus": "请使用 App 扫码"
+  },
+  "reopened": {
+    "card": {
+      "rect": {
+        "x": 517.5,
+        "y": 220,
+        "width": 400,
+        "height": 560
+      },
+      "style": {
+        "borderRadius": "24px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.6s",
+        "transitionTimingFunction": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "transitionProperty": "transform",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "error": null,
+    "phone": {
+      "rect": {
+        "x": 550.5,
+        "y": 479.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "secret": {
+      "rect": {
+        "x": 550.5,
+        "y": 551.78,
+        "width": 334,
+        "height": 56
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "400",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.2s",
+        "transitionTimingFunction": "ease",
+        "transitionProperty": "all",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "submit": {
+      "rect": {
+        "x": 550.5,
+        "y": 680.58,
+        "width": 334,
+        "height": 54
+      },
+      "style": {
+        "borderRadius": "14px",
+        "fontSize": "16px",
+        "fontWeight": "700",
+        "paddingTop": "1px",
+        "paddingRight": "6px",
+        "paddingBottom": "1px",
+        "paddingLeft": "6px",
+        "gap": "normal",
+        "columnGap": "normal",
+        "rowGap": "normal",
+        "opacity": "1",
+        "transitionDuration": "0.1s, 0.2s, 0.2s",
+        "transitionTimingFunction": "ease, ease, ease",
+        "transitionProperty": "transform, background, box-shadow",
+        "animationName": "none",
+        "animationDuration": "0s",
+        "animationTimingFunction": "ease"
+      }
+    },
+    "codeButton": null,
+    "remember": false,
+    "inputs": [
+      "86",
+      "",
+      ""
+    ],
+    "errorText": "",
+    "codeText": "",
+    "flipped": false,
+    "qrStatus": ""
+  },
+  "flip": {
+    "durationMs": 600,
+    "perspective": 1200,
+    "samples": [
+      {
+        "tMs": 0,
+        "transform": "matrix(1, 0, 0, 1, 0, 0)",
+        "rect": {
+          "x": 517.5,
+          "y": 220,
+          "width": 400,
+          "height": 560
+        },
+        "corners": [
+          {
+            "x": 517.5,
+            "y": 220
+          },
+          {
+            "x": 917.5,
+            "y": 220
+          },
+          {
+            "x": 917.5,
+            "y": 780
+          },
+          {
+            "x": 517.5,
+            "y": 780
+          }
+        ]
+      },
+      {
+        "tMs": 60,
+        "transform": "matrix3d(0.996701, 0, -0.0811617, 0, 0, 1, 0, 0, 0.0811617, 0, 0.996701, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 515.43,
+          "y": 216.16,
+          "width": 398.75,
+          "height": 567.68
+        },
+        "corners": [
+          {
+            "x": 515.4263916015625,
+            "y": 216.1605224609375
+          },
+          {
+            "x": 914.1796875,
+            "y": 223.73699951171875
+          },
+          {
+            "x": 914.1796875,
+            "y": 776.2630004882812
+          },
+          {
+            "x": 515.4263916015625,
+            "y": 783.8394775390625
+          }
+        ]
+      },
+      {
+        "tMs": 120,
+        "transform": "matrix3d(0.91276, 0, -0.408496, 0, 0, 1, 0, 0, 0.408496, 0, 0.91276, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 521.61,
+          "y": 199.54,
+          "width": 366.8,
+          "height": 600.91
+        },
+        "corners": [
+          {
+            "x": 521.6113891601562,
+            "y": 199.5441436767578
+          },
+          {
+            "x": 888.4155883789062,
+            "y": 237.8480224609375
+          },
+          {
+            "x": 888.4155883789062,
+            "y": 762.1519775390625
+          },
+          {
+            "x": 521.6113891601562,
+            "y": 800.4558715820312
+          }
+        ]
+      },
+      {
+        "tMs": 180,
+        "transform": "matrix3d(0.40493, 0, -0.914348, 0, 0, 1, 0, 0, 0.914348, 0, 0.40493, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 621.95,
+          "y": 169.66,
+          "width": 165.82,
+          "height": 660.68
+        },
+        "corners": [
+          {
+            "x": 621.9534912109375,
+            "y": 169.65890502929688
+          },
+          {
+            "x": 787.7764892578125,
+            "y": 257.0269775390625
+          },
+          {
+            "x": 787.7764892578125,
+            "y": 742.9730224609375
+          },
+          {
+            "x": 621.9534912109375,
+            "y": 830.3411254882812
+          }
+        ]
+      },
+      {
+        "tMs": 210,
+        "transform": "matrix3d(7.44079e-16, 0, -1, 0, 0, 1, 0, 0, 1, 0, 7.44079e-16, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 717.5,
+          "y": 164,
+          "width": 0,
+          "height": 672
+        },
+        "corners": [
+          {
+            "x": 717.5,
+            "y": 164
+          },
+          {
+            "x": 717.5,
+            "y": 260
+          },
+          {
+            "x": 717.5,
+            "y": 740
+          },
+          {
+            "x": 717.5,
+            "y": 836
+          }
+        ]
+      },
+      {
+        "tMs": 240,
+        "transform": "matrix3d(-0.349342, 0, -0.936995, 0, 0, 1, 0, 0, 0.936995, 0, -0.349342, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 657.07,
+          "y": 168.18,
+          "width": 143.23,
+          "height": 663.64
+        },
+        "corners": [
+          {
+            "x": 800.2986450195312,
+            "y": 168.18121337890625
+          },
+          {
+            "x": 657.0689086914062,
+            "y": 257.8202209472656
+          },
+          {
+            "x": 657.0689086914062,
+            "y": 742.1797485351562
+          },
+          {
+            "x": 800.2986450195312,
+            "y": 831.8187866210938
+          }
+        ]
+      },
+      {
+        "tMs": 300,
+        "transform": "matrix3d(-0.76155, 0, -0.648106, 0, 0, 1, 0, 0, 0.648106, 0, -0.76155, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 580.04,
+          "y": 186.09,
+          "width": 308.22,
+          "height": 627.82
+        },
+        "corners": [
+          {
+            "x": 888.2545166015625,
+            "y": 186.09243774414062
+          },
+          {
+            "x": 580.0382690429688,
+            "y": 247.29644775390625
+          },
+          {
+            "x": 580.0382690429688,
+            "y": 752.7035522460938
+          },
+          {
+            "x": 888.2545166015625,
+            "y": 813.9075927734375
+          }
+        ]
+      },
+      {
+        "tMs": 450,
+        "transform": "matrix3d(-0.991864, 0, -0.127304, 0, 0, 1, 0, 0, 0.127304, 0, -0.991864, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 523.25,
+          "y": 213.93,
+          "width": 396.92,
+          "height": 572.14
+        },
+        "corners": [
+          {
+            "x": 920.1729125976562,
+            "y": 213.93038940429688
+          },
+          {
+            "x": 523.2487182617188,
+            "y": 225.81741333007812
+          },
+          {
+            "x": 523.2487182617188,
+            "y": 774.1826171875
+          },
+          {
+            "x": 920.1729125976562,
+            "y": 786.0696411132812
+          }
+        ]
+      },
+      {
+        "tMs": 600,
+        "transform": "matrix3d(-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 517.5,
+          "y": 220,
+          "width": 400,
+          "height": 560
+        },
+        "corners": [
+          {
+            "x": 917.5,
+            "y": 220
+          },
+          {
+            "x": 517.5,
+            "y": 220
+          },
+          {
+            "x": 517.5,
+            "y": 780
+          },
+          {
+            "x": 917.5,
+            "y": 780
+          }
+        ]
+      }
+    ],
+    "reverse": [
+      {
+        "tMs": 0,
+        "transform": "matrix3d(-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 517.5,
+          "y": 220,
+          "width": 400,
+          "height": 560
+        },
+        "corners": [
+          {
+            "x": 917.5,
+            "y": 220
+          },
+          {
+            "x": 517.5,
+            "y": 220
+          },
+          {
+            "x": 517.5,
+            "y": 780
+          },
+          {
+            "x": 917.5,
+            "y": 780
+          }
+        ]
+      },
+      {
+        "tMs": 60,
+        "transform": "matrix3d(-0.996701, 0, -0.0811617, 0, 0, 1, 0, 0, 0.0811617, 0, -0.996701, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 520.82,
+          "y": 216.16,
+          "width": 398.75,
+          "height": 567.68
+        },
+        "corners": [
+          {
+            "x": 919.5736083984375,
+            "y": 216.1605224609375
+          },
+          {
+            "x": 520.8203125,
+            "y": 223.73699951171875
+          },
+          {
+            "x": 520.8203125,
+            "y": 776.2630004882812
+          },
+          {
+            "x": 919.5736083984375,
+            "y": 783.8394775390625
+          }
+        ]
+      },
+      {
+        "tMs": 120,
+        "transform": "matrix3d(-0.91276, 0, -0.408496, 0, 0, 1, 0, 0, 0.408496, 0, -0.91276, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 546.58,
+          "y": 199.54,
+          "width": 366.8,
+          "height": 600.91
+        },
+        "corners": [
+          {
+            "x": 913.3886108398438,
+            "y": 199.5441436767578
+          },
+          {
+            "x": 546.5844116210938,
+            "y": 237.8480224609375
+          },
+          {
+            "x": 546.5844116210938,
+            "y": 762.1519775390625
+          },
+          {
+            "x": 913.3886108398438,
+            "y": 800.4558715820312
+          }
+        ]
+      },
+      {
+        "tMs": 180,
+        "transform": "matrix3d(-0.40493, 0, -0.914348, 0, 0, 1, 0, 0, 0.914348, 0, -0.40493, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 647.22,
+          "y": 169.66,
+          "width": 165.82,
+          "height": 660.68
+        },
+        "corners": [
+          {
+            "x": 813.0465087890625,
+            "y": 169.65890502929688
+          },
+          {
+            "x": 647.2235107421875,
+            "y": 257.0269775390625
+          },
+          {
+            "x": 647.2235107421875,
+            "y": 742.9730224609375
+          },
+          {
+            "x": 813.0465087890625,
+            "y": 830.3411254882812
+          }
+        ]
+      },
+      {
+        "tMs": 210,
+        "transform": "matrix3d(-7.44079e-16, 0, -1, 0, 0, 1, 0, 0, 1, 0, -7.44079e-16, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 717.5,
+          "y": 164,
+          "width": 0,
+          "height": 672
+        },
+        "corners": [
+          {
+            "x": 717.5,
+            "y": 164
+          },
+          {
+            "x": 717.5,
+            "y": 260
+          },
+          {
+            "x": 717.5,
+            "y": 740
+          },
+          {
+            "x": 717.5,
+            "y": 836
+          }
+        ]
+      },
+      {
+        "tMs": 240,
+        "transform": "matrix3d(0.349342, 0, -0.936995, 0, 0, 1, 0, 0, 0.936995, 0, 0.349342, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 634.7,
+          "y": 168.18,
+          "width": 143.23,
+          "height": 663.64
+        },
+        "corners": [
+          {
+            "x": 634.7013549804688,
+            "y": 168.18121337890625
+          },
+          {
+            "x": 777.9310913085938,
+            "y": 257.8202209472656
+          },
+          {
+            "x": 777.9310913085938,
+            "y": 742.1797485351562
+          },
+          {
+            "x": 634.7013549804688,
+            "y": 831.8187866210938
+          }
+        ]
+      },
+      {
+        "tMs": 300,
+        "transform": "matrix3d(0.76155, 0, -0.648106, 0, 0, 1, 0, 0, 0.648106, 0, 0.76155, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 546.75,
+          "y": 186.09,
+          "width": 308.22,
+          "height": 627.82
+        },
+        "corners": [
+          {
+            "x": 546.7454833984375,
+            "y": 186.09243774414062
+          },
+          {
+            "x": 854.9617309570312,
+            "y": 247.29644775390625
+          },
+          {
+            "x": 854.9617309570312,
+            "y": 752.7035522460938
+          },
+          {
+            "x": 546.7454833984375,
+            "y": 813.9075927734375
+          }
+        ]
+      },
+      {
+        "tMs": 450,
+        "transform": "matrix3d(0.991864, 0, -0.127304, 0, 0, 1, 0, 0, 0.127304, 0, 0.991864, 0, 0, 0, 0, 1)",
+        "rect": {
+          "x": 514.83,
+          "y": 213.93,
+          "width": 396.92,
+          "height": 572.14
+        },
+        "corners": [
+          {
+            "x": 514.8270874023438,
+            "y": 213.93038940429688
+          },
+          {
+            "x": 911.7512817382812,
+            "y": 225.81741333007812
+          },
+          {
+            "x": 911.7512817382812,
+            "y": 774.1826171875
+          },
+          {
+            "x": 514.8270874023438,
+            "y": 786.0696411132812
+          }
+        ]
+      },
+      {
+        "tMs": 600,
+        "transform": "matrix(1, 0, 0, 1, 0, 0)",
+        "rect": {
+          "x": 517.5,
+          "y": 220,
+          "width": 400,
+          "height": 560
+        },
+        "corners": [
+          {
+            "x": 517.5,
+            "y": 220
+          },
+          {
+            "x": 917.5,
+            "y": 220
+          },
+          {
+            "x": 917.5,
+            "y": 780
+          },
+          {
+            "x": 517.5,
+            "y": 780
+          }
+        ]
+      }
+    ]
+  }
+}

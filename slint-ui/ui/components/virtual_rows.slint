@@ -1,0 +1,26 @@
+// Keep the complete scroll extent and a viewport-sized pool of reusable rows.
+// Used inside a page's existing Flickable so headers and rows scroll together.
+export component VirtualRows inherits Rectangle {
+    in property <int> row-count;
+    in property <length> row-height;
+    in property <length> viewport-top;
+    in property <length> viewport-height;
+    out property <int> first-row: Math.min(root.row-count,
+        Math.max(0, Math.floor(root.viewport-top / root.row-height)));
+    out property <int> end-row: Math.min(root.row-count,
+        Math.max(0, Math.ceil((root.viewport-top + root.viewport-height) / root.row-height)));
+    out property <int> visible-count: root.viewport-height > 0px
+        ? Math.max(0, root.end-row - root.first-row) : 0;
+    // Keep delegate identities stable across row boundaries. A rotating pool
+    // changes only the slots that enter/leave the viewport, retaining text and
+    // GPU caches for all rows that remain on screen.
+    out property <int> slot-count: root.viewport-height > 0px
+        ? Math.min(root.row-count, Math.ceil(root.viewport-height / root.row-height) + 1) : 0;
+    public pure function row-index(slot: int) -> int {
+        // Consumers commit this through `changed target-index`. Directly binding
+        // their contents here would dirty text/layout caches on every scroll.
+        return root.first-row + Math.mod(slot - Math.mod(root.first-row, Math.max(1, root.slot-count)) + root.slot-count, Math.max(1, root.slot-count));
+    }
+    height: root.row-count * root.row-height;
+    @children
+}

@@ -1,0 +1,429 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState } from "../state.slint";
+import { AppIcon, PlaybackSpinner, RoundedCover, VolumeRow } from "common.slint";
+import { PlaylistOverlay } from "playlist_overlay.slint";
+
+component PlayerIconButton inherits Rectangle {
+    in property <image> icon;
+    in property <length> icon-size: 20px;
+    in property <bool> active: false;
+    in property <bool> is-small: false;
+    in property <bool> disabled: false;
+    callback clicked();
+
+    width: 36px;
+    height: 36px;
+    border-radius: 18px;
+    background: (!root.disabled && ta.has-hover) ? Theme.sys-control-hover : transparent;
+    opacity: root.disabled ? 0.25 : (root.is-small && !root.active && !ta.has-hover ? 0.4 : 1.0);
+    animate background, opacity { duration: 200ms; easing: ease; }
+
+    ta := TouchArea {
+        enabled: !root.disabled;
+        mouse-cursor: root.disabled ? default : pointer;
+        clicked => { root.clicked(); }
+    }
+
+    AppIcon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        icon-size: root.icon-size;
+        tint: root.active
+            ? Theme.theme-color-strong
+            : (ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary);
+    }
+}
+
+export component PlayerBar inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+
+    property <bool> compact-bar: AppState.window-width <= 650px;
+    property <length> bar-w: Math.min(root.width - 40px, 820px);
+    property <length> bar-x: (root.width - self.bar-w) / 2;
+    property <length> bar-y: root.height - 24px - 96px;
+
+    // 1. 待播列表悬浮窗 (.playlist-popup: slide-fade enter 400ms cubic-bezier(0.16, 1, 0.3, 1), translateY(20px) -> 0, opacity 0 -> 1)
+    property <length> popup-base-y: root.bar-y - 12px - 520px;
+    property <length> popup-offset-y: AppState.is-playlist-open ? 0px : 20px;
+    property <float> popup-opacity: AppState.is-playlist-open ? 1.0 : 0.0;
+    animate popup-offset-y, popup-opacity {
+        duration: 400ms;
+        easing: cubic-bezier(0.16, 1.0, 0.3, 1.0);
+    }
+
+    playlist-popup := PlaylistOverlay {
+        presented: AppState.is-playlist-open || root.popup-opacity > 0.01;
+        x: (parent.width - self.width) / 2;
+        y: root.popup-base-y + root.popup-offset-y;
+        opacity: root.popup-opacity;
+        visible: AppState.is-playlist-open || root.popup-opacity > 0.01;
+    }
+
+    // 2. 音量悬浮气泡 (.volume-popup: bottom calc(100% + 14px) relative to 36px volume-control -> y = bar-y + 30px - 14px - 42px = bar-y - 26px; transition 200ms ease, translateY(6px) -> 0)
+    property <length> vol-btn-center-x: root.bar-x + root.bar-w - 1px - 24px - 36px - 8px - 36px - 8px - 18px;
+    property <length> vol-base-y: root.bar-y + 28.5px - 14px - 42px;
+    property <length> vol-offset-y: (AppState.is-volume-popup-open && AppState.can-adjust-volume) ? 0px : 6px;
+    property <float> vol-opacity: (AppState.is-volume-popup-open && AppState.can-adjust-volume) ? 1.0 : 0.0;
+    animate vol-offset-y, vol-opacity {
+        duration: 200ms;
+        easing: ease;
+    }
+
+    volume-popup := Rectangle {
+        width: 196px;
+        height: 42px;
+        x: root.vol-btn-center-x - self.width / 2;
+        y: root.vol-base-y + root.vol-offset-y;
+        opacity: root.vol-opacity;
+        visible: (AppState.is-volume-popup-open && AppState.can-adjust-volume) || root.vol-opacity > 0.01;
+        border-radius: 14px;
+        background: Theme.glass-fill-strong;
+        border-width: 1px;
+        border-color: Theme.glass-border;
+        drop-shadow-blur: 32px;
+        drop-shadow-offset-y: 12px;
+        drop-shadow-color: Theme.glass-shadow-elevated;
+
+        TouchArea {}
+
+        Rectangle {
+            x: 1px;
+            y: 1px;
+            width: parent.width - 2px;
+            height: parent.height - 2px;
+
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                alignment: center;
+
+                VolumeRow {
+                    volume <=> AppState.volume-percent;
+                    disabled: AppState.session-volume-locked;
+                    slider-width: 120px;
+                }
+            }
+        }
+    }
+
+    // 3. iOS 26 液态玻璃播放条 (.player-bar.glass-morphism)
+    player-bar-panel := Rectangle {
+        width: root.bar-w;
+        height: 96px;
+        x: root.bar-x;
+        y: root.bar-y;
+        border-radius: 36px;
+        background: Theme.glass-fill;
+        border-width: 1px;
+        border-color: Theme.glass-border;
+        drop-shadow-blur: 48px;
+        drop-shadow-offset-y: 22px;
+        drop-shadow-color: Theme.glass-shadow-elevated;
+        clip: true;
+
+        TouchArea {}
+
+        // 1px border 内部容器 (818x94)
+        Rectangle {
+            x: 1px;
+            y: 1px;
+            width: parent.width - 2px;
+            height: parent.height - 2px;
+
+            // .player-layout (padding 0 24px, spacing 0px)
+            HorizontalLayout {
+                padding-left: 24px;
+                padding-right: 24px;
+                spacing: 0px;
+
+                // 1. 左侧：歌曲信息 (.section-left: flex 1)
+                section-left := Rectangle {
+                    horizontal-stretch: 1;
+                    height: 100%;
+
+                    left-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            AppState.is-playlist-open = false;
+                            AppState.is-volume-popup-open = false;
+                            AppState.is-fullscreen = true;
+                        }
+                    }
+
+                    player-cover := RoundedCover {
+                        x: 0px;
+                        y: (parent.height - self.height) / 2;
+                        width: 48px;
+                        height: 48px;
+                        radius: 10px;
+                        source: AppState.current-song-cover;
+                        is-local-fallback: AppState.current-song-is-local && !AppState.current-song-has-cover;
+                        fallback-icon-size: 24px;
+                    }
+
+                    if !root.compact-bar : VerticalLayout {
+                        x: 60px;
+                        width: parent.width - 60px;
+                        height: 100%;
+                        alignment: center;
+                        spacing: 2px;
+
+                        Text {
+                            text: AppState.current-song-title;
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: Theme.sys-text;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: AppState.current-song-artist;
+                            font-size: 11px;
+                            color: Theme.sys-text-tertiary;
+                            overflow: elide;
+                        }
+                    }
+                }
+
+                // 2. 中间：核心控制 + 进度条 (.section-center: flex 2, max-width 400px, gap 8px)
+                section-center := Rectangle {
+                    width: Math.min((parent.width - 48px) / 2, 400px);
+                    height: 100%;
+
+                    // .playback-controls (height 44px, gap 16px, top y = (94 - 64)/2 = 15px -> window y = 880 + 1 + 15 = 896)
+                    HorizontalLayout {
+                        x: 0px;
+                        y: 15px;
+                        width: 100%;
+                        height: 44px;
+                        alignment: center;
+                        spacing: 16px;
+
+                        if !root.compact-bar : Rectangle {
+                            width: 30px;
+                            height: 30px;
+                            y: (parent.height - self.height) / 2;
+
+                            PlayerIconButton {
+                                x: -3px;
+                                y: -3px;
+                                icon: AppState.current-song-favorite ? Icons.heart-fill : Icons.heart;
+                                icon-size: 14px;
+                                is-small: true;
+                                active: AppState.current-song-favorite;
+                                disabled: AppState.current-song-is-local;
+                                clicked => {
+                                    AppState.toggle-favorite(AppState.current-song-id);
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: 38px;
+                            height: 38px;
+                            y: (parent.height - self.height) / 2;
+
+                            PlayerIconButton {
+                                x: 1px;
+                                y: 1px;
+                                icon: Icons.prev;
+                                icon-size: 22px;
+                                clicked => {
+                                    AppState.step-song(-1);
+                                }
+                            }
+                        }
+
+                        // 主播放按钮 (.play-main-btn: 44x44, border-radius 50%)
+                        play-main-btn := Rectangle {
+                            width: 44px;
+                            height: 44px;
+                            border-radius: 22px;
+                            background: play-ta.has-hover ? Theme.theme-color-strong : Theme.theme-color;
+                            accessible-role: button;
+                            accessible-label: AppState.is-loading ? "正在加载" : (AppState.is-playing ? "暂停" : "播放");
+                            accessible-enabled: !AppState.is-loading;
+
+                            // .inner-glow (opacity 0 -> 0.15, transition opacity 0.3s)
+                            inner-glow := Rectangle {
+                                width: 100%;
+                                height: 100%;
+                                border-radius: 22px;
+                                background: #ffffff;
+                                opacity: AppState.is-playing ? 0.15 : 0.0;
+                                animate opacity { duration: 300ms; easing: ease; }
+                            }
+
+                            play-ta := TouchArea {
+                                mouse-cursor: AppState.is-loading ? wait : pointer;
+                                clicked => {
+                                    AppState.toggle-playback();
+                                }
+                            }
+
+                            if AppState.is-loading : PlaybackSpinner {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+
+                            if !AppState.is-loading : AppIcon {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: AppState.is-playing ? Icons.pause : Icons.play;
+                                icon-size: 26px;
+                                tint: #ffffff;
+                            }
+                        }
+
+                        Rectangle {
+                            width: 38px;
+                            height: 38px;
+                            y: (parent.height - self.height) / 2;
+
+                            PlayerIconButton {
+                                x: 1px;
+                                y: 1px;
+                                icon: Icons.next;
+                                icon-size: 22px;
+                                clicked => {
+                                    AppState.step-song(1);
+                                }
+                            }
+                        }
+
+                        if !root.compact-bar : Rectangle {
+                            width: 32px;
+                            height: 32px;
+                            y: (parent.height - self.height) / 2;
+
+                            PlayerIconButton {
+                                x: -2px;
+                                y: -2px;
+                                icon: AppState.play-mode == "random"
+                                    ? Icons.shuffle
+                                    : (AppState.play-mode == "single" ? Icons.single : Icons.loop);
+                                icon-size: 16px;
+                                is-small: true;
+                                clicked => {
+                                    AppState.cycle-play-mode();
+                                }
+                            }
+                        }
+                    }
+
+                    // 进度条轨道 (.progress-track: y = 15 + 44 + 8 + 4 = 71px inside 94px box -> window y = 880 + 1 + 71 = 952px, height 4px, radius 2px)
+                    progress-track := Rectangle {
+                        x: 0px;
+                        y: 71px;
+                        width: 100%;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.sys-control;
+                        clip: true;
+
+                        // 已缓冲 (.buffered-bar: transition width 0.25s ease)
+                        buffered-bar := Rectangle {
+                            x: 0px;
+                            y: 0px;
+                            width: parent.width * Math.clamp(AppState.buffered-percent / 100.0, 0.0, 1.0);
+                            height: 100%;
+                            border-radius: 2px;
+                            background: Theme.theme-color-muted;
+                            animate width { duration: 250ms; easing: ease; }
+                        }
+
+                        // 已播放 (.progress-bar)
+                        progress-bar := Rectangle {
+                            x: 0px;
+                            y: 0px;
+                            width: parent.width * Math.clamp(AppState.progress-percent / 100.0, 0.0, 1.0);
+                            height: 100%;
+                            border-radius: 2px;
+                            background: Theme.theme-color;
+                        }
+                    }
+
+                    seek-ta := TouchArea {
+                        x: 0px;
+                        y: 61px;
+                        width: 100%;
+                        height: 24px;
+                        mouse-cursor: pointer;
+                        pointer-event(ev) => {
+                            if (ev.kind == PointerEventKind.down || (ev.kind == PointerEventKind.move && self.pressed)) {
+                                AppState.seek-to(Math.clamp(self.mouse-x / parent.width, 0.0, 1.0) * 100.0);
+                            }
+                        }
+                    }
+                }
+
+                // 3. 右侧：功能按钮 (.section-right: flex 1, min-width 150px, justify-content flex-end, gap 8px)
+                section-right := Rectangle {
+                    horizontal-stretch: 1;
+                    height: 100%;
+
+                    HorizontalLayout {
+                        x: 0px;
+                        y: 0px;
+                        width: 100%;
+                        height: 100%;
+                        alignment: end;
+                        spacing: 8px;
+
+                        if AppState.can-adjust-volume : Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            y: (parent.height - self.height) / 2;
+
+                            volume-btn := PlayerIconButton {
+                                icon: AppState.volume-percent <= 0.5 ? Icons.volume-mute : Icons.volume;
+                                icon-size: 20px;
+                                active: AppState.is-volume-popup-open;
+                                clicked => {
+                                    AppState.is-volume-popup-open = !AppState.is-volume-popup-open;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            y: (parent.height - self.height) / 2;
+
+                            list-btn := PlayerIconButton {
+                                icon: Icons.playlist;
+                                icon-size: 20px;
+                                active: AppState.is-playlist-open;
+                                clicked => {
+                                    AppState.is-playlist-open = !AppState.is-playlist-open;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            y: (parent.height - self.height) / 2;
+
+                            more-btn := PlayerIconButton {
+                                icon: Icons.more-fill;
+                                icon-size: 20px;
+                                disabled: AppState.current-song-is-local;
+                                clicked => {
+                                    AppState.add-to-playlist-song-name = AppState.current-song-title;
+                                    AppState.is-add-to-playlist-open = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,26 @@
+import { Theme } from "../theme.slint";
+
+export component SkeletonSweepOverlay inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    clip: true;
+
+    // 1400ms 周期的扫光动画 (@keyframes skeleton-sweep 1.4s ease-in-out infinite: translateX(-100%) -> translateX(100%))
+    property <float> phase: Math.mod(animation-tick() / 1ms, 1400.0) / 1400.0;
+
+    sweep-bar := Rectangle {
+        x: parent.width * (-1.0 + 2.0 * root.phase);
+        y: 0px;
+        width: parent.width;
+        height: 100%;
+        background: @linear-gradient(90deg, transparent 0%, Theme.sys-surface-muted 50%, transparent 100%);
+    }
+}
+
+export component SkeletonBlock inherits Rectangle {
+    in property <bool> animated: true;
+    border-radius: 6px;
+    background: Theme.sys-control;
+    clip: true;
+    if root.animated : SkeletonSweepOverlay {}
+}

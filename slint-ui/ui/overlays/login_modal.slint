@@ -1,0 +1,713 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState } from "../state.slint";
+import { AppIcon } from "../components/common.slint";
+
+component LoginSpinner inherits Rectangle {
+    in property <color> tint: #ffffff;
+    width: 22px; height: 22px;
+    Image {
+        width: 100%; height: 100%; colorize: root.tint;
+        source: @image-url("../../assets/icons/login-spinner.svg");
+        transform-rotation: Math.mod(animation-tick() / 1ms, 800) / 800 * 360deg;
+    }
+}
+
+component LoginControl inherits FocusScope {
+    x: 0px; y: 0px;
+    callback clicked();
+    in property <string> label;
+    in property <MouseCursor> mouse-cursor: pointer;
+    out property <bool> has-hover: touch.has-hover;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    key-pressed(event) => {
+        if root.enabled && (event.text == " " || event.text == "\n") { root.clicked(); return accept; }
+        return reject;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.mouse-cursor;
+        clicked => { root.focus(); root.clicked(); }
+    }
+}
+
+component LoginErrorText inherits Text {
+    line-height-factor: self.font-size * 1.6 / (font-probe.font-metrics.ascent - font-probe.font-metrics.descent);
+    font-probe := Text { visible: false; font-family: root.font-family; font-size: root.font-size; font-weight: root.font-weight; }
+}
+
+// 对应 LoginModal.vue (x=517.5, y=220, 400x560, border-radius 24px, 3D flip transition transform 0.6s cubic-bezier(0.4, 0, 0.2, 1))
+export component LoginModal inherits Rectangle {
+    in property <bool> capture: false;
+    in property <bool> capture-back: false;
+    width: 100%;
+    height: 100%;
+    background: root.capture ? transparent : rgba(0, 0, 0, 0.28);
+    property <bool> opened: AppState.is-login-open;
+    property <bool> animate-flip: false;
+    changed opened => {
+        root.animate-flip = false;
+        if root.opened && !root.capture { modal-focus.focus(); }
+    }
+    Timer {
+        interval: 16ms;
+        running: root.opened && !root.capture && !root.animate-flip;
+        triggered => { root.animate-flip = true; }
+    }
+
+    TouchArea {
+        clicked => { AppState.is-login-open = false; }
+    }
+
+    Timer {
+        interval: 1s;
+        running: !root.capture && AppState.is-login-open && AppState.login-captcha-seconds > 0;
+        triggered => { AppState.login-captcha-seconds = Math.max(0, AppState.login-captcha-seconds - 1); }
+    }
+
+    // CSS rotateY(180deg), perspective:1200px, transform-origin:center.
+    property <float> flip-progress: root.capture ? (root.capture-back ? 1.0 : 0.0) : AppState.login-mode == "qr" ? 1.0 : 0.0;
+    animate flip-progress { duration: root.capture || !root.animate-flip ? 0ms : 600ms; easing: cubic-bezier(0.4, 0.0, 0.2, 1.0); }
+    property <bool> flipping: !root.capture && self.flip-progress > 0.00001 && self.flip-progress < 0.99999;
+    property <float> flip-cos: Math.abs(Math.cos(180deg * self.flip-progress));
+    property <float> flip-sin: Math.sin(180deg * self.flip-progress) * (self.flip-progress < 0.5 ? 1 : -1);
+    property <image> current-qr: AppState.login-qr-image;
+    changed current-qr => {
+        if root.flipping && AppState.login-flip-ready { AppState.prepare-login-flip(); }
+    }
+
+    modal-focus := FocusScope {
+    width: 100%; height: 100%;
+    login-card := Rectangle {
+        width: 400px;
+        height: 560px;
+        visible: !root.flipping || !AppState.login-flip-ready;
+        transform-scale-x: root.flipping && !AppState.login-flip-ready ? root.flip-cos * 100% : 100%;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 24px;
+        background: Theme.sys-surface-strong;
+        border-width: 1px;
+        border-color: Theme.sys-border;
+        drop-shadow-blur: 56px;
+        drop-shadow-offset-y: 24px;
+        drop-shadow-color: Theme.sys-shadow-elevated;
+        clip: true;
+
+        TouchArea {}
+
+        // === 正面：表单登录 (.face-front: 1px border + 32px padding -> x=550.5, y=253, inner width=334) ===
+        if root.flip-progress < 0.5 : face-front := Rectangle {
+            property <bool> password-mode: AppState.login-tab == "password";
+            property <bool> phone-focus: phone-input.has-focus || sms-phone-input.has-focus || country-input.has-focus || sms-country-input.has-focus;
+            property <bool> secret-focus: sec-input.has-focus || code-input.has-focus;
+            property <bool> has-phone: self.password-mode ? AppState.login-phone != "" : AppState.login-sms-phone != "";
+            property <bool> has-secret: self.password-mode ? AppState.login-password != "" : AppState.login-code != "";
+            property <length> error-offset: AppState.login-error != "" ? login-error-box.height - 20px : 0px;
+
+            x: 0px;
+            y: 0px;
+            width: 400px;
+            height: 560px;
+
+            // .qr-btn (x=33, y=33 -> window x=550.5, y=253, 36x36, radius 12px, transition all 0.2s)
+            login-qr-btn := Rectangle {
+                x: 33px;
+                y: 33px;
+                width: 36px;
+                height: 36px;
+                border-radius: 12px;
+                background: qr-sw-ta.has-hover ? Theme.sys-control-hover : transparent;
+                animate background { duration: root.capture ? 0ms : 200ms; easing: ease; }
+
+                qr-sw-ta := LoginControl { label: "扫码登录";
+                    mouse-cursor: pointer;
+                    clicked => { AppState.login-mode = "qr"; }
+                }
+
+                AppIcon {
+                    x: 8px;
+                    y: 8px;
+                    source: Icons.qr;
+                    icon-size: 20px;
+                    tint: qr-sw-ta.has-hover ? Theme.sys-text : Theme.sys-text-tertiary;
+                }
+            }
+
+            // .close-btn (x=331, y=33 -> window x=848.5, y=253, 36x36, radius 12px)
+            login-close-btn := Rectangle {
+                x: 331px;
+                y: 33px;
+                width: 36px;
+                height: 36px;
+                border-radius: 12px;
+                background: cls-ta.has-hover ? Theme.sys-control-hover : transparent;
+                animate background { duration: root.capture ? 0ms : 200ms; easing: ease; }
+
+                cls-ta := LoginControl { label: "关闭";
+                    mouse-cursor: pointer;
+                    clicked => { AppState.is-login-open = false; }
+                }
+
+                AppIcon {
+                    x: 8px;
+                    y: 8px;
+                    source: Icons.close;
+                    icon-size: 20px;
+                    tint: cls-ta.has-hover ? Theme.sys-text : Theme.sys-text-tertiary;
+                }
+            }
+
+            // .header-section (y = 33 + 36 + 20 = 89px, height 66.78px, margin-bottom 24px)
+            VerticalLayout {
+                x: 33px;
+                y: 89px;
+                width: 334px;
+                height: 66.78px;
+                spacing: 6px;
+
+                Text {
+                    text: "欢迎回来";
+                    font-size: 24px;
+                    font-weight: 700;
+                    color: Theme.sys-text;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "请输入您的登录详情";
+                    font-size: 14px;
+                    color: Theme.sys-text-secondary;
+                    horizontal-alignment: center;
+                }
+            }
+
+            // .segmented-control (x=33 -> window x=550.5, y=179.78 -> window y=399.78, width=334, height=48, radius 14px)
+            login-segmented-control := Rectangle {
+                x: 33px;
+                y: 179.78px;
+                width: 334px;
+                height: 48px;
+                border-radius: 14px;
+                background: Theme.sys-control;
+
+                // .segment-bg (x = 4px or 167px -> window x=554.5 or 717.5, y=4px -> window y=403.78, width=163, height=40, radius 10px, transition 0.3s cubic-bezier(0.4, 0, 0.2, 1))
+                login-segment-bg := Rectangle {
+                    x: AppState.login-tab == "password" ? 4px : 167px;
+                    y: 4px;
+                    width: 163px;
+                    height: 40px;
+                    border-radius: 10px;
+                    background: Theme.sys-control-selected;
+                    drop-shadow-blur: 8px;
+                    drop-shadow-offset-y: 2px;
+                    drop-shadow-color: rgba(0, 0, 0, 0.08);
+                    animate x { duration: root.capture ? 0ms : 300ms; easing: cubic-bezier(0.4, 0.0, 0.2, 1.0); }
+                }
+
+                HorizontalLayout {
+                    padding: 4px;
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        login-password-tab := LoginControl {
+                            label: "密码登录";
+                            clicked => {
+                                AppState.login-tab = "password";
+                                AppState.login-error = "";
+                            }
+                        }
+                        Text {
+                            text: "密码登录";
+                            font-size: 14px;
+                            font-weight: 600;
+                            color: AppState.login-tab == "password" ? Theme.sys-text : Theme.sys-text-tertiary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            animate color { duration: root.capture ? 0ms : 300ms; easing: ease; }
+                        }
+                    }
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        login-sms-tab := LoginControl {
+                            label: "验证码登录";
+                            clicked => {
+                                AppState.login-tab = "phone";
+                                AppState.login-error = "";
+                            }
+                        }
+                        Text {
+                            text: "验证码登录";
+                            font-size: 14px;
+                            font-weight: 600;
+                            color: AppState.login-tab == "phone" ? Theme.sys-text : Theme.sys-text-tertiary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            animate color { duration: root.capture ? 0ms : 300ms; easing: ease; }
+                        }
+                    }
+                }
+            }
+
+            // 手机号输入框 (.phone-input-container: x=33 -> window x=550.5, y=259.8 -> window y=479.8, width=334, height=56, radius 14px, transition all 0.2s)
+            login-phone-container := Rectangle {
+                x: 33px;
+                y: 259.8px + face-front.error-offset;
+                width: 334px;
+                height: 56px;
+                border-radius: 14px;
+                background: face-front.phone-focus ? Theme.sys-surface-strong : Theme.sys-control;
+                border-width: 1px;
+                border-color: face-front.phone-focus ? Theme.theme-color : transparent;
+                animate background, border-color { duration: root.capture ? 0ms : 200ms; easing: ease; }
+
+                TouchArea { clicked => { if face-front.password-mode { phone-input.focus(); } else { sms-phone-input.focus(); } } }
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    spacing: 10px;
+
+                    HorizontalLayout {
+                        width: 42px;
+                        spacing: 2px;
+
+                        Text {
+                            text: "+";
+                            font-size: 15px;
+                            font-weight: 600;
+                            color: Theme.sys-text-tertiary;
+                            vertical-alignment: center;
+                        }
+
+                        Rectangle {
+                            width: 28px;
+                            country-input := TextInput {
+                                width: 100%; height: 100%; visible: face-front.password-mode;
+                                text <=> AppState.login-country-code;
+                                font-size: 15px; font-weight: 600; color: Theme.sys-text;
+                                vertical-alignment: center; single-line: true;
+                                accepted => { AppState.submit-login(); }
+                            }
+                            sms-country-input := TextInput {
+                                width: 100%; height: 100%; visible: !face-front.password-mode;
+                                text <=> AppState.login-sms-country-code;
+                                font-size: 15px; font-weight: 600; color: Theme.sys-text;
+                                vertical-alignment: center; single-line: true;
+                                accepted => { AppState.submit-login(); }
+                            }
+                        }
+
+                    }
+
+                    Rectangle {
+                        width: 1px;
+                        height: 20px;
+                        y: (parent.height - self.height) / 2;
+                        background: Theme.sys-border-strong;
+                    }
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+
+                        // 悬浮标签 (transition all 0.2s cubic-bezier(0.4, 0, 0.2, 1))
+                        Text {
+                            x: 4px;
+                            y: (phone-input.has-focus || sms-phone-input.has-focus || face-front.has-phone) ? 8px : 17px;
+                            text: "手机号码";
+                            font-size: (phone-input.has-focus || sms-phone-input.has-focus || face-front.has-phone) ? 11px : 14px;
+                            font-weight: (phone-input.has-focus || sms-phone-input.has-focus || face-front.has-phone) ? 700 : 500;
+                            color: (phone-input.has-focus || sms-phone-input.has-focus || face-front.has-phone) ? Theme.theme-color-strong : Theme.sys-text-tertiary;
+                            animate y, font-size, color { duration: root.capture ? 0ms : 200ms; easing: cubic-bezier(0.4, 0.0, 0.2, 1.0); }
+                        }
+
+                        phone-input := TextInput {
+                            visible: face-front.password-mode;
+                            x: 4px;
+                            y: 22px;
+                            width: parent.width - 8px;
+                            height: 28px;
+                            text <=> AppState.login-phone;
+                            font-size: 15px;
+                            font-weight: 600;
+                            color: Theme.sys-text;
+                            single-line: true;
+                            accepted => { AppState.submit-login(); }
+                        }
+                        sms-phone-input := TextInput {
+                            visible: !face-front.password-mode;
+                            x: 4px;
+                            y: 22px;
+                            width: parent.width - 8px;
+                            height: 28px;
+                            text <=> AppState.login-sms-phone;
+                            font-size: 15px;
+                            font-weight: 600;
+                            color: Theme.sys-text;
+                            single-line: true;
+                            accepted => { AppState.submit-login(); }
+                        }
+                    }
+
+                    AppIcon {
+                        y: (parent.height - self.height) / 2;
+                        source: Icons.phone;
+                        icon-size: 18px;
+                        tint: face-front.phone-focus ? Theme.theme-color-strong : Theme.sys-text-disabled;
+                    }
+                }
+            }
+
+            // 密码或验证码输入框 (.input-field: x=33 -> window x=550.5, y=331.8 -> window y=551.8, width=334, height=56, radius 14px)
+            login-input-field := Rectangle {
+                TouchArea { clicked => { if face-front.password-mode { sec-input.focus(); } else { code-input.focus(); } } }
+                x: 33px;
+                y: 331.8px + face-front.error-offset;
+                width: 334px;
+                height: 56px;
+                border-radius: 14px;
+                background: face-front.secret-focus ? Theme.sys-surface-strong : Theme.sys-control;
+                border-width: 1px;
+                border-color: face-front.secret-focus ? Theme.theme-color : transparent;
+                animate background, border-color { duration: root.capture ? 0ms : 200ms; easing: ease; }
+
+                Text {
+                    x: 16px;
+                    y: (face-front.secret-focus || face-front.has-secret) ? 8px : 17px;
+                    text: AppState.login-tab == "password" ? "密码" : "验证码";
+                    font-size: (face-front.secret-focus || face-front.has-secret) ? 11px : 14px;
+                    font-weight: (face-front.secret-focus || face-front.has-secret) ? 700 : 500;
+                    color: (face-front.secret-focus || face-front.has-secret) ? Theme.theme-color-strong : Theme.sys-text-tertiary;
+                    animate y, font-size, color { duration: root.capture ? 0ms : 200ms; easing: cubic-bezier(0.4, 0.0, 0.2, 1.0); }
+                }
+
+                sec-input := TextInput {
+                    visible: face-front.password-mode;
+                    x: 16px;
+                    y: 22px;
+                    width: parent.width - (AppState.login-tab == "password" ? 56px : 120px);
+                    height: 28px;
+                    text <=> AppState.login-password;
+                    input-type: InputType.password;
+                    font-size: 15px;
+                    font-weight: 600;
+                    color: Theme.sys-text;
+                    single-line: true;
+                    accepted => { AppState.submit-login(); }
+                }
+                code-input := TextInput {
+                    visible: !face-front.password-mode;
+                    x: 16px;
+                    y: 22px;
+                    width: parent.width - (AppState.login-tab == "password" ? 56px : 120px);
+                    height: 28px;
+                    text <=> AppState.login-code;
+                    input-type: InputType.text;
+                    font-size: 15px;
+                    font-weight: 600;
+                    color: Theme.sys-text;
+                    single-line: true;
+                    accepted => { AppState.submit-login(); }
+                }
+
+                if AppState.login-tab == "password" : AppIcon {
+                    x: parent.width - 34px;
+                    y: 19px;
+                    source: Icons.lock;
+                    icon-size: 18px;
+                    tint: face-front.secret-focus ? Theme.theme-color-strong : Theme.sys-text-disabled;
+                }
+
+                if AppState.login-tab == "phone" : login-code-button := Rectangle {
+                    x: parent.width - self.width - 8px;
+                    y: 8px;
+                    width: code-button-text.preferred-width + 28px;
+                    height: 40px;
+                    border-radius: 10px;
+                    background: AppState.login-captcha-seconds > 0 || AppState.login-captcha-busy ? Theme.sys-control-hover : code-btn-ta.has-hover ? Theme.theme-color-strong : Theme.theme-color;
+
+                    code-btn-ta := LoginControl { label: "获取验证码"; enabled: AppState.login-captcha-seconds == 0 && !AppState.login-captcha-busy; mouse-cursor: self.enabled ? pointer : default; clicked => { if AppState.runtime-enabled { AppState.runtime-action("captcha", -1, ""); } } }
+
+                    code-button-text := Text {
+                        text: AppState.login-captcha-seconds > 0 ? AppState.login-captcha-seconds + "秒后获取" : "获取验证码";
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: AppState.login-captcha-seconds > 0 || AppState.login-captcha-busy ? Theme.sys-text-disabled : #ffffff;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // .form-actions (x=33, y=411.8 -> checkmark at x=550.5, y=633.17, 18x18, radius 6px)
+            Rectangle {
+                x: 33px;
+                y: 411.8px + face-front.error-offset;
+                width: 334px;
+                height: 20.8px;
+
+                login-remember-area := LoginControl { label: "保持登录状态";
+                    width: 26px + remember-label.preferred-width; height: 100%;
+                    mouse-cursor: pointer;
+                    clicked => { AppState.login-remember = !AppState.login-remember; }
+                }
+                login-checkmark := Rectangle {
+                    x: 0px;
+                    y: 1.37px;
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 6px;
+                    background: AppState.login-remember ? Theme.theme-color : Theme.sys-surface-strong;
+                    border-width: 2px;
+                    border-color: AppState.login-remember ? Theme.theme-color : Theme.sys-border-strong;
+                    animate background, border-color { duration: root.capture ? 0ms : 200ms; easing: ease; }
+
+
+                    if AppState.login-remember : AppIcon {
+                        x: 3px;
+                        y: 3px;
+                        source: Icons.check;
+                        icon-size: 12px;
+                        tint: #ffffff;
+                    }
+                }
+
+                remember-label := Text {
+                    x: 26px;
+                    y: 0px;
+                    width: self.preferred-width;
+                    height: 20.8px;
+                    text: "保持登录状态";
+                    font-size: 13px;
+                    font-weight: 500;
+                    color: Theme.sys-text-secondary;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    x: 334px - 68px;
+                    y: 0px;
+                    width: 68px;
+                    height: 20.8px;
+                    text: "忘记密码？";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.sys-text-secondary;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+
+            login-error-box := Rectangle {
+                x: 33px; y: 233.78px; width: 334px;
+                height: error-label.preferred-height + 20px;
+                visible: AppState.login-error != "";
+                background: Theme.sys-danger-soft; border-radius: 10px;
+                error-label := LoginErrorText {
+                    x: 10px; y: 10px; width: parent.width - 20px;
+                    text: AppState.login-error; font-size: 13px; font-weight: 600;
+                    color: Theme.sys-danger;
+                    horizontal-alignment: center; wrap: word-wrap;
+                }
+            }
+            // .submit-btn (x=33 -> window x=550.5, y=460.58 -> window y=680.58, width=334, height=54, radius 14px)
+            login-submit-btn := Rectangle {
+                x: 33px;
+                y: 460.58px + face-front.error-offset;
+                width: 334px;
+                height: 54px;
+                border-radius: 14px;
+                background: AppState.login-busy ? Theme.sys-control-hover : sub-login-ta.has-hover ? Theme.theme-color-strong : Theme.theme-color;
+                animate background { duration: root.capture ? 0ms : 200ms; easing: ease; }
+
+                sub-login-ta := LoginControl { label: "登录";
+                    enabled: !AppState.login-busy;
+                    mouse-cursor: pointer;
+                    clicked => { AppState.submit-login(); }
+                }
+
+                if AppState.login-busy : LoginSpinner {
+                    x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                }
+                if !AppState.login-busy : Text {
+                    text: "登录";
+                    font-size: 16px;
+                    font-weight: 700;
+                    color: #ffffff;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // === 背面：二维码登录 (.face-back) ===
+        if root.flip-progress >= 0.5 : face-back := Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 400px;
+            height: 560px;
+
+            login-form-btn := Rectangle {
+                x: 33px;
+                y: 33px;
+                width: 36px;
+                height: 36px;
+                border-radius: 12px;
+                background: pc-sw-ta.has-hover ? Theme.sys-control-hover : transparent;
+
+                pc-sw-ta := LoginControl { label: "密码登录";
+                    mouse-cursor: pointer;
+                    clicked => { AppState.login-mode = "form"; }
+                }
+
+                AppIcon {
+                    x: 8px;
+                    y: 8px;
+                    source: Icons.monitor;
+                    icon-size: 20px;
+                    tint: pc-sw-ta.has-hover ? Theme.sys-text : Theme.sys-text-tertiary;
+                }
+            }
+
+            login-qr-close-btn := Rectangle {
+                x: 331px;
+                y: 33px;
+                width: 36px;
+                height: 36px;
+                border-radius: 12px;
+                background: cls-qr-ta.has-hover ? Theme.sys-control-hover : transparent;
+
+                cls-qr-ta := LoginControl { label: "关闭";
+                    mouse-cursor: pointer;
+                    clicked => { AppState.is-login-open = false; }
+                }
+
+                AppIcon {
+                    x: 8px;
+                    y: 8px;
+                    source: Icons.close;
+                    icon-size: 20px;
+                    tint: cls-qr-ta.has-hover ? Theme.sys-text : Theme.sys-text-tertiary;
+                }
+            }
+
+            Text {
+                x: 0px;
+                y: 132px;
+                width: 400px;
+                text: "扫码登录";
+                font-size: 22px;
+                font-weight: 700;
+                color: Theme.sys-text;
+                horizontal-alignment: center;
+            }
+
+            // .qr-box (x=90 -> window x=607.5, y=191.19 -> window y=411.19, 220x220, border-radius 20px)
+            login-qr-box := Rectangle {
+
+                x: 90px;
+                y: 191.19px;
+                width: 220px;
+                height: 220px;
+                border-radius: 20px;
+                background: Theme.sys-bg-elevated;
+                border-width: 1px;
+                border-color: Theme.sys-border;
+                drop-shadow-blur: 32px;
+                drop-shadow-offset-y: 10px;
+                drop-shadow-color: Theme.sys-shadow-soft;
+
+                if AppState.runtime-enabled && !AppState.login-qr-ready : LoginSpinner {
+                    x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                    tint: Theme.theme-color;
+                }
+                Image {
+                    visible: !AppState.runtime-enabled || AppState.login-qr-ready;
+                    x: 15px;
+                    y: 15px;
+                    width: 190px;
+                    height: 190px;
+                    source: AppState.runtime-enabled ? AppState.login-qr-image : Icons.qr-demo;
+                    image-fit: contain;
+                }
+            }
+
+            Text {
+                x: 0px;
+                y: 435.19px;
+                width: 400px;
+                text: AppState.runtime-enabled ? AppState.login-qr-message : "请使用 App 扫码";
+                font-size: 15px;
+                font-weight: 600;
+                color: Theme.sys-text;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                x: 0px;
+                y: 467px;
+                width: 400px;
+                text: "请打开 移动端 App 扫码即可快速登录。";
+                font-size: 13px;
+                color: Theme.sys-text-secondary;
+                horizontal-alignment: center;
+            }
+        }
+    }
+    }
+
+    // Card textures are projected in 2px strips. Each strip uses the same
+    // homogeneous divide as CSS perspective, including vertical foreshortening.
+    // This transforms text, controls, corners and shadows together, without
+    // relayout or decoding images during animation.
+    if root.flipping && AppState.login-flip-ready : Rectangle {
+        width: 100%; height: 100%;
+        for strip in 296 : flip-strip := Image {
+            property <float> u: strip * 2 - 296;
+            property <float> left-w: 1 + self.u * root.flip-sin / 1200;
+            property <float> right-w: 1 + (self.u + 2) * root.flip-sin / 1200;
+            property <float> mid-w: 1 + (self.u + 1) * root.flip-sin / 1200;
+            property <float> pixel-scale: AppState.login-render-scale;
+            property <length> left: parent.width / 2 + self.u * root.flip-cos / self.left-w * 1px;
+            property <length> right: parent.width / 2 + (self.u + 2) * root.flip-cos / self.right-w * 1px;
+            // FemtoVG rounds image origins to device pixels. Round both edges
+            // together so neighboring strips share an edge without hairline gaps.
+            x: Math.round(self.left / 1px * self.pixel-scale) / self.pixel-scale * 1px;
+            y: parent.height / 2 - 376px / self.mid-w;
+            width: root.flip-cos < 0.001 ? 0px : Math.max(0px, Math.round(self.right / 1px * self.pixel-scale) / self.pixel-scale * 1px - self.x);
+            height: 752px / self.mid-w;
+            source: root.flip-progress < 0.5 ? AppState.login-front-strips[strip] : AppState.login-back-strips[strip];
+            image-fit: fill;
+        }
+        TouchArea {
+            x: (parent.width - 400px) / 2; y: (parent.height - 560px) / 2;
+            width: 400px; height: 560px;
+        }
+        flip-switch-btn := LoginControl {
+            property <float> w: 1 - 149 * root.flip-sin / 1200;
+            x: parent.width / 2 - 149px * root.flip-cos / self.w - self.width / 2;
+            y: parent.height / 2 - 229px / self.w - self.height / 2;
+            width: 36px * root.flip-cos / self.w; height: 36px / self.w;
+            label: root.flip-progress < 0.5 ? "扫码登录" : "密码登录";
+            clicked => { AppState.login-mode = AppState.login-mode == "qr" ? "form" : "qr"; }
+        }
+        flip-close-btn := LoginControl {
+            property <float> w: 1 + 149 * root.flip-sin / 1200;
+            x: parent.width / 2 + 149px * root.flip-cos / self.w - self.width / 2;
+            y: parent.height / 2 - 229px / self.w - self.height / 2;
+            width: 36px * root.flip-cos / self.w; height: 36px / self.w;
+            label: "关闭";
+            clicked => { AppState.is-login-open = false; }
+        }
+    }
+}
+
+// Kept hidden; rendered only when a flip needs fresh front/back textures.
+export component LoginCaptureWindow inherits Window {
+    in property <bool> show-back;
+    width: 592px; height: 752px;
+    background: transparent;
+    LoginModal { capture: true; capture-back: root.show-back; }
+}

@@ -1,0 +1,183 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+
+// The caller owns the selection and maps indices to its own values/model.
+// Opening, navigating or dismissing the menu never commits a selection.
+export component Dropdown inherits Rectangle {
+    in property <int> option-count;
+    pure callback option-label(int) -> string;
+    in property <int> current-index: -1;
+    in property <string> placeholder: "请选择";
+    in property <bool> enabled: true;
+    in property <length> popup-width: root.width;
+    in property <int> max-visible-items: 8;
+    callback selected(int);
+    out property <bool> is-open: popup.is-open;
+    out property <string> current-text: root.current-index >= 0 && root.current-index < root.option-count
+        ? root.option-label(root.current-index) : root.placeholder;
+
+    property <bool> interactive: root.enabled && root.option-count > 0;
+    property <int> active-index: -1;
+    property <length> row-height: 36px;
+    property <length> menu-height: Math.min(root.option-count, Math.max(1, root.max-visible-items)) * root.row-height;
+    property <length> scroll-y: 0px;
+
+    width: 240px;
+    height: 36px;
+    border-radius: 10px;
+    background: trigger.has-hover && root.interactive ? Theme.sys-control-hover : Theme.sys-surface-strong;
+    border-width: 1px;
+    border-color: root.is-open || control-focus.has-focus ? Theme.theme-color-strong : Theme.sys-border-strong;
+    opacity: root.interactive ? 1 : 0.55;
+    forward-focus: control-focus;
+    accessible-role: combobox;
+    accessible-enabled: root.interactive;
+    accessible-expandable: true;
+    accessible-expanded: root.is-open;
+    accessible-value: root.current-text;
+    accessible-action-expand => { root.open(); }
+
+    public function open() {
+        if !root.interactive || root.is-open { return; }
+        control-focus.focus();
+        root.active-index = Math.clamp(root.current-index, 0, root.option-count - 1);
+        root.scroll-y = -Math.max(0px, (root.active-index + 1) * root.row-height - root.menu-height);
+        popup.show();
+    }
+    function dismiss() {
+        popup.close();
+        control-focus.focus();
+    }
+    function choose(index: int) {
+        if !root.interactive || index < 0 || index >= root.option-count { return; }
+        root.dismiss();
+        root.selected(index);
+    }
+    function navigate(index: int) {
+        root.active-index = Math.clamp(index, 0, root.option-count - 1);
+        if root.active-index * root.row-height < -root.scroll-y {
+            root.scroll-y = -root.active-index * root.row-height;
+        } else if (root.active-index + 1) * root.row-height > -root.scroll-y + root.menu-height {
+            root.scroll-y = root.menu-height - (root.active-index + 1) * root.row-height;
+        }
+    }
+    changed interactive => { if !root.interactive && root.is-open { popup.close(); } }
+    changed option-count => { if root.is-open { root.navigate(root.active-index); } }
+
+    control-focus := FocusScope {
+        enabled: root.interactive;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " || event.text == Key.DownArrow || event.text == Key.UpArrow {
+                root.open();
+                return accept;
+            }
+            return reject;
+        }
+        trigger := TouchArea {
+            enabled: root.interactive;
+            mouse-cursor: root.interactive ? pointer : not-allowed;
+            clicked => { root.open(); }
+        }
+        label := Text {
+            x: 12px;
+            width: parent.width - 42px;
+            height: 100%;
+            text: root.current-text;
+            font-size: 13px;
+            font-weight: 600;
+            color: Theme.sys-text;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Image {
+            x: parent.width - 26px;
+            y: (parent.height - self.height) / 2;
+            width: 14px;
+            height: 14px;
+            source: Icons.chevron-down;
+            colorize: Theme.sys-text-secondary;
+            transform-rotation: root.is-open ? 180deg : 0deg;
+        }
+    }
+
+    popup := PopupWindow {
+        x: 0px;
+        y: root.height + 4px;
+        width: Math.max(root.width, root.popup-width);
+        height: root.menu-height + 8px;
+        close-policy: close-on-click-outside;
+        forward-focus: menu-focus;
+
+        Rectangle {
+            border-radius: 10px;
+            background: Theme.sys-bg-elevated;
+            border-width: 1px;
+            border-color: Theme.sys-border-strong;
+            menu-focus := FocusScope {
+                key-pressed(event) => {
+                    if event.text == Key.Escape {
+                        root.dismiss();
+                        return accept;
+                    } else if event.text == Key.Return || event.text == " " {
+                        root.choose(root.active-index);
+                        return accept;
+                    } else if event.text == Key.UpArrow {
+                        root.navigate(root.active-index - 1);
+                        return accept;
+                    } else if event.text == Key.DownArrow {
+                        root.navigate(root.active-index + 1);
+                        return accept;
+                    } else if event.text == Key.Home {
+                        root.navigate(0);
+                        return accept;
+                    } else if event.text == Key.End {
+                        root.navigate(root.option-count - 1);
+                        return accept;
+                    } else if event.text == Key.Tab || event.text == Key.Backtab {
+                        root.dismiss();
+                        return reject;
+                    }
+                    return reject;
+                }
+                ListView {
+                    x: 4px; y: 4px;
+                    width: parent.width - 8px;
+                    height: parent.height - 8px;
+                    content-y <=> root.scroll-y;
+                    for index in root.option-count : option := Rectangle {
+                        height: root.row-height;
+                        border-radius: 6px;
+                        background: option-touch.has-hover || root.active-index == index
+                            ? Theme.sys-control-hover : transparent;
+                        accessible-role: list-item;
+                        accessible-label: root.option-label(index);
+                        accessible-item-selectable: true;
+                        accessible-item-selected: root.current-index == index;
+                        accessible-item-index: index;
+                        accessible-action-default => { root.choose(index); }
+                        option-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.choose(index); }
+                        }
+                        Text {
+                            x: 10px; width: parent.width - 40px; height: 100%;
+                            text: root.option-label(index);
+                            font-size: 13px;
+                            color: root.current-index == index ? Theme.theme-color-strong : Theme.sys-text;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        Image {
+                            x: parent.width - 24px; y: (parent.height - self.height) / 2;
+                            width: 14px; height: 14px;
+                            source: Icons.check;
+                            colorize: Theme.theme-color-strong;
+                            visible: root.current-index == index;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

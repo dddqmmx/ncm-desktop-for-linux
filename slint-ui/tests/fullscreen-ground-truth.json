@@ -1,0 +1,714 @@
+{
+  "initial": {
+    "width": 627.5,
+    "height": 836,
+    "scrollTop": 316,
+    "rows": [
+      {
+        "text": "Waiting in a car",
+        "top": 9.75,
+        "height": 106.234375,
+        "layoutHeight": 106,
+        "center": 62.8671875,
+        "active": false,
+        "opacity": "0.3",
+        "transform": "none"
+      },
+      {
+        "text": "Waiting for a ride in the dark",
+        "top": 127.984375,
+        "height": 106.234375,
+        "layoutHeight": 106,
+        "center": 181.1015625,
+        "active": false,
+        "opacity": "0.3",
+        "transform": "none"
+      },
+      {
+        "text": "The night city grows",
+        "top": 246.21875,
+        "height": 106.234375,
+        "layoutHeight": 106,
+        "center": 299.3359375,
+        "active": false,
+        "opacity": "0.3",
+        "transform": "none"
+      },
+      {
+        "text": "Look at the horizon glow",
+        "top": 359.14141845703125,
+        "height": 116.85784912109375,
+        "layoutHeight": 106,
+        "center": 417.5703430175781,
+        "active": true,
+        "opacity": "1",
+        "transform": "matrix(1.1, 0, 0, 1.1, 0, 0)"
+      },
+      {
+        "text": "Neon reflections on the wet asphalt",
+        "top": 482.6875,
+        "height": 106.234375,
+        "layoutHeight": 106,
+        "center": 535.8046875,
+        "active": false,
+        "opacity": "0.3",
+        "transform": "none"
+      }
+    ]
+  },
+  "interaction": {
+    "hover": {
+      "rows": [
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 0:12 播放"
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 0:24 播放"
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": true,
+          "opacity": 0.65,
+          "title": "跳转到 0:48 播放"
+        },
+        {
+          "active": true,
+          "centered": false,
+          "hovered": false,
+          "opacity": 1,
+          "title": "跳转到 1:32 播放"
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 1:48 播放"
+        }
+      ],
+      "indicator": false,
+      "guideStyle": null
+    },
+    "scrolled": {
+      "rows": [
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 0:12 播放"
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 0:24 播放"
+        },
+        {
+          "active": false,
+          "centered": true,
+          "hovered": true,
+          "opacity": 0.9,
+          "title": "跳转到 0:48 播放"
+        },
+        {
+          "active": true,
+          "centered": false,
+          "hovered": false,
+          "opacity": 1,
+          "title": "跳转到 1:32 播放"
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 1:48 播放"
+        }
+      ],
+      "indicator": true,
+      "time": "0:48",
+      "guideStyle": "dashed",
+      "buttonTitle": "从此处播放"
+    },
+    "centeredHover": {
+      "rows": [
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 0:12 播放"
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 0:24 播放"
+        },
+        {
+          "active": false,
+          "centered": true,
+          "hovered": true,
+          "opacity": 0.9,
+          "title": "跳转到 0:48 播放"
+        },
+        {
+          "active": true,
+          "centered": false,
+          "hovered": false,
+          "opacity": 1,
+          "title": "跳转到 1:32 播放"
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 1:48 播放"
+        }
+      ],
+      "indicator": true,
+      "time": "0:48",
+      "guideStyle": "dashed",
+      "buttonTitle": "从此处播放"
+    },
+    "centeredIdle": {
+      "rows": [
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 0:12 播放"
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 0:24 播放"
+        },
+        {
+          "active": false,
+          "centered": true,
+          "hovered": false,
+          "opacity": 0.75,
+          "title": "跳转到 0:48 播放"
+        },
+        {
+          "active": true,
+          "centered": false,
+          "hovered": false,
+          "opacity": 1,
+          "title": "跳转到 1:32 播放"
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 1:48 播放"
+        }
+      ],
+      "indicator": true,
+      "time": "0:48",
+      "guideStyle": "dashed",
+      "buttonTitle": "从此处播放"
+    },
+    "loading": {
+      "rows": [
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": ""
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": ""
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": ""
+        },
+        {
+          "active": true,
+          "centered": false,
+          "hovered": false,
+          "opacity": 1,
+          "title": ""
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": ""
+        }
+      ],
+      "indicator": false,
+      "guideStyle": null
+    },
+    "cancelled": {
+      "rows": [
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 0:12 播放"
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 0:24 播放"
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 0:48 播放"
+        },
+        {
+          "active": true,
+          "centered": false,
+          "hovered": false,
+          "opacity": 1,
+          "title": "跳转到 1:32 播放"
+        },
+        {
+          "active": false,
+          "centered": false,
+          "hovered": false,
+          "opacity": 0.3,
+          "title": "跳转到 1:48 播放"
+        }
+      ],
+      "indicator": false,
+      "guideStyle": null
+    }
+  },
+  "transition": [
+    {
+      "width": 627.5,
+      "height": 836,
+      "scrollTop": 316,
+      "rows": [
+        {
+          "text": "Waiting in a car",
+          "top": 9.75,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 62.8671875,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "Waiting for a ride in the dark",
+          "top": 127.984375,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 181.1015625,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "The night city grows",
+          "top": 246.21875,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 299.3359375,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "Look at the horizon glow",
+          "top": 359.14141845703125,
+          "height": 116.85784912109375,
+          "layoutHeight": 106,
+          "center": 417.5703430175781,
+          "active": false,
+          "opacity": "1",
+          "transform": "matrix(1.1, 0, 0, 1.1, 0, 0)"
+        },
+        {
+          "text": "Neon reflections on the wet asphalt",
+          "top": 482.6875,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 535.8046875,
+          "active": true,
+          "opacity": "0.3",
+          "transform": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "width": 627.5,
+      "height": 836,
+      "scrollTop": 368,
+      "rows": [
+        {
+          "text": "Waiting in a car",
+          "top": -42.25,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 10.8671875,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "Waiting for a ride in the dark",
+          "top": 75.984375,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 129.1015625,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "The night city grows",
+          "top": 194.21875,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 247.3359375,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "Look at the horizon glow",
+          "top": 311.1567687988281,
+          "height": 108.82705688476562,
+          "layoutHeight": 106,
+          "center": 365.57029724121094,
+          "active": false,
+          "opacity": "0.314791",
+          "transform": "matrix(1.02441, 0, 0, 1.02441, 0, 0)"
+        },
+        {
+          "text": "Neon reflections on the wet asphalt",
+          "top": 426.672119140625,
+          "height": 114.26513671875,
+          "layoutHeight": 106,
+          "center": 483.8046875,
+          "active": true,
+          "opacity": "0.985209",
+          "transform": "matrix(1.07559, 0, 0, 1.07559, 0, 0)"
+        }
+      ]
+    },
+    {
+      "width": 627.5,
+      "height": 836,
+      "scrollTop": 395,
+      "rows": [
+        {
+          "text": "Waiting in a car",
+          "top": -69.25,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": -16.1328125,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "Waiting for a ride in the dark",
+          "top": 48.984375,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 102.1015625,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "The night city grows",
+          "top": 167.21875,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 220.3359375,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "Look at the horizon glow",
+          "top": 285.3050537109375,
+          "height": 106.530517578125,
+          "layoutHeight": 106,
+          "center": 338.5703125,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "matrix(1.00279, 0, 0, 1.00279, 0, 0)"
+        },
+        {
+          "text": "Neon reflections on the wet asphalt",
+          "top": 398.5238037109375,
+          "height": 116.56170654296875,
+          "layoutHeight": 106,
+          "center": 456.8046569824219,
+          "active": true,
+          "opacity": "1",
+          "transform": "matrix(1.09721, 0, 0, 1.09721, 0, 0)"
+        }
+      ]
+    },
+    {
+      "width": 627.5,
+      "height": 836,
+      "scrollTop": 395,
+      "rows": [
+        {
+          "text": "Waiting in a car",
+          "top": -69.25,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": -16.1328125,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "Waiting for a ride in the dark",
+          "top": 48.984375,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 102.1015625,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "The night city grows",
+          "top": 167.21875,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 220.3359375,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "Look at the horizon glow",
+          "top": 285.453125,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 338.5703125,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "Neon reflections on the wet asphalt",
+          "top": 398.37579345703125,
+          "height": 116.85784912109375,
+          "layoutHeight": 106,
+          "center": 456.8047180175781,
+          "active": true,
+          "opacity": "1",
+          "transform": "matrix(1.1, 0, 0, 1.1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "width": 627.5,
+      "height": 836,
+      "scrollTop": 395,
+      "rows": [
+        {
+          "text": "Waiting in a car",
+          "top": -69.25,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": -16.1328125,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "Waiting for a ride in the dark",
+          "top": 48.984375,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 102.1015625,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "The night city grows",
+          "top": 167.21875,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 220.3359375,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "Look at the horizon glow",
+          "top": 285.453125,
+          "height": 106.234375,
+          "layoutHeight": 106,
+          "center": 338.5703125,
+          "active": false,
+          "opacity": "0.3",
+          "transform": "none"
+        },
+        {
+          "text": "Neon reflections on the wet asphalt",
+          "top": 398.37579345703125,
+          "height": 116.85784912109375,
+          "layoutHeight": 106,
+          "center": 456.8047180175781,
+          "active": true,
+          "opacity": "1",
+          "transform": "matrix(1.1, 0, 0, 1.1, 0, 0)"
+        }
+      ]
+    }
+  ],
+  "withoutTranslation": {
+    "width": 627.5,
+    "height": 836,
+    "scrollTop": 267,
+    "rows": [
+      {
+        "text": "Waiting in a car",
+        "top": 58.75,
+        "height": 80.640625,
+        "layoutHeight": 81,
+        "center": 99.0703125,
+        "active": false,
+        "opacity": "0.3",
+        "transform": "none"
+      },
+      {
+        "text": "Waiting for a ride in the dark",
+        "top": 151.390625,
+        "height": 80.640625,
+        "layoutHeight": 81,
+        "center": 191.7109375,
+        "active": false,
+        "opacity": "0.3",
+        "transform": "none"
+      },
+      {
+        "text": "The night city grows",
+        "top": 244.03125,
+        "height": 80.640625,
+        "layoutHeight": 81,
+        "center": 284.3515625,
+        "active": false,
+        "opacity": "0.3",
+        "transform": "none"
+      },
+      {
+        "text": "Look at the horizon glow",
+        "top": 336.671875,
+        "height": 80.640625,
+        "layoutHeight": 81,
+        "center": 376.9921875,
+        "active": false,
+        "opacity": "0.3",
+        "transform": "none"
+      },
+      {
+        "text": "Neon reflections on the wet asphalt",
+        "top": 425.28045654296875,
+        "height": 88.7047119140625,
+        "layoutHeight": 81,
+        "center": 469.6328125,
+        "active": true,
+        "opacity": "1",
+        "transform": "matrix(1.1, 0, 0, 1.1, 0, 0)"
+      }
+    ]
+  },
+  "withoutExtras": {
+    "width": 627.5,
+    "height": 836,
+    "scrollTop": 145,
+    "rows": [
+      {
+        "text": "Waiting in a car",
+        "top": 180.75,
+        "height": 56.390625,
+        "layoutHeight": 56,
+        "center": 208.9453125,
+        "active": false,
+        "opacity": "0.3",
+        "transform": "none"
+      },
+      {
+        "text": "Waiting for a ride in the dark",
+        "top": 249.140625,
+        "height": 56.390625,
+        "layoutHeight": 56,
+        "center": 277.3359375,
+        "active": false,
+        "opacity": "0.3",
+        "transform": "none"
+      },
+      {
+        "text": "The night city grows",
+        "top": 317.53125,
+        "height": 56.390625,
+        "layoutHeight": 56,
+        "center": 345.7265625,
+        "active": false,
+        "opacity": "0.3",
+        "transform": "none"
+      },
+      {
+        "text": "Look at the horizon glow",
+        "top": 385.921875,
+        "height": 56.390625,
+        "layoutHeight": 56,
+        "center": 414.1171875,
+        "active": false,
+        "opacity": "0.3",
+        "transform": "none"
+      },
+      {
+        "text": "Neon reflections on the wet asphalt",
+        "top": 451.49298095703125,
+        "height": 62.0296630859375,
+        "layoutHeight": 56,
+        "center": 482.5078125,
+        "active": true,
+        "opacity": "1",
+        "transform": "matrix(1.1, 0, 0, 1.1, 0, 0)"
+      }
+    ]
+  }
+}
