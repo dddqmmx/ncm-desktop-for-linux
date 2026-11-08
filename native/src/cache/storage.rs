@@ -138,6 +138,7 @@ impl CacheFileStore {
         if !absolute_path.exists() {
             OpenOptions::new()
                 .create(true)
+                .truncate(false)
                 .write(true)
                 .read(true)
                 .open(&absolute_path)?;

@@ -1,17 +1,18 @@
-use crate::audio::state::{NO_TRIM_FRAME, SharedState};
+use crate::audio::codecs;
+use crate::audio::session::{NO_TRIM_FRAME, Session};
 use ringbuf::traits::Producer;
 use std::path::Path;
-use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::Duration;
 use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{CODEC_TYPE_NULL, Decoder, DecoderOptions};
+use symphonia::core::codecs::{CODEC_TYPE_NULL, Decoder};
 use symphonia::core::conv::ConvertibleSample;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo, SeekedTo};
 use symphonia::core::io::{MediaSource, MediaSourceStream};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
-use symphonia::core::sample::{Sample, SampleFormat as SymphoniaSampleFormat};
+use symphonia::core::sample::SampleFormat as SymphoniaSampleFormat;
 use symphonia::core::units::TimeBase;
 
 pub(crate) struct AudioMetadata {
@@ -42,7 +43,7 @@ pub(crate) async fn probe_file_duration_ms(
         .map_err(|err| err as Box<dyn std::error::Error>)
 }
 
-fn probe_file_duration_ms_blocking(
+pub(crate) fn probe_file_duration_ms_blocking(
     file_path: &str,
 ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
     let path = Path::new(file_path);
@@ -146,16 +147,15 @@ fn probe_source(
         .ok_or("No audio track")?;
 
     let track_id = track.id;
-    let mut sr = track.codec_params.sample_rate;
-    let mut channels = track
-        .codec_params
-        .channels
-        .map(|channels| channels.count() as u16);
-    let bits_per_sample = track.codec_params.bits_per_sample;
-    let sample_format = track.codec_params.sample_format;
-    let time_base = track.codec_params.time_base;
-    let mut decoder =
-        symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default())?;
+
+    // 归一化后的参数才是事实来源（见 `audio::codecs`）：Opus 的声道数只写在头部里，
+    // 位深来自容器字段而容器常常标错。
+    let (params, mut decoder) = codecs::prepare_track(&track.codec_params)?;
+    let mut sr = params.sample_rate;
+    let mut channels = params.channels.map(|channels| channels.count() as u16);
+    let bits_per_sample = params.bits_per_sample;
+    let sample_format = params.sample_format;
+    let time_base = params.time_base;
     let decoder_params = decoder.codec_params();
     sr = sr.or(decoder_params.sample_rate);
     channels = channels.or_else(|| {
@@ -236,91 +236,109 @@ fn decode_stream_spec(
     }
 }
 
-pub(crate) fn handle_seek_if_needed(
-    state: &SharedState,
-    format: &mut dyn FormatReader,
-    decoder: &mut dyn Decoder,
-    track_id: u32,
-    sr: u32,
-    time_base: Option<TimeBase>,
-) {
-    let seek_req = match state.try_take_seek_request() {
-        Ok(request) => request,
-        Err(()) => {
-            println!("[Seek-Check] 警告：Seek 锁竞争中...");
-            return;
-        }
-    };
+/// 解码线程主干。会话的所有跨线程协议都收敛在这里，`AudioPlayer` 只负责起线程。
+///
+/// 每轮顺序：处理 seek → 暂停时让出 → 缓冲有空位就解一个 packet。
+pub(crate) fn run_decode_loop<S, P>(mut meta: AudioMetadata, mut producer: P, session: Arc<Session>)
+where
+    S: ConvertibleSample + Copy + Send + 'static,
+    P: Producer<Item = S> + Send + 'static,
+{
+    let sr = meta.sample_rate;
+    let time_base = meta.time_base;
+    let track_id = meta.track_id;
 
-    if let Some(target) = seek_req {
-        println!(
-            "[Seek-Check] >>> 收到 Seek 请求，目标时间: {:?} <<<",
-            target
-        );
-
-        state.discard_buffer.store(true, Ordering::SeqCst);
-        state.waiting_for_seek.store(true, Ordering::SeqCst);
-
-        decoder.reset();
-
-        println!("[Seek-Check] 正在执行底层的 format.seek (网络 IO 可能在此阻塞)...");
-        let start = std::time::Instant::now();
-        let res = format.seek(
-            SeekMode::Accurate,
-            SeekTo::Time {
-                time: symphonia::core::units::Time::from(target.as_secs_f64()),
-                track_id: Some(track_id),
-            },
-        );
-        println!(
-            "[Seek-Check] 底层 seek 完成，耗时: {:?}, 结果: {:?}",
-            start.elapsed(),
-            res
-        );
-
-        if let Err(err) = res {
-            fail_playback_after_stream_error(state, "seek", &err);
-            return;
+    loop {
+        if session.is_terminated() || session.outcome().is_some() {
+            break;
         }
 
-        state.buffered_frames.store(0, Ordering::SeqCst);
-        let requested_frame = (target.as_secs_f64() * sr as f64) as u64;
-        // Symphonia Accurate seek 可能从请求位置之前的 packet/keyframe 开始解码。
-        // 进度应该锚到用户请求的位置，同时把 actual..requested 之间的样本裁掉；
-        // 只锚到 actual 会让 UI 看起来一致，但用户实际听到的仍不是 requested 位置。
-        let completion = seek_completion_plan(&res, requested_frame, sr, time_base, track_id);
-        state.decoder_done.store(false, Ordering::SeqCst);
-        // 注意：此处不再二次拉高 discard_buffer。前置那次（见上）已负责排空旧的
-        // seek 前样本；seek 完成后 ringbuf 里即将被写入的是目标位置的正常样本，再次置
-        // discard 会把正确样本一并丢弃，导致 current_frame 停在锚点而 ringbuf 被反复清空，
-        // 表现为进度与播放脱节。
-        wait_for_pending_discard_to_drain(state);
-        if state.is_terminating.load(Ordering::Relaxed) {
-            return;
+        // seek 在暂停期间也要处理，否则 pause 后 seek 会一直挂起。
+        handle_seek_if_needed(
+            &session,
+            &mut *meta.format_reader,
+            &mut *meta.decoder,
+            track_id,
+            sr,
+            time_base,
+        );
+
+        // 暂停时不要继续往 ringbuf 塞数据：输出侧不消费，塞满后解码线程会卡在
+        // push 上，resume 时表现为整进程假死。
+        if session.is_paused() {
+            std::thread::sleep(Duration::from_millis(10));
+            continue;
         }
 
-        let committed = state.commit_seek_completion_if_current(
-            completion.anchor_frame,
-            completion.trim_until_frame,
+        if producer.is_full() {
+            std::thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+
+        let keep_going = decode_next_packet::<S, _>(
+            &mut *meta.format_reader,
+            &mut *meta.decoder,
+            track_id,
+            sr,
+            time_base,
+            &mut producer,
+            &session,
         );
-        println!(
-            "[Seek-Check] 状态重置完成，锚定帧: {} (请求帧: {}, actual_frame: {:?}, trim_until: {:?}, actual_ts: {:?}, committed: {})",
-            completion.anchor_frame,
-            requested_frame,
-            completion.actual_frame,
-            completion.trim_until_frame,
-            res.as_ref().ok().map(|s| s.actual_ts),
-            committed
-        );
+        if !keep_going {
+            // 到 EOF（或致命解码错误，会话已先行落 Failed）：此后不再产出样本。
+            session.mark_drained();
+            break;
+        }
     }
 }
 
-fn wait_for_pending_discard_to_drain(state: &SharedState) {
-    while (state.discard_buffer.load(Ordering::SeqCst)
-        || state.is_discarding_buffer.load(Ordering::SeqCst))
-        && !state.is_terminating.load(Ordering::Relaxed)
-    {
-        std::thread::sleep(Duration::from_millis(2));
+pub(crate) fn handle_seek_if_needed(
+    session: &Session,
+    format: &mut dyn FormatReader,
+    decoder: &mut dyn Decoder,
+    track_id: u32,
+    _sr: u32,
+    time_base: Option<TimeBase>,
+) {
+    let Ok(Some(request)) = session.try_take_seek_request() else {
+        // 抢不到锁：控制面正在写新的 seek 请求，下一轮再看——不阻塞解码线程。
+        return;
+    };
+
+    // 先挂清空请求再动 format：请求之后解码线程不再写旧样本，回调侧的清空
+    // 必定落在"最后一次旧写入"与"第一次新写入"之间。
+    let discard = session.request_discard();
+
+    decoder.reset();
+    let result = format.seek(
+        SeekMode::Accurate,
+        SeekTo::Time {
+            time: symphonia::core::units::Time::from(request.target.as_secs_f64()),
+            track_id: Some(track_id),
+        },
+    );
+
+    match result {
+        Ok(seeked) => {
+            // Symphonia Accurate seek 可能从请求位置之前的 packet/keyframe 开始解码。
+            // 进度锚到用户请求的位置，并把 actual..requested 之间的样本裁掉；
+            // 只锚到 actual 会漏掉实际出声的不是 requested 位置这一点。
+            let plan = seek_completion_plan(
+                &Ok(seeked),
+                request.requested_frame,
+                session.sample_rate(),
+                time_base,
+                track_id,
+            );
+            session.finish_seek(request.epoch, plan.trim_until_frame, discard);
+        }
+        Err(err) => {
+            // 失败也走 finish_seek：把 seek_pending 放下来，否则整个会话永远静音。
+            session.finish_seek(request.epoch, None, discard);
+            if matches!(&err, SymphoniaError::IoError(e) if is_stream_download_failure(e)) {
+                fail_playback_after_stream_error(session, "seek", &err);
+            }
+        }
     }
 }
 
@@ -374,9 +392,7 @@ fn seek_actual_frame(
                 return None;
             }
 
-            let Some(actual) = timestamp_to_frame(result.actual_ts, sample_rate, time_base) else {
-                return None;
-            };
+            let actual = timestamp_to_frame(result.actual_ts, sample_rate, time_base)?;
 
             // Accurate seek 正常应满足 actual <= requested。若 demuxer 返回请求之后的
             // 异常 actual，不据此裁剪，避免误丢掉用户请求位置之后的有效样本。
@@ -450,6 +466,7 @@ fn seek_packet_trim(
     }
 }
 
+/// 解一个 packet 写进 ring buffer。返回 false 表示不再解码（EOF 或致命错误）。
 pub(crate) fn decode_next_packet<S, P>(
     format: &mut dyn FormatReader,
     decoder: &mut dyn Decoder,
@@ -457,7 +474,7 @@ pub(crate) fn decode_next_packet<S, P>(
     sample_rate: u32,
     time_base: Option<TimeBase>,
     producer: &mut P,
-    state: &SharedState,
+    session: &Session,
 ) -> bool
 where
     S: ConvertibleSample + Copy,
@@ -473,6 +490,7 @@ where
                     let spec = *decoded.spec();
                     let num_frames = decoded.frames();
                     if num_frames == 0 {
+                        // Symphonia 在 0 帧多声道缓冲上 copy 会 panic（见测试）。
                         return true;
                     }
 
@@ -481,11 +499,11 @@ where
                     let trim = seek_packet_trim(
                         timestamp_to_frame(packet.ts(), sample_rate, time_base),
                         num_frames,
-                        state.trim_until_frame.load(Ordering::Relaxed),
+                        session.trim_until().unwrap_or(NO_TRIM_FRAME),
                     );
 
                     if trim.clear_trim {
-                        state.clear_trim();
+                        session.clear_trim();
                     }
 
                     if trim.keep_frames > 0 {
@@ -497,24 +515,24 @@ where
                         push_samples_blocking::<S, _>(
                             producer,
                             &sample_buf.samples()[skip_samples..],
-                            state,
+                            session,
                         );
                     }
                 }
-                Err(symphonia::core::errors::Error::DecodeError(e)) => {
+                Err(SymphoniaError::DecodeError(e)) => {
                     eprintln!("[Decoder] 解码包失败（跳过）: {}", e);
                 }
                 Err(_) => {}
             }
             true
         }
-        Err(symphonia::core::errors::Error::IoError(e)) => {
+        Err(SymphoniaError::IoError(e)) => {
             if e.kind() == std::io::ErrorKind::UnexpectedEof {
                 println!("[Decoder] 到达文件末尾 (EOF)");
                 return false;
             }
             if is_stream_download_failure(&e) {
-                fail_playback_after_stream_error(state, "read", &e);
+                fail_playback_after_stream_error(session, "read", &e);
                 return false;
             }
             std::thread::sleep(Duration::from_millis(100));
@@ -522,10 +540,10 @@ where
         }
         Err(e) => {
             // 非 IO 的解复用错误（ResetRequired/Unsupported 等）意味着曲目在
-            // 中途异常终止。不标记失败的话，decoder_done 落地后会被当成自然
+            // 中途异常终止。不标记失败的话，drained 落地后会被当成自然
             // 播完：前端把进度吸附到时长并静默切歌，用户只觉得歌“少了一截”。
             println!("[Decoder] 停止解码: {:?}", e);
-            state.playback_failed.store(true, Ordering::SeqCst);
+            session.fail(false, &format!("[Decoder] 解复用失败，播放终止：{e:?}"));
             false
         }
     }
@@ -536,51 +554,36 @@ fn is_stream_download_failure(err: &std::io::Error) -> bool {
 }
 
 fn fail_playback_after_stream_error(
-    state: &SharedState,
+    session: &Session,
     operation: &str,
     err: &dyn std::fmt::Display,
 ) {
-    eprintln!("[Decoder] stream {operation} failed, stopping playback: {err}");
-    state.discard_buffer.store(true, Ordering::SeqCst);
-    state.waiting_for_seek.store(false, Ordering::SeqCst);
-    state.has_seek_request.store(false, Ordering::SeqCst);
-    state.buffered_frames.store(0, Ordering::SeqCst);
-    state.current_frame.store(0, Ordering::SeqCst);
-    state.clear_trim();
-    state
-        .playback_clock
-        .lock()
-        .unwrap()
-        .reset_to(0, state.sample_rate.load(Ordering::SeqCst));
-    // 先落 playback_failed 再开 decoder_done：输出回调一旦观察到
-    // decoder_done 且缓冲已空就会自行置 is_finished，若此刻 failed 还没
-    // 落地，这次致命错误会被误分类成自然播完（前端静默切歌）。
-    state.playback_failed.store(true, Ordering::SeqCst);
-    state.decoder_done.store(true, Ordering::SeqCst);
-    state.is_terminating.store(true, Ordering::SeqCst);
-    state.is_finished.store(true, Ordering::SeqCst);
+    session.fail(
+        false,
+        &format!("[Decoder] stream {operation} failed, stopping playback: {err}"),
+    );
 }
 
-fn push_samples_blocking<S, P>(producer: &mut P, samples: &[S], state: &SharedState)
+fn push_samples_blocking<S, P>(producer: &mut P, samples: &[S], session: &Session)
 where
-    S: Sample + Copy,
+    S: symphonia::core::sample::Sample + Copy,
     P: Producer<Item = S>,
 {
     let mut written = 0;
     let mut retry_count = 0;
     while written < samples.len() {
-        if state.is_terminating.load(Ordering::Relaxed) {
+        if session.is_terminated() || session.outcome().is_some() {
             break;
         }
 
-        if state.has_seek_request.load(Ordering::Relaxed) {
-            println!("[Seek-Check] 检测到新 Seek 请求，中断当前数据推送");
+        // 控制面排了新的 seek：旧代际的样本不再写入，交给下一轮换线处理。
+        if session.seek_pending() {
             return;
         }
 
-        // 暂停时输出回调不再消费 ringbuf。若这里仍死等“有空位”，
-        // 解码线程会在 pause 期间永久阻塞，resume/seek/切歌都可能卡住。
-        if state.is_paused.load(Ordering::Relaxed) {
+        // 暂停时输出回调不再消费 ringbuf。若这里仍死等“有空位”，解码线程会在
+        // pause 期间永久阻塞，resume/seek/切歌都可能卡住。
+        if session.is_paused() {
             std::thread::sleep(Duration::from_millis(10));
             continue;
         }
@@ -593,9 +596,8 @@ where
             retry_count += 1;
             if retry_count % 100 == 0 {
                 println!(
-                    "[Seek-Check] 写入阻塞中... Buffer 状态: Full, 播放暂停: {}, 缓冲模式: {}",
-                    state.is_paused.load(Ordering::Relaxed),
-                    state.waiting_for_seek.load(Ordering::Relaxed)
+                    "[Decoder] 写入阻塞中... 缓冲已满，播放暂停: {}",
+                    session.is_paused()
                 );
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -606,71 +608,36 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::state::PlaybackClock;
+    use crate::audio::session::Session;
     use std::borrow::Cow;
-    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
-    use std::sync::{Arc, Mutex};
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
     use symphonia::core::audio::{AudioBuffer, AudioBufferRef, Channels, Signal, SignalSpec};
 
-    #[test]
-    fn converts_track_ticks_to_milliseconds() {
-        assert_eq!(
-            duration_ticks_to_ms(8_000, Some(TimeBase::new(1, 8_000)), Some(8_000)),
-            Some(1_000)
-        );
-        assert_eq!(duration_ticks_to_ms(22_050, None, Some(44_100)), Some(500));
-        assert_eq!(
-            duration_ticks_to_ms(0, Some(TimeBase::new(1, 1_000)), None),
-            None
-        );
-    }
+    const SR: u32 = 48_000;
 
-    fn create_state() -> SharedState {
-        SharedState {
-            is_paused: AtomicBool::new(false),
-            current_frame: AtomicU64::new(48_000),
-            playback_clock: Mutex::new(PlaybackClock::new()),
-            trim_until_frame: AtomicU64::new(NO_TRIM_FRAME),
-            sample_rate: AtomicU32::new(48_000),
-            has_seek_request: AtomicBool::new(true),
-            seek_request: Mutex::new(Some(Duration::from_secs(1))),
-            is_terminating: AtomicBool::new(false),
-            discard_buffer: AtomicBool::new(false),
-            is_discarding_buffer: AtomicBool::new(false),
-            decoder_done: AtomicBool::new(false),
-            is_finished: AtomicBool::new(false),
-            playback_failed: AtomicBool::new(false),
-            buffered_frames: AtomicU64::new(12_000),
-            waiting_for_seek: AtomicBool::new(true),
-            volume_bits: AtomicU32::new(crate::audio::state::UNITY_VOLUME_BITS),
-            volume_locked: AtomicBool::new(false),
-            device_lost: AtomicBool::new(false),
-        }
+    fn session() -> Arc<Session> {
+        Arc::new(Session::new(SR, 2, 1.0, false, Duration::ZERO))
     }
 
     #[test]
     fn push_samples_blocking_does_not_hang_while_paused_on_full_buffer() {
         use ringbuf::HeapRb;
         use ringbuf::traits::{Producer, Split};
-        use std::sync::atomic::Ordering;
         use std::thread;
-        use std::time::{Duration, Instant};
 
-        let state = Arc::new(create_state());
-        state.has_seek_request.store(false, Ordering::SeqCst);
-        state.is_paused.store(true, Ordering::SeqCst);
+        let session = session();
+        session.set_paused(true);
 
         // 填满 ringbuf，模拟 pause 后输出侧停止消费、解码侧缓冲区已满。
         let rb = HeapRb::<i16>::new(8);
         let (mut producer, _consumer) = rb.split();
         assert_eq!(producer.push_slice(&[1, 2, 3, 4, 5, 6, 7, 8]), 8);
 
-        let state_for_push = Arc::clone(&state);
+        let session_for_push = Arc::clone(&session);
         let push_thread = thread::spawn(move || {
             // 旧逻辑会在 buffer full 上永久 sleep 重试，且 pause 期间输出不消费，
-            // 导致解码线程卡死。修复后 pause 时会主动让出并响应 terminating。
-            push_samples_blocking(&mut producer, &[9i16; 16], &state_for_push);
+            // 导致解码线程卡死。现在 pause 时主动让出并响应终止。
+            push_samples_blocking(&mut producer, &[9i16; 16], &session_for_push);
         });
 
         thread::sleep(Duration::from_millis(40));
@@ -679,39 +646,44 @@ mod tests {
             "paused decode push should wait, but must remain interruptible"
         );
 
-        state.is_terminating.store(true, Ordering::SeqCst);
+        session.terminate();
         let started = Instant::now();
         push_thread
             .join()
             .expect("push thread panicked while paused on full buffer");
         assert!(
             started.elapsed() < Duration::from_millis(300),
-            "push_samples_blocking must exit promptly when terminating during pause"
+            "push_samples_blocking must exit promptly when the session terminates during pause"
+        );
+    }
+
+    /// 新的 seek 排进队列后，旧代际的样本必须立刻停止写入——否则它们会被当作
+    /// 目标位置之后的数据送出去，用户听到的不是跳转点。
+    #[test]
+    fn push_samples_blocking_abandons_the_old_timeline_once_a_seek_is_pending() {
+        use ringbuf::HeapRb;
+        use ringbuf::traits::{Observer, Split};
+
+        let session = session();
+        let rb = HeapRb::<i16>::new(64);
+        let (mut producer, consumer) = rb.split();
+
+        session.schedule_seek(Duration::from_secs(10));
+
+        push_samples_blocking(&mut producer, &[7i16; 32], &session);
+
+        assert_eq!(
+            consumer.occupied_len(),
+            0,
+            "seek 已挂起时，旧代际的样本不得进入 ring buffer"
         );
     }
 
     #[test]
     fn stream_download_failure_is_fatal() {
-        let err = std::io::Error::new(std::io::ErrorKind::Other, "stream failed to download");
+        let err = std::io::Error::other("stream failed to download");
 
         assert!(is_stream_download_failure(&err));
-    }
-
-    #[test]
-    fn stream_error_stops_playback_state() {
-        let state = create_state();
-
-        fail_playback_after_stream_error(&state, "seek", &"stream failed to download");
-
-        assert!(state.discard_buffer.load(Ordering::SeqCst));
-        assert!(!state.waiting_for_seek.load(Ordering::SeqCst));
-        assert!(!state.has_seek_request.load(Ordering::SeqCst));
-        assert_eq!(state.buffered_frames.load(Ordering::SeqCst), 0);
-        assert_eq!(state.current_frame.load(Ordering::SeqCst), 0);
-        assert_eq!(state.trim_until_frame.load(Ordering::SeqCst), NO_TRIM_FRAME);
-        assert!(state.decoder_done.load(Ordering::SeqCst));
-        assert!(state.is_terminating.load(Ordering::SeqCst));
-        assert!(state.is_finished.load(Ordering::SeqCst));
     }
 
     #[test]
@@ -728,49 +700,6 @@ mod tests {
         assert!(
             copy_result.is_err(),
             "Symphonia panics when copying a zero-frame multichannel buffer; production must skip it"
-        );
-    }
-
-    #[test]
-    fn seek_completion_waits_for_pending_discard_to_drain_before_decoding() {
-        let state = Arc::new(create_state());
-        state.discard_buffer.store(true, Ordering::SeqCst);
-
-        let state_for_callback = Arc::clone(&state);
-        let callback = std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(20));
-            state_for_callback
-                .discard_buffer
-                .store(false, Ordering::SeqCst);
-        });
-
-        let started_at = Instant::now();
-        wait_for_pending_discard_to_drain(&state);
-        callback.join().unwrap();
-
-        assert!(!state.discard_buffer.load(Ordering::SeqCst));
-        assert!(
-            started_at.elapsed() >= Duration::from_millis(15),
-            "seek completion must not race ahead and let post-seek samples be written before old samples are drained"
-        );
-
-        state.is_discarding_buffer.store(true, Ordering::SeqCst);
-        let state_for_callback = Arc::clone(&state);
-        let callback = std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(20));
-            state_for_callback
-                .is_discarding_buffer
-                .store(false, Ordering::SeqCst);
-        });
-
-        let started_at = Instant::now();
-        wait_for_pending_discard_to_drain(&state);
-        callback.join().unwrap();
-
-        assert!(!state.is_discarding_buffer.load(Ordering::SeqCst));
-        assert!(
-            started_at.elapsed() >= Duration::from_millis(15),
-            "seek completion must also wait while the output callback is actively draining"
         );
     }
 
@@ -864,9 +793,8 @@ mod tests {
         let time_base = TimeBase::new(1, sr);
         let target = Duration::from_secs_f64(30.0);
         let requested_frame = (target.as_secs_f64() * sr as f64) as u64;
-        let seeked: Result<SeekedTo, SymphoniaError> = Err(SymphoniaError::IoError(
-            std::io::Error::new(std::io::ErrorKind::Other, "boom"),
-        ));
+        let seeked: Result<SeekedTo, SymphoniaError> =
+            Err(SymphoniaError::IoError(std::io::Error::other("boom")));
 
         let completion = seek_completion_plan(&seeked, requested_frame, sr, Some(time_base), 0);
         assert_eq!(completion.anchor_frame, requested_frame);
@@ -958,39 +886,32 @@ mod tests {
         );
     }
 
-    /// 端到端状态决策：seek 完成后 current_frame 必须是请求位置，同时 SharedState
-    /// 记录 trim_until。否则后续输出回调会从 actual 开始计进度，或把 pre-target 音频送出。
+    /// 端到端状态决策：seek 完成后位置必须是请求位置，并记下裁剪点。
+    /// 否则输出回调会从 actual 开始计进度，或把 pre-target 音频送出。
     #[test]
-    fn current_frame_anchors_to_requested_and_records_trim_after_seek_decision() {
-        let sr: u32 = 48_000;
-        let state = create_state();
-        state.sample_rate.store(sr, Ordering::SeqCst);
-
+    fn session_anchors_to_the_requested_position_and_records_the_trim() {
+        let session = session();
         let target = Duration::from_secs_f64(30.0);
-        let requested_frame = (target.as_secs_f64() * sr as f64) as u64;
-        let actual_frame = requested_frame - 2048;
-        let time_base = TimeBase::new(1, sr);
+        let requested_frame = 30 * SR as u64;
+        let actual_frame = requested_frame - 2_048;
+        let time_base = TimeBase::new(1, SR);
         let seeked: Result<SeekedTo, SymphoniaError> =
             Ok(seeked_to(actual_frame, requested_frame, 0));
 
-        let completion = seek_completion_plan(&seeked, requested_frame, sr, Some(time_base), 0);
-        state
-            .current_frame
-            .store(completion.anchor_frame, Ordering::SeqCst);
-        state.trim_until_frame.store(
-            completion.trim_until_frame.unwrap_or(NO_TRIM_FRAME),
-            Ordering::SeqCst,
-        );
+        let plan = seek_completion_plan(&seeked, requested_frame, SR, Some(time_base), 0);
+        let epoch = session.schedule_seek(target);
+        // 输出侧此刻可能根本没在跑（测试不建音频流）：直接确认清空再完成。
+        let discard = session.request_discard();
+        session.acknowledge_discard(discard);
+        session.finish_seek(epoch, plan.trim_until_frame, discard);
 
         assert_eq!(
-            state.current_frame.load(Ordering::SeqCst),
+            session.position_frames(),
             requested_frame,
             "seek 后进度必须锚到用户请求位置，而不是 Symphonia 的提前落点"
         );
-        assert_eq!(
-            state.trim_until_frame.load(Ordering::SeqCst),
-            requested_frame
-        );
-        assert_eq!(completion.actual_frame, Some(actual_frame));
+        assert_eq!(session.trim_until(), Some(requested_frame));
+        assert_eq!(plan.actual_frame, Some(actual_frame));
+        assert!(!session.seek_pending());
     }
 }

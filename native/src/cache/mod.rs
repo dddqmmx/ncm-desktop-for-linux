@@ -1,4 +1,5 @@
 pub mod catalog;
+pub(crate) mod downloads;
 pub mod error;
 pub mod eviction;
 pub mod io_util;

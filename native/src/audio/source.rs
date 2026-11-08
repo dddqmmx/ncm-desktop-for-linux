@@ -218,8 +218,10 @@ impl StorageProvider for PersistentFileStorageProvider {
             fs::create_dir_all(parent)?;
         }
 
+        // 缓存文件必须**保留**已有内容：断点续传依赖上一次会话写下的字节。
         let writer = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(&self.path)?;

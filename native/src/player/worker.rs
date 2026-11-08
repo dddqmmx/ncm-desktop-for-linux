@@ -1,13 +1,31 @@
+//! 播放 worker：整个 native 播放的**唯一**控制面。
+//!
+//! 一条命令流（`PlayerCommand`）+ 一个 16ms 的 tick，串行处理。所有会改变
+//! "哪首歌、在哪个端点、什么状态"的决定都发生在这一条线程里，因此不存在
+//! "两个线程同时改播放状态"的竞态——需要跨线程传的只有 UI 快照
+//! （[`SnapshotCell`]）和结束通知。
+//!
+//! 关键不变式：
+//!
+//! - **结束信号跟随会话，不跟随播放器实例。** 切设备会重建播放器并 stop 旧
+//!   实例，但会话仍在继续；此时触发结束通知会让前端把一次正常切换当成播放
+//!   中断。所有终结路径都经 `end_session`。
+//! - **播放选项属于调用方。** `SwitchOutputDevice` 带调用方此刻的选项；会话里
+//!   冻结的那份只在调用方不传时沿用（换端点但不想动开关）。
+//! - **设备丢失不是播放失败。** 在具名设备上遇到设备类流错误时，会话迁移到
+//!   系统默认端点续播（不通知 wait_finished）；迁移失败才按错误终止。
+
 use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot};
 
-use crate::audio::backend;
+use crate::audio::output;
+use crate::audio::session::SessionOutcome;
 
-use super::backend::{PlayerBackend, PlayerFactory};
+use super::backend::{PlayerBackend, PlayerFactory, SessionReport};
 use super::command::PlayerCommand;
-use super::state::SharedState;
+use super::state::{PlaybackSnapshot, SnapshotCell};
 use super::types::{
     AudioDeviceInfo, BackendResult, FinishReason, PlaybackOptions, PlaybackSource, PlaybackStatus,
     duration_to_millis, seconds_to_duration, start_secs_to_duration,
@@ -16,13 +34,17 @@ use super::types::{
 pub(crate) struct WorkerCore<P, F> {
     pub(crate) player: P,
     factory: F,
-    shared_state: Arc<SharedState>,
+    /// 对外发布的 UI 快照。写者只有这里。
+    snapshot: Arc<SnapshotCell>,
     pub(crate) current_source: Option<PlaybackSource>,
     /// 创建当前播放器时请求的输出设备（None = 跟随系统默认）。设备切换策略是
     /// worker 的事，由 worker 自己记录，不落在 PlayerBackend 契约里；仅在真正
     /// 重建播放器时更新，noop 切换不改写，保证与播放器实际绑定的设备一致。
     requested_device: Option<String>,
-    /// 等待“当前播放会话结束”的监听者。结束信号跟随会话（current_source）而非
+    /// 控制面自己的播放状态。**不**从 UI 快照回读：快照是给外面看的，
+    /// 控制决策必须基于这条线程自己维护的值。
+    status: PlaybackStatus,
+    /// 等待"当前播放会话结束"的监听者。结束信号跟随会话（current_source）而非
     /// 播放器实例：切换输出设备会重建播放器并 stop 旧实例，但会话仍在继续，
     /// 此时绝不能触发结束通知——前端会把中途的结束信号当成播放异常中断处理。
     finish_waiters: Vec<oneshot::Sender<FinishReason>>,
@@ -32,8 +54,7 @@ pub(crate) struct WorkerCore<P, F> {
     synced_volume: f64,
     /// 设备丢失后的自动迁移请求（tick 检测、run 循环的 async 上下文执行）。
     /// tick 本身是同步函数，switch_output_device 的重放链路是 async，只能把
-    /// 迁移推迟到下一次 select 轮询——期间进度轮询可能多看到一次旧进度，
-    /// 无碍。
+    /// 迁移推迟到下一次 select 轮询——期间进度轮询可能多看到一次旧进度，无碍。
     pub(crate) pending_device_migration: bool,
 }
 
@@ -42,18 +63,33 @@ where
     P: PlayerBackend,
     F: PlayerFactory<Player = P>,
 {
-    pub(crate) fn new(factory: F, shared_state: Arc<SharedState>) -> BackendResult<Self> {
+    pub(crate) fn new(factory: F, snapshot: Arc<SnapshotCell>) -> BackendResult<Self> {
         let player = factory.create(None)?;
-        Ok(Self {
+        let worker = Self {
             player,
             factory,
-            shared_state,
+            snapshot,
             current_source: None,
             requested_device: None,
+            status: PlaybackStatus::Stopped,
             finish_waiters: Vec::new(),
             synced_volume: 1.0,
             pending_device_migration: false,
-        })
+        };
+        worker.publish(worker.player.session_report());
+        Ok(worker)
+    }
+
+    /// 把控制面状态 + 播放器会话快照合成一次发布。位置总在发布这一刻取，
+    /// 因此同一份快照里的进度与状态必然属于同一次读。
+    fn publish(&self, report: SessionReport) {
+        self.snapshot.publish(
+            PlaybackSnapshot::IDLE
+                .with_progress(duration_to_millis(report.position))
+                .with_status(self.status)
+                .with_buffering(report.buffering)
+                .with_volume(report.volume, report.volume_locked),
+        );
     }
 
     /// 结束当前会话：清空 current_source 并按原因通知所有结束监听者。
@@ -65,13 +101,12 @@ where
         }
     }
 
-    /// 停掉播放器、终结会话并复位共享 UI 状态。“停止 + end_session +
-    /// reset_playback”这个三连必须成套执行，抽在这里防止各路径漂移。
-    /// 会话回读值随复位归 1.0/未锁定：没有活跃会话就没有“生效音量”可言。
+    /// 停掉播放器、终结会话并复位控制面状态。"停止 + end_session + 复位"
+    /// 这个三连必须成套执行，抽在这里防止各路径漂移。
     fn abort_session(&mut self, reason: FinishReason) {
         self.player.stop();
         self.end_session(reason);
-        self.shared_state.reset_playback();
+        self.status = PlaybackStatus::Stopped;
     }
 
     pub(crate) async fn run(mut self, mut rx: mpsc::UnboundedReceiver<PlayerCommand>) {
@@ -88,7 +123,7 @@ where
                 _ = ticker.tick() => {
                     self.tick();
                     // tick 可能标记了设备丢失迁移（迁移本身是 async，tick 里
-                    // 做不了），趁同一轮把它处理掉，别让错误终止抢先。
+                    // 做不了），趁同一轮把它处理掉，别让下一次命令抢先。
                     while self.pending_device_migration {
                         self.pending_device_migration = false;
                         self.run_pending_device_migration().await;
@@ -96,6 +131,10 @@ where
                 }
             }
         }
+
+        // 命令通道关闭 = 服务对象被释放。会话必须显式收尾，否则解码线程还会
+        // 继续写 ring buffer、ALSA 设备也还开着。
+        self.player.stop();
     }
 
     pub(crate) async fn handle_command(&mut self, cmd: PlayerCommand) {
@@ -115,23 +154,27 @@ where
                 if let Some(reply_tx) = reply_tx {
                     let _ = reply_tx.send(result);
                 }
+                self.publish_player();
             }
             PlayerCommand::Pause => {
                 self.player.pause();
-                self.shared_state
-                    .set_playback_status(PlaybackStatus::Paused);
+                self.status = PlaybackStatus::Paused;
+                self.publish_player();
             }
             PlayerCommand::Resume => {
                 self.player.resume();
-                self.shared_state
-                    .set_playback_status(PlaybackStatus::Playing);
+                self.status = PlaybackStatus::Playing;
+                self.publish_player();
             }
             PlayerCommand::Stop => {
                 self.abort_session(FinishReason::Stopped);
+                self.publish_player();
             }
             PlayerCommand::Seek(time_secs) => {
                 self.player.seek(seconds_to_duration(time_secs));
-                self.shared_state.set_buffering(true);
+                // seek 立刻把位置锚到目标点并进入缓冲：快照要马上反映，否则
+                // UI 在解码器处理 seek 之前仍显示旧位置。
+                self.publish_player();
             }
             PlayerCommand::SetVolume(volume) => {
                 // 非有限值（NaN/±inf）按 1.0 收敛：底层 player 的 set_volume
@@ -142,13 +185,14 @@ where
                     1.0
                 };
                 self.player.set_volume(self.synced_volume);
-                self.shared_state.set_volume(self.player.session_volume());
+                self.publish_player();
             }
             PlayerCommand::SwitchOutputDevice(device_name, options, reply_tx) => {
                 let result = self
                     .switch_output_device(normalize_device_name(device_name), options)
                     .await;
                 let _ = reply_tx.send(result);
+                self.publish_player();
             }
             PlayerCommand::GetOutputDevices(reply_tx) => {
                 let result = self
@@ -167,6 +211,10 @@ where
         }
     }
 
+    fn publish_player(&self) {
+        self.publish(self.player.session_report());
+    }
+
     async fn play_source(
         &mut self,
         source: PlaybackSource,
@@ -174,24 +222,15 @@ where
     ) -> BackendResult<()> {
         // 新会话开始，上一个会话即告结束（正常流程里前端已先行 Stop，这里兜底）。
         self.end_session(FinishReason::Replaced);
-        self.shared_state
-            .set_progress_ms(duration_to_millis(start_at.unwrap_or(Duration::ZERO)));
-        self.shared_state.set_buffering(true);
+        self.status = PlaybackStatus::Playing;
 
         match Self::play_source_on(&mut self.player, &source, start_at).await {
             Ok(()) => {
                 self.current_source = Some(source);
-                self.shared_state
-                    .set_playback_status(PlaybackStatus::Playing);
-                // 会话状态（实际音量/BitPerfect 锁定）随开播发布，供前端
-                // 200ms 轮询回读——渲染层据此校对 SetVolume 是否真的落地。
-                self.shared_state.set_volume(self.player.session_volume());
-                self.shared_state
-                    .set_volume_locked(self.player.session_volume_locked());
                 Ok(())
             }
             Err(err) => {
-                // 入口处已通知过监听者，这里的 end_session 只为维持不变式。
+                // 入口处已通知过监听者，这里的 abort 只为维持不变式。
                 self.abort_session(FinishReason::Stopped);
                 Err(err)
             }
@@ -234,7 +273,7 @@ where
         // 都白白重建一次播放链路。显示名等值只是旧持久化偏好的兜底——注意两个
         // 同型号接口的显示名可能相同，这里命中时宁可多一次切换也不能静默不切。
         match (device_name, current_device) {
-            (Some(requested), Some(current_device)) => Ok(backend::output_device_ids_match(
+            (Some(requested), Some(current_device)) => Ok(output::output_device_ids_match(
                 &current_device.id,
                 requested,
             ) || current_device.name == requested),
@@ -254,7 +293,7 @@ where
             return Ok(());
         }
 
-        let playback_status = self.shared_state.playback_status();
+        let playback_status = self.status;
         // 重放用调用方此刻的选项，而不是开播时冻结的那份：切到系统默认输出这类
         // 虚拟端点时，旧选项里的独占/BitPerfect 会让重放被原生侧直接拒绝，
         // 用户于是被锁死在原来的硬件设备上，怎么切都回不去。
@@ -265,7 +304,9 @@ where
         };
         let resume_position = match playback_status {
             PlaybackStatus::Stopped => None,
-            PlaybackStatus::Playing | PlaybackStatus::Paused => Some(self.player.progress()),
+            PlaybackStatus::Playing | PlaybackStatus::Paused => {
+                Some(self.player.session_report().position)
+            }
         };
 
         // 先只建实例——此时还没打开设备，“设备不存在”的错误在这里就被拦下，
@@ -305,17 +346,7 @@ where
         self.requested_device = device_name;
         // 会话后续的重放（再次切设备）都要沿用这份新选项。
         self.current_source = resume_source;
-
-        if let Some(position) = resume_position {
-            self.shared_state
-                .set_progress_ms(duration_to_millis(position));
-        }
-        self.shared_state.set_buffering(self.player.is_buffering());
-        self.shared_state.set_playback_status(playback_status);
-        self.shared_state.set_volume(self.player.session_volume());
-        self.shared_state
-            .set_volume_locked(self.player.session_volume_locked());
-
+        self.status = playback_status;
         Ok(())
     }
 
@@ -332,7 +363,7 @@ where
                 if playback_status == PlaybackStatus::Paused {
                     self.player.pause();
                 }
-                self.shared_state.set_playback_status(playback_status);
+                self.status = playback_status;
             }
             Err(err) => {
                 eprintln!(
@@ -348,49 +379,44 @@ where
     }
 
     pub(crate) fn tick(&mut self) {
-        let playback_status = self.shared_state.playback_status();
-        if playback_status == PlaybackStatus::Stopped {
+        if self.status == PlaybackStatus::Stopped {
+            // 没有会话：什么都不用发布（快照已在 Stop/abort 时复位）。
             return;
         }
 
-        self.shared_state
-            .set_progress_ms(duration_to_millis(self.player.progress()));
-        self.shared_state.set_buffering(self.player.is_buffering());
+        let report = self.player.session_report();
+        self.publish(report);
 
-        // 此处 playback_status 只可能是 Playing 或 Paused（Stopped 已在函数开头返回）。
-        // Paused 时 is_finished 仍可能置位：致命流错误随时会设置它；自然播完也可能
-        // 恰好在 Pause 命令处理前的输出回调里 latch（暂停生效后回调提前返回，不再
-        // 检测播完）。两种情况会话都已结束，用 playback_failed 区分结束原因。
-        if self.player.is_finished() {
+        // 会话已结束（自然播完或失败）。暂停时同样要收尾：致命错误随时会落地，
+        // 自然播完也可能恰好发生在 Pause 命令处理之前。
+        let Some(outcome) = report.outcome else {
+            return;
+        };
+
+        if let SessionOutcome::Failed { device_lost: true } = outcome
+            && self.requested_device.is_some()
+            && !self.pending_device_migration
+        {
             // 设备在会话进行中消失（拔出/被移除）：先把会话迁移到系统默认端点
             // 续播，而不是终止——用户拔掉 USB 耳机时，歌应当无缝落到扬声器上
-            // 继续，而不是停在“播放中断”的报错上。迁移是 async（重放走播放
-            // 后端的 future），tick 做不了，先标记、由 run 循环紧接着处理；
-            // 若循环里先到了新命令（切歌/停止），标记自然作废，按新命令走。
-            if self.player.playback_failed()
-                && self.player.device_lost()
-                && self.requested_device.is_some()
-                && !self.pending_device_migration
-            {
-                self.pending_device_migration = true;
-                return;
-            }
-
-            let reason = if self.player.playback_failed() {
-                FinishReason::Error
-            } else {
-                FinishReason::Ended
-            };
-            self.player.stop();
-            self.end_session(reason);
-            self.shared_state
-                .set_playback_status(PlaybackStatus::Stopped);
-            self.shared_state.set_buffering(false);
-            // 会话已终结：没有“实际生效音量”可言，与 abort_session 一样复位，
-            // 残留 BitPerfect 锁定标记会让前端误判下一首仍处于直通锁定。
-            self.shared_state.set_volume(1.0);
-            self.shared_state.set_volume_locked(false);
+            // 继续，而不是停在“播放中断”的报错上。迁移是 async，tick 做不了，
+            // 先标记、由 run 循环紧接着处理；若循环里先到了新命令（切歌/停止），
+            // 标记自然作废，按新命令走。
+            self.pending_device_migration = true;
+            return;
         }
+
+        let reason = match outcome {
+            SessionOutcome::Delivered => FinishReason::Ended,
+            SessionOutcome::Failed { .. } => FinishReason::Error,
+        };
+        self.player.stop();
+        self.end_session(reason);
+        self.status = PlaybackStatus::Stopped;
+        // 会话已终结：没有“实际生效音量”可言，与 abort_session 一样复位，
+        // 残留 BitPerfect 锁定标记会让前端误判下一首仍处于直通锁定。
+        self.snapshot
+            .publish(PlaybackSnapshot::IDLE.with_progress(duration_to_millis(report.position)));
     }
 
     /// 设备丢失后的自动迁移（tick 标记、run 循环执行）：把当前会话重放到
@@ -417,8 +443,10 @@ where
             eprintln!("[player] migrating to the system default failed: {err}");
             self.abort_session(FinishReason::Error);
         }
+        self.publish_player();
     }
 }
+
 fn normalize_device_name(device_name: Option<String>) -> Option<String> {
     device_name.and_then(|name| {
         let trimmed = name.trim();

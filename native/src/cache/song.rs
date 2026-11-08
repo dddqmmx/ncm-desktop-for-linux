@@ -90,15 +90,15 @@ impl SongStreamCacheMeta {
     }
 
     pub fn mark_complete(&mut self) {
-        if let Some(content_length) = self.content_length {
-            if self.downloaded_bytes() < content_length {
-                println!(
-                    "[cache] 警告：尝试标记完成，但下载字节数（{}）小于内容长度（{}）",
-                    self.downloaded_bytes(),
-                    content_length
-                );
-                return;
-            }
+        if let Some(content_length) = self.content_length
+            && self.downloaded_bytes() < content_length
+        {
+            println!(
+                "[cache] 警告：尝试标记完成，但下载字节数（{}）小于内容长度（{}）",
+                self.downloaded_bytes(),
+                content_length
+            );
+            return;
         }
         self.is_complete = true;
         self.updated_at = now_unix_secs();

@@ -1,5 +1,5 @@
 use std::fs::File;
-use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
+use symphonia::core::codecs::CODEC_TYPE_NULL;
 use symphonia::core::errors::Error;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
@@ -12,7 +12,12 @@ fn main() {
     let real_len = f.metadata().unwrap().len();
     let mss = MediaSourceStream::new(Box::new(f), Default::default());
     let mut hint = Hint::new();
-    hint.with_extension("flac");
+    if let Some(extension) = std::path::Path::new(&path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+    {
+        hint.with_extension(extension);
+    }
     let probed = symphonia::default::get_probe()
         .format(
             &hint,
@@ -22,34 +27,39 @@ fn main() {
         )
         .expect("probe failed");
     let mut format = probed.format;
-    let (tid, sr, ch, bps, n_frames) = {
+    // 走真实播放链路的参数归一化 + 解码器注册表（含 Opus）。
+    let (tid, sr, ch, bps, n_frames, mut decoder) = {
         let t = format
             .tracks()
             .iter()
             .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
             .unwrap();
+        let (params, decoder) = native::audio::codecs::prepare_track(&t.codec_params).unwrap();
         (
             t.id,
-            t.codec_params.sample_rate.unwrap_or(0),
-            t.codec_params.channels.map(|c| c.count()).unwrap_or(0),
-            t.codec_params.bits_per_sample.unwrap_or(0),
-            t.codec_params.n_frames,
+            params.sample_rate.unwrap_or(0),
+            params.channels.map(|c| c.count()).unwrap_or(0),
+            params.bits_per_sample.unwrap_or(0),
+            params.n_frames,
+            decoder,
         )
     };
-    let mut decoder = {
-        let t = format.tracks().iter().find(|t| t.id == tid).unwrap();
-        symphonia::default::get_codecs()
-            .make(&t.codec_params, &DecoderOptions::default())
-            .unwrap()
-    };
+    // n_frames 的时间单位是 track 的 timebase，不是采样帧：WebM 下它是毫秒。
+    let time_base = format.tracks()[0]
+        .codec_params
+        .time_base
+        .unwrap_or(symphonia::core::units::TimeBase::new(1, sr.max(1)));
     println!(
-        "file_len={} sr={} ch={} bits={} declared_frames={:?} declared_dur={:.2}s",
+        "file_len={} sr={} ch={} bits={} n_frames={:?} declared_dur={:.2}s",
         real_len,
         sr,
         ch,
         bps,
         n_frames,
-        n_frames.map(|n| n as f64 / sr as f64).unwrap_or(0.0)
+        n_frames
+            .map(|n| time_base.calc_time(n))
+            .map(|time| time.seconds as f64 + time.frac)
+            .unwrap_or(0.0)
     );
 
     let mut total_frames: u64 = 0;
@@ -93,26 +103,27 @@ fn main() {
     }
 
     let decoded_dur = total_frames as f64 / sr as f64;
-    let declared = n_frames.unwrap_or(0);
     println!(
         "packets={} decoded_frames={} decoded_dur={:.2}s last_end_ts={}",
         packets, total_frames, decoded_dur, last_end
     );
     println!("decode_errors={} last_err={:?}", decode_errors, last_err);
+    // n_frames 以 track timebase 为单位（WebM 下是毫秒），必须先换算成秒再比较。
     if let Some(n) = n_frames {
-        let diff = total_frames as i64 - n as i64;
+        let time = time_base.calc_time(n);
+        let declared_frames = (time.seconds as f64 + time.frac) * f64::from(sr);
+        let diff = total_frames as f64 - declared_frames;
         println!(
-            "declared_frames={} decoded_frames={} diff={} ({:+.3}s)  => {}",
-            n,
+            "declared_frames={:.0} decoded_frames={} diff={:+.0} ({:+.3}s)  => {}",
+            declared_frames,
             total_frames,
             diff,
-            diff as f64 / sr as f64,
-            if diff.abs() < sr as i64 / 10 && decode_errors == 0 {
+            diff / f64::from(sr),
+            if diff.abs() < f64::from(sr) / 10.0 && decode_errors == 0 {
                 "INTACT (decodes fully, duration matches)"
             } else {
                 "MISMATCH / possibly corrupt-or-truncated"
             }
         );
     }
-    let _ = declared;
 }

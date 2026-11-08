@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
+#[cfg(feature = "node")]
 use napi_derive::napi;
 
 use crate::audio::OutputDeviceInfo;
@@ -80,7 +81,7 @@ pub(crate) struct CachedUrlPlaybackRequest {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PlaybackStatus {
+pub enum PlaybackStatus {
     Stopped,
     Playing,
     Paused,
@@ -104,7 +105,7 @@ impl PlaybackStatus {
     }
 }
 
-#[napi(object)]
+#[cfg_attr(feature = "node", napi(object))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AudioDeviceInfo {
     pub id: String,

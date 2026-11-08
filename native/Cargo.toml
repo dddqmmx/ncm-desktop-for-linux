@@ -9,12 +9,19 @@ name = "native"
 # napi 打包用的仍是 cdylib。
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["node"]
+node = ["dep:napi", "dep:napi-derive", "dep:napi-build"]
+
 [dependencies]
-napi = {version = "3.7.1", features = ["tokio_rt"]}
-napi-derive = "3.4.1"
+napi = {version = "3.7.1", features = ["tokio_rt"], optional = true}
+napi-derive = { version = "3.4.1", optional = true }
 once_cell = "1.21.3"
 cpal = "0.17.1"
 symphonia = { version = "0.5", features = ["all-formats", "all-codecs"] }
+# Symphonia 0.5 没有官方 Opus 解码器；适配器把 libopus（bundled，随二进制静态
+# 链接，不依赖系统 libopus）接进 Symphonia 的 CodecRegistry。
+symphonia-adapter-libopus = "0.2.9"
 ringbuf = "0.4.8"
 stream-download = {version ="0.24.0",  features = ["reqwest-rustls"]}
 reqwest = { version = "0.13.1", features = ["stream", "native-tls"] }
@@ -25,4 +32,4 @@ sha2 = "0.11.0"
 hex = "0.4"
 
 [build-dependencies]
-napi-build = "2.3.1"
+napi-build = { version = "2.3.1", optional = true }

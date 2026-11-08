@@ -1,6 +1,6 @@
 #[cfg(target_os = "linux")]
 mod linux {
-    use crate::audio::backend;
+    use crate::audio::output;
     use std::os::unix::process::CommandExt;
     use std::process::{Child, Command, Stdio};
     use std::time::Duration;
@@ -24,7 +24,7 @@ mod linux {
 
     impl DeviceReservation {
         pub(crate) fn reserve(device_id: &str) -> Result<Self, Box<dyn std::error::Error>> {
-            let reservation_name = backend::alsa_reservation_name_for_device_id(device_id)
+            let reservation_name = output::alsa_reservation_name_for_device_id(device_id)
                 .ok_or_else(|| {
                     format!("无法为设备 {} 解析 PipeWire reservation 名称", device_id)
                 })?;
@@ -37,7 +37,7 @@ mod linux {
 
         /// 这次预留是否正好覆盖目标设备（同一端点的不同写法也算命中）。
         pub(crate) fn covers_device(&self, device_id: &str) -> bool {
-            backend::output_device_ids_match(&self.device_id, device_id)
+            output::output_device_ids_match(&self.device_id, device_id)
         }
 
         fn release(&mut self) {

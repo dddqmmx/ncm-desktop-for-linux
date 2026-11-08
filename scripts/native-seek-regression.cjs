@@ -102,7 +102,7 @@ Options:
   --capture-monitor  Record the default PulseAudio/PipeWire monitor and compare actual content.
   --capture-device=<source>
                      Override capture source, e.g. alsa_output....monitor.
-  --audio-format=<all|wav|vorbis|mp3|m4a|flac>
+  --audio-format=<all|wav|vorbis|mp3|m4a|flac|opus>
                      Probe WAV and/or local compressed transcodes. Default: all.
   --require-compressed
                      Fail if the compressed local seek probe cannot be generated.
@@ -276,6 +276,14 @@ function buildAudioCases(wavPath, tempDir) {
       format: 'flac',
       fileName: 'seek-regression.flac',
       ffmpegArgs: ['-c:a', 'flac']
+    },
+    {
+      // Opus 走 symphonia-adapter-libopus：容器是 Ogg，seek 落点是 packet 边界，
+      // 覆盖范围与 Vorbis 相同，但解码器与 pre-skip 处理完全不同。
+      label: 'ogg-opus',
+      format: 'opus',
+      fileName: 'seek-regression.opus',
+      ffmpegArgs: ['-c:a', 'libopus', '-b:a', '96k']
     }
   ]
 

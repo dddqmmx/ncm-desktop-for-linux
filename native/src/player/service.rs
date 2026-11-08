@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use napi::{Error, Result};
+use crate::service_error::{Error, Result};
+#[cfg(feature = "node")]
 use napi_derive::napi;
 use tokio::sync::{mpsc, oneshot};
 
@@ -8,35 +9,38 @@ use crate::runtime::native_runtime;
 
 use super::backend::AudioPlayerFactory;
 use super::command::PlayerCommand;
-use super::state::SharedState;
-use super::types::{AudioDeviceInfo, CachedUrlPlaybackRequest, PlaybackOptions, PlaybackSource};
+use super::state::SnapshotCell;
+use super::types::{
+    AudioDeviceInfo, CachedUrlPlaybackRequest, PlaybackOptions, PlaybackSource, PlaybackStatus,
+};
 use super::worker::WorkerCore;
 
-#[napi]
+#[cfg_attr(feature = "node", napi)]
 pub struct PlayerService {
     sender: mpsc::UnboundedSender<PlayerCommand>,
-    shared_state: Arc<SharedState>,
+    /// UI 轮询读到的播放快照。一次读拿到完整状态，不会拼出跨会话的组合。
+    snapshot: Arc<SnapshotCell>,
 }
 
-#[napi]
+#[cfg_attr(feature = "node", napi)]
 impl PlayerService {
-    #[napi(constructor)]
+    #[cfg_attr(feature = "node", napi(constructor))]
     pub fn new() -> Result<Self> {
         let (tx, rx) = mpsc::unbounded_channel::<PlayerCommand>();
-        let shared_state = Arc::new(SharedState::new());
+        let snapshot = Arc::new(SnapshotCell::new());
 
-        let worker = WorkerCore::new(AudioPlayerFactory, Arc::clone(&shared_state))
+        let worker = WorkerCore::new(AudioPlayerFactory, Arc::clone(&snapshot))
             .map_err(Error::from_reason)?;
 
         native_runtime().spawn(worker.run(rx));
 
         Ok(Self {
             sender: tx,
-            shared_state,
+            snapshot,
         })
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn play_file(
         &self,
         path: String,
@@ -58,7 +62,7 @@ impl PlayerService {
             .map_err(Error::from_reason)
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn play_url(
         &self,
         url: String,
@@ -80,7 +84,7 @@ impl PlayerService {
             .map_err(Error::from_reason)
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn play_url_cached(
         &self,
         url: String,
@@ -118,25 +122,25 @@ impl PlayerService {
             .map_err(Error::from_reason)
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub fn pause(&self) -> Result<()> {
         let _ = self.sender.send(PlayerCommand::Pause);
         Ok(())
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub fn resume(&self) -> Result<()> {
         let _ = self.sender.send(PlayerCommand::Resume);
         Ok(())
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub fn stop(&self) -> Result<()> {
         let _ = self.sender.send(PlayerCommand::Stop);
         Ok(())
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub fn seek(&self, time_secs: f64) -> Result<()> {
         let _ = self.sender.send(PlayerCommand::Seek(time_secs));
         Ok(())
@@ -144,7 +148,7 @@ impl PlayerService {
 
     /// 设置应用级软件音量（0.0..=1.0）。仅作用于本应用的输出，不改系统音量；
     /// 严格 BitPerfect 会话内底层保持 1.0 直通。
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub fn set_volume(&self, volume: f64) -> Result<()> {
         let _ = self.sender.send(PlayerCommand::SetVolume(volume));
         Ok(())
@@ -154,7 +158,7 @@ impl PlayerService {
     /// 会话里那份是开播时冻结的，用户中途改了开关、或切到的端点压根不支持独占
     /// （系统默认输出是虚拟端点）时，照搬旧的会让重放被拒绝、切换失败。
     /// 两者都不传则沿用会话原有选项。
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn switch_output_device(
         &self,
         device_id: Option<String>,
@@ -173,7 +177,7 @@ impl PlayerService {
             .map_err(Error::from_reason)
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn get_output_devices(&self) -> Result<Vec<AudioDeviceInfo>> {
         let (tx, rx) = oneshot::channel();
         self.sender
@@ -185,7 +189,7 @@ impl PlayerService {
             .map_err(Error::from_reason)
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn get_file_duration_ms(&self, path: String) -> Result<i64> {
         crate::audio::decoder::probe_file_duration_ms(path)
             .await
@@ -193,42 +197,42 @@ impl PlayerService {
             .map_err(|error| Error::from_reason(error.to_string()))
     }
 
-    #[napi(getter)]
+    #[cfg_attr(feature = "node", napi(getter))]
     pub fn progress_ms(&self) -> u32 {
-        self.shared_state.progress_ms()
+        self.snapshot.read().progress_ms
     }
 
-    #[napi(getter)]
+    #[cfg_attr(feature = "node", napi(getter))]
     pub fn is_playing(&self) -> bool {
-        self.shared_state.is_playing()
+        self.snapshot.read().status == PlaybackStatus::Playing
     }
 
-    #[napi(getter)]
+    #[cfg_attr(feature = "node", napi(getter))]
     pub fn is_buffering(&self) -> bool {
-        self.shared_state.is_buffering()
+        self.snapshot.read().buffering
     }
 
-    #[napi(getter)]
+    #[cfg_attr(feature = "node", napi(getter))]
     pub fn is_paused(&self) -> bool {
-        self.shared_state.is_paused()
+        self.snapshot.read().status == PlaybackStatus::Paused
     }
 
     /// 当前会话实际生效的音量（0.0..=1.0）。渲染层随进度轮询回读，
     /// 用作 SetVolume 失步时的校对权威。
-    #[napi(getter)]
+    #[cfg_attr(feature = "node", napi(getter))]
     pub fn volume(&self) -> f64 {
-        self.shared_state.volume()
+        self.snapshot.read().volume
     }
 
     /// 当前会话是否被严格 BitPerfect 锁定为 1.0 直通（SetVolume 会被丢弃）。
-    #[napi(getter)]
+    #[cfg_attr(feature = "node", napi(getter))]
     pub fn volume_locked(&self) -> bool {
-        self.shared_state.volume_locked()
+        self.snapshot.read().volume_locked
     }
 
     /// 阻塞到当前播放会话结束，返回结束原因：
     /// "ended" 自然播完 / "stopped" 显式停止 / "replaced" 被新播放替换 / "error" 流致命错误。
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn wait_finished(&self) -> Result<String> {
         let (tx, rx) = oneshot::channel();
         self.sender
@@ -246,5 +250,12 @@ fn playback_options(strict_bit_perfect: Option<bool>, exclusive: Option<bool>) -
         strict_bit_perfect,
         // BitPerfect 隐含独占：前端即使漏传 exclusive 也要预留设备。
         exclusive: strict_bit_perfect || exclusive.unwrap_or(false),
+    }
+}
+
+// Native consumers read a coherent snapshot without crossing the Node ABI.
+impl PlayerService {
+    pub fn snapshot(&self) -> super::state::PlaybackSnapshot {
+        self.snapshot.read()
     }
 }

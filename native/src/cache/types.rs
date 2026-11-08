@@ -1,3 +1,4 @@
+#[cfg(feature = "node")]
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -103,7 +104,7 @@ impl Default for CacheSettingsData {
     }
 }
 
-#[napi(object)]
+#[cfg_attr(feature = "node", napi(object))]
 #[derive(Clone, Debug, Default)]
 pub struct CacheStats {
     pub total_bytes: i64,
@@ -118,7 +119,7 @@ pub struct CacheStats {
     pub lyric_entries: u32,
 }
 
-#[napi(object)]
+#[cfg_attr(feature = "node", napi(object))]
 #[derive(Clone, Debug, Default)]
 pub struct CachedSongSource {
     pub r#type: String,
@@ -129,7 +130,7 @@ pub struct CachedSongSource {
     pub max_cache_ahead_bytes: Option<i64>,
 }
 
-#[napi(object)]
+#[cfg_attr(feature = "node", napi(object))]
 #[derive(Clone, Debug, Default)]
 pub struct SongCacheProgress {
     pub downloaded_bytes: i64,

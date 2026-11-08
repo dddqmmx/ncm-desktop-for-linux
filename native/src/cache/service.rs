@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -6,8 +5,9 @@ use std::time::Duration;
 
 use reqwest::header::CONTENT_TYPE;
 
-use crate::audio::player::{AudioPlayer, SongCacheDownloadControl};
+use crate::audio::downloads::{self, SongCacheDownloadControl};
 use crate::cache::catalog::{CacheCatalog, CacheEntryUpsert};
+use crate::cache::downloads::DownloadRegistry;
 use crate::cache::error::{CacheError, CacheResult};
 use crate::cache::eviction::EvictionPlanner;
 use crate::cache::settings::CacheSettingsStore;
@@ -38,7 +38,9 @@ impl CacheState {
 pub struct NativeCacheService {
     files: CacheFileStore,
     state: Mutex<CacheState>,
-    active_song_downloads: Mutex<HashMap<String, Arc<SongCacheDownloadControl>>>,
+    /// 后台歌曲下载的登记簿。收尾写目录前必须经它声明身份，否则"取消/清空"
+    /// 之后迟到的收尾会把条目重新写回来（见 `cache::downloads`）。
+    downloads: DownloadRegistry,
     http_client: reqwest::Client,
 }
 
@@ -58,7 +60,7 @@ impl NativeCacheService {
         let service = Self {
             files,
             state: Mutex::new(CacheState { settings, catalog }),
-            active_song_downloads: Mutex::new(HashMap::new()),
+            downloads: DownloadRegistry::new(),
             http_client,
         };
 
@@ -152,7 +154,8 @@ impl NativeCacheService {
     }
 
     pub fn clear(&self) -> CacheResult<CacheStats> {
-        self.cancel_all_song_cache_downloads();
+        // 先失效全部登记再动文件：两者在同一把锁下串行，迟到的收尾会自行作废。
+        self.downloads.cancel_all();
         {
             let mut state = self.lock_state()?;
             state.catalog.clear();
@@ -380,10 +383,12 @@ impl NativeCacheService {
             .metadata_path
             .clone()
             .ok_or_else(|| CacheError::InvalidState("missing metadata_path".to_string()))?;
-        let cache_ahead_secs = source.cache_ahead_secs.map(|value| value as u32);
+        let cache_ahead_secs = source.cache_ahead_secs;
         let max_cache_ahead_bytes = source.max_cache_ahead_bytes.map(|value| value as u64);
         let download_control = Arc::new(SongCacheDownloadControl::new());
-        self_arc.register_song_cache_download(&metadata_path, Arc::clone(&download_control))?;
+        self_arc
+            .downloads
+            .register(&metadata_path, Arc::clone(&download_control));
 
         println!(
             "[cache] 启动后台流式缓存: song_id={} quality={} cache_path={}",
@@ -399,7 +404,7 @@ impl NativeCacheService {
                 song_id, quality_for_task
             );
 
-            let download_outcome = match AudioPlayer::download_song_for_cache(
+            let download_outcome = match downloads::download_song_for_cache(
                 &url_for_task,
                 &cache_path_for_task,
                 &metadata_path,
@@ -413,56 +418,65 @@ impl NativeCacheService {
                 Ok(outcome) => outcome,
                 Err(err) => {
                     eprintln!("[cache] 后台下载失败: song_id={} err={}", song_id, err);
-                    if let Err(cleanup_err) =
-                        self_arc.remove_song_cache_entry(song_id, &quality_for_task)
-                    {
+                    // 失败清理同样要经过登记簿：下载期间用户可能已经清空缓存，
+                    // 这时条目本就不该存在，更不该按 song_id/quality 再删一遍。
+                    let cleanup = self_arc.downloads.complete_if_current(
+                        &metadata_path,
+                        &download_control,
+                        || self_arc.remove_song_cache_entry(song_id, &quality_for_task),
+                    );
+                    if let Some(Err(cleanup_err)) = cleanup {
                         eprintln!(
                             "[cache] 清理失败缓存条目失败: song_id={} err={}",
                             song_id, cleanup_err
                         );
                     }
-                    self_arc.finish_song_cache_download(&metadata_path, &download_control);
                     return;
                 }
             };
 
-            if !download_outcome.is_complete {
-                if let Err(err) = self_arc.mark_song_cache_partial(
-                    song_id,
-                    &quality_for_task,
-                    &cache_path_for_task,
-                    download_outcome.downloaded_bytes,
-                    &url_for_task,
-                ) {
-                    eprintln!(
-                        "[cache] 记录歌曲预下载失败: song_id={} err={}",
-                        song_id, err
-                    );
-                } else {
-                    println!(
-                        "[cache] 歌曲预下载完成: song_id={} quality={} size={}",
-                        song_id, quality_for_task, download_outcome.downloaded_bytes
-                    );
-                }
-                self_arc.finish_song_cache_download(&metadata_path, &download_control);
-                return;
-            }
+            // 收尾写目录必须经登记簿声明身份：被取消 / 被顶替 / 已清空时直接作废，
+            // 否则用户点了清空，几秒后缓存里又冒出这条条目。
+            let committed =
+                self_arc
+                    .downloads
+                    .complete_if_current(&metadata_path, &download_control, || {
+                        if download_outcome.is_complete {
+                            self_arc
+                                .mark_song_cache_complete(
+                                    song_id,
+                                    &quality_for_task,
+                                    &cache_path_for_task,
+                                    download_outcome.downloaded_bytes,
+                                    &url_for_task,
+                                )
+                                .map(|()| "后台下载完成")
+                        } else {
+                            self_arc
+                                .mark_song_cache_partial(
+                                    song_id,
+                                    &quality_for_task,
+                                    &cache_path_for_task,
+                                    download_outcome.downloaded_bytes,
+                                    &url_for_task,
+                                )
+                                .map(|()| "歌曲预下载完成")
+                        }
+                    });
 
-            if let Err(err) = self_arc.mark_song_cache_complete(
-                song_id,
-                &quality_for_task,
-                &cache_path_for_task,
-                download_outcome.downloaded_bytes,
-                &url_for_task,
-            ) {
-                eprintln!("[cache] 标记缓存完成失败: song_id={} err={}", song_id, err);
-            } else {
-                println!(
-                    "[cache] 后台下载完成: song_id={} quality={} size={}",
-                    song_id, quality_for_task, download_outcome.downloaded_bytes
-                );
+            match committed {
+                None => println!(
+                    "[cache] 后台下载已取消或被顶替，丢弃结果: song_id={}",
+                    song_id
+                ),
+                Some(Ok(label)) => println!(
+                    "[cache] {}: song_id={} quality={} size={}",
+                    label, song_id, quality_for_task, download_outcome.downloaded_bytes
+                ),
+                Some(Err(err)) => {
+                    eprintln!("[cache] 记录缓存结果失败: song_id={} err={}", song_id, err)
+                }
             }
-            self_arc.finish_song_cache_download(&metadata_path, &download_control);
         });
 
         Ok(source)
@@ -473,11 +487,7 @@ impl NativeCacheService {
         metadata_path: &str,
         playback_position_ms: u64,
     ) -> CacheResult<bool> {
-        let downloads = self
-            .active_song_downloads
-            .lock()
-            .map_err(|_| CacheError::Poisoned)?;
-        let Some(control) = downloads.get(metadata_path) else {
+        let Some(control) = self.downloads.control(metadata_path) else {
             return Ok(false);
         };
         control.update_playback_position(playback_position_ms);
@@ -485,78 +495,9 @@ impl NativeCacheService {
     }
 
     pub fn cancel_song_cache_download(&self, metadata_path: &str) -> CacheResult<bool> {
-        let control = self
-            .active_song_downloads
-            .lock()
-            .map_err(|_| CacheError::Poisoned)?
-            .remove(metadata_path);
-        let Some(control) = control else {
-            return Ok(false);
-        };
         // 只发取消信号，不等待后台任务收尾。下载线程若卡在 stream-download
         // 内部阻塞点，wait_finished 会拖死切歌/loading 整条链路。
-        control.cancel();
-        control.finish();
-        Ok(true)
-    }
-
-    fn register_song_cache_download(
-        &self,
-        metadata_path: &str,
-        control: Arc<SongCacheDownloadControl>,
-    ) -> CacheResult<()> {
-        let previous = self
-            .active_song_downloads
-            .lock()
-            .map_err(|_| CacheError::Poisoned)?
-            .insert(metadata_path.to_string(), control);
-        if let Some(previous) = previous {
-            previous.cancel();
-            previous.finish();
-        }
-        Ok(())
-    }
-
-    fn unregister_song_cache_download(
-        &self,
-        metadata_path: &str,
-        control: &Arc<SongCacheDownloadControl>,
-    ) {
-        let Ok(mut downloads) = self.active_song_downloads.lock() else {
-            return;
-        };
-        if downloads
-            .get(metadata_path)
-            .is_some_and(|active| Arc::ptr_eq(active, control))
-        {
-            downloads.remove(metadata_path);
-        }
-    }
-
-    fn finish_song_cache_download(
-        &self,
-        metadata_path: &str,
-        control: &Arc<SongCacheDownloadControl>,
-    ) {
-        self.unregister_song_cache_download(metadata_path, control);
-        control.finish();
-    }
-
-    fn cancel_all_song_cache_downloads(&self) {
-        let downloads = self
-            .active_song_downloads
-            .lock()
-            .map(|mut downloads| {
-                downloads
-                    .drain()
-                    .map(|(_, control)| control)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        for control in downloads {
-            control.cancel();
-            control.finish();
-        }
+        Ok(self.downloads.cancel(metadata_path))
     }
 
     fn mark_song_cache_complete(
@@ -966,10 +907,93 @@ impl NativeCacheService {
     }
 }
 
+fn infer_extension(bucket: CacheBucket, url: &str, content_type: Option<&str>) -> String {
+    if let Some(extension) = extension_from_url(url) {
+        return extension;
+    }
+
+    if let Some(content_type) = content_type {
+        let normalized = content_type.trim().to_ascii_lowercase();
+        if normalized.contains("mpeg") || normalized.contains("mp3") {
+            return "mp3".to_string();
+        }
+        if normalized.contains("flac") {
+            return "flac".to_string();
+        }
+        if normalized.contains("wav") {
+            return "wav".to_string();
+        }
+        if normalized.contains("ogg") {
+            return "ogg".to_string();
+        }
+        // `audio/opus` 是 Opus 的官方 MIME；不带 "ogg" 字样，必须单独判断，
+        // 否则缓存文件名会退回 mp3，解码时按错误扩展名提示容器。
+        if normalized.contains("opus") {
+            return "opus".to_string();
+        }
+        if normalized.contains("aac") {
+            return "aac".to_string();
+        }
+        if normalized.contains("png") {
+            return "png".to_string();
+        }
+        if normalized.contains("jpeg") || normalized.contains("jpg") {
+            return "jpg".to_string();
+        }
+        if normalized.contains("webp") {
+            return "webp".to_string();
+        }
+    }
+
+    match bucket {
+        CacheBucket::Song => "mp3".to_string(),
+        CacheBucket::Cover => "jpg".to_string(),
+        CacheBucket::Entity | CacheBucket::Lyric => "json".to_string(),
+    }
+}
+
+fn extension_from_url(url: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    let file_name = parsed
+        .path_segments()
+        .and_then(|mut segments| segments.next_back())
+        .unwrap_or_default();
+    let extension = file_name
+        .split('?')
+        .next()
+        .and_then(|segment| segment.rsplit('.').next())?
+        .trim()
+        .trim_start_matches('.');
+
+    if extension.is_empty() || extension.len() > 5 {
+        return None;
+    }
+
+    Some(extension.to_ascii_lowercase())
+}
+
+fn song_stream_key(song_id: i64, quality: &str) -> String {
+    format!(
+        "audio-stream:{song_id}:{}",
+        quality.trim().to_ascii_lowercase()
+    )
+}
+
+fn is_legacy_audio_key_for_song(key: &str, song_id: i64) -> bool {
+    key.contains("\"scope\":\"audio\"") && key.contains(&format!("\"songId\":{song_id}"))
+}
+
+fn legacy_audio_key_matches_quality(key: &str, quality: &str) -> bool {
+    key.contains(&format!(
+        "\"quality\":\"{}\"",
+        quality.trim().to_ascii_lowercase()
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::player::SongCacheDownloadControl;
+    use crate::audio::downloads::SongCacheDownloadControl;
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
@@ -1032,9 +1056,7 @@ mod tests {
         let metadata_path = root.path.join("stuck.meta.json");
         fs::write(&metadata_path, b"{}").expect("write metadata path marker");
         let meta_key = metadata_path.to_string_lossy().into_owned();
-        service
-            .register_song_cache_download(&meta_key, Arc::clone(&stuck))
-            .expect("register stuck download");
+        service.downloads.register(&meta_key, Arc::clone(&stuck));
 
         let started = std::time::Instant::now();
         let cancelled = service
@@ -1140,82 +1162,31 @@ mod tests {
         assert_eq!(stats.song_entries, 1);
         assert_eq!(stats.song_bytes, 0);
     }
-}
 
-fn infer_extension(bucket: CacheBucket, url: &str, content_type: Option<&str>) -> String {
-    if let Some(extension) = extension_from_url(url) {
-        return extension;
+    /// Opus 的官方 MIME 是 `audio/opus`，不含 "ogg" 字样；漏判会让缓存文件落成
+    /// .mp3，之后按错误扩展名探容器。
+    #[test]
+    fn opus_content_type_is_kept_as_its_own_extension() {
+        assert_eq!(
+            infer_extension(
+                CacheBucket::Song,
+                "https://example.com/stream",
+                Some("audio/opus")
+            ),
+            "opus"
+        );
+        assert_eq!(
+            infer_extension(CacheBucket::Song, "https://example.com/song.opus", None),
+            "opus"
+        );
+        // 既有分支不能被这行盖掉。
+        assert_eq!(
+            infer_extension(
+                CacheBucket::Song,
+                "https://example.com/stream",
+                Some("audio/ogg")
+            ),
+            "ogg"
+        );
     }
-
-    if let Some(content_type) = content_type {
-        let normalized = content_type.trim().to_ascii_lowercase();
-        if normalized.contains("mpeg") || normalized.contains("mp3") {
-            return "mp3".to_string();
-        }
-        if normalized.contains("flac") {
-            return "flac".to_string();
-        }
-        if normalized.contains("wav") {
-            return "wav".to_string();
-        }
-        if normalized.contains("ogg") {
-            return "ogg".to_string();
-        }
-        if normalized.contains("aac") {
-            return "aac".to_string();
-        }
-        if normalized.contains("png") {
-            return "png".to_string();
-        }
-        if normalized.contains("jpeg") || normalized.contains("jpg") {
-            return "jpg".to_string();
-        }
-        if normalized.contains("webp") {
-            return "webp".to_string();
-        }
-    }
-
-    match bucket {
-        CacheBucket::Song => "mp3".to_string(),
-        CacheBucket::Cover => "jpg".to_string(),
-        CacheBucket::Entity | CacheBucket::Lyric => "json".to_string(),
-    }
-}
-
-fn extension_from_url(url: &str) -> Option<String> {
-    let parsed = reqwest::Url::parse(url).ok()?;
-    let file_name = parsed
-        .path_segments()
-        .and_then(|mut segments| segments.next_back())
-        .unwrap_or_default();
-    let extension = file_name
-        .split('?')
-        .next()
-        .and_then(|segment| segment.rsplit('.').next())?
-        .trim()
-        .trim_start_matches('.');
-
-    if extension.is_empty() || extension.len() > 5 {
-        return None;
-    }
-
-    Some(extension.to_ascii_lowercase())
-}
-
-fn song_stream_key(song_id: i64, quality: &str) -> String {
-    format!(
-        "audio-stream:{song_id}:{}",
-        quality.trim().to_ascii_lowercase()
-    )
-}
-
-fn is_legacy_audio_key_for_song(key: &str, song_id: i64) -> bool {
-    key.contains("\"scope\":\"audio\"") && key.contains(&format!("\"songId\":{song_id}"))
-}
-
-fn legacy_audio_key_matches_quality(key: &str, quality: &str) -> bool {
-    key.contains(&format!(
-        "\"quality\":\"{}\"",
-        quality.trim().to_ascii_lowercase()
-    ))
 }

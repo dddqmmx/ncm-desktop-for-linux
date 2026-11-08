@@ -7,3 +7,7 @@ mod player;
 mod runtime;
 
 pub use bindings::{CacheService, PlayerService};
+
+mod service_error;
+pub use cache::{CacheStats, CachedSongSource, SongCacheProgress};
+pub use player::{AudioDeviceInfo, PlaybackSnapshot, PlaybackStatus};

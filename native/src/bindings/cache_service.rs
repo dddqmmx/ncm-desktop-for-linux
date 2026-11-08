@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use napi::{Error, Result};
+use crate::service_error::{Error, Result};
+#[cfg(feature = "node")]
 use napi_derive::napi;
 
 use crate::cache::error::CacheResult;
@@ -21,14 +22,14 @@ where
         .map_err(|e| Error::from_reason(e.to_string()))?
 }
 
-#[napi]
+#[cfg_attr(feature = "node", napi)]
 pub struct CacheService {
     service: Arc<NativeCacheService>,
 }
 
-#[napi]
+#[cfg_attr(feature = "node", napi)]
 impl CacheService {
-    #[napi(constructor)]
+    #[cfg_attr(feature = "node", napi(constructor))]
     pub fn new(root_dir: String, max_size_bytes: Option<i64>) -> Result<Self> {
         let root_dir = PathBuf::from(root_dir);
         let fallback_max_size_bytes =
@@ -41,13 +42,13 @@ impl CacheService {
         })
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn get_stats(&self) -> Result<CacheStats> {
         let service = Arc::clone(&self.service);
         run_blocking(service, |s| s.get_stats()).await
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn get_json(&self, bucket: String, key: String) -> Result<Option<String>> {
         let service = Arc::clone(&self.service);
         run_blocking(service, move |s| {
@@ -57,7 +58,7 @@ impl CacheService {
         .await
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn put_json(&self, bucket: String, key: String, value: String) -> Result<CacheStats> {
         let service = Arc::clone(&self.service);
         run_blocking(service, move |s| {
@@ -67,7 +68,7 @@ impl CacheService {
         .await
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn set_max_size_bytes(&self, max_size_bytes: i64) -> Result<CacheStats> {
         let service = Arc::clone(&self.service);
         run_blocking(service, move |s| {
@@ -76,21 +77,21 @@ impl CacheService {
         .await
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn get_song_cache_ahead_secs(&self) -> Result<u32> {
         self.service
             .get_song_cache_ahead_secs()
             .map_err(|err| Error::from_reason(err.to_string()))
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn set_song_cache_ahead_secs(&self, song_cache_ahead_secs: u32) -> Result<u32> {
         self.service
             .set_song_cache_ahead_secs(song_cache_ahead_secs)
             .map_err(|err| Error::from_reason(err.to_string()))
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn get_song_max_cache_ahead_bytes(&self) -> Result<i64> {
         self.service
             .get_song_max_cache_ahead_bytes()
@@ -98,7 +99,7 @@ impl CacheService {
             .map_err(|err| Error::from_reason(err.to_string()))
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn set_song_max_cache_ahead_bytes(
         &self,
         song_max_cache_ahead_bytes: i64,
@@ -109,13 +110,13 @@ impl CacheService {
             .map_err(|err| Error::from_reason(err.to_string()))
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn clear(&self) -> Result<CacheStats> {
         let service = Arc::clone(&self.service);
         run_blocking(service, |s| s.clear()).await
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn cache_remote_file(
         &self,
         bucket: String,
@@ -132,7 +133,7 @@ impl CacheService {
             .map_err(|err| Error::from_reason(err.to_string()))
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn prepare_song_source(
         &self,
         song_id: i64,
@@ -152,7 +153,7 @@ impl CacheService {
         .await
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn cache_song_source(
         &self,
         song_id: i64,
@@ -178,7 +179,7 @@ impl CacheService {
             .map_err(|e| Error::from_reason(e.to_string()))?
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub fn update_song_cache_playback_position(
         &self,
         metadata_path: String,
@@ -189,7 +190,7 @@ impl CacheService {
             .map_err(|err| Error::from_reason(err.to_string()))
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn cancel_song_cache_download(&self, metadata_path: String) -> Result<bool> {
         let service = Arc::clone(&self.service);
         run_blocking(service, move |service| {
@@ -198,7 +199,7 @@ impl CacheService {
         .await
     }
 
-    #[napi]
+    #[cfg_attr(feature = "node", napi)]
     pub async fn get_song_cache_progress(
         &self,
         metadata_path: String,
