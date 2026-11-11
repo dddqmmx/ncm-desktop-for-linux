@@ -1,0 +1,32 @@
+name: Slint UI quality
+
+on:
+  pull_request:
+    paths:
+      - 'slint-ui/ui/**'
+      - 'slint-ui/scripts/check_ui_quality.py'
+      - 'slint-ui/tests/test_ui_quality.py'
+      - '.github/workflows/slint-quality.yml'
+  push:
+    paths:
+      - 'slint-ui/ui/**'
+      - 'slint-ui/scripts/check_ui_quality.py'
+      - 'slint-ui/tests/test_ui_quality.py'
+      - '.github/workflows/slint-quality.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: slint-ui
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the checker
+        run: python3 -m unittest discover -s tests -p test_ui_quality.py -v
+      - name: Check Slint component structure
+        run: python3 scripts/check_ui_quality.py

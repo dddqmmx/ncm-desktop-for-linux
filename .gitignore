@@ -11,3 +11,5 @@ native/Cargo.lock
 yarn.lock
 .codex
 native-seek-regression-report.json
+# 参考用的第三方仓库（独立 git 仓库，不属于本项目）
+spotifast/
