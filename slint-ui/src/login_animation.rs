@@ -1,7 +1,7 @@
 //! Capture the live Slint card once per flip and project its texture strips.
 //! Network/image decoding remains in runtime::images. This is ordinary UI
 //! rendering into a small offscreen window, never a per-frame screenshot.
-use crate::{AppState, AppWindow, LoginCaptureWindow, Theme};
+use crate::{AppWindow, LoginCaptureWindow, Theme};
 use slint::{ComponentHandle, LogicalSize, ModelRc, Rgba8Pixel, SharedPixelBuffer, VecModel};
 use std::{rc::Rc, time::Duration};
 
@@ -29,7 +29,7 @@ pub fn attach(app: &AppWindow) -> Result<(), slint::PlatformError> {
     let weak = app.as_weak();
     let capture = LoginCaptureWindow::new()?;
     let timer = Rc::new(slint::Timer::default());
-    app.global::<AppState>().on_prepare_login_flip(move || {
+    app.global::<crate::LoginState>().on_prepare_login_flip(move || {
         let weak = weak.clone();
         let capture = capture.clone_strong();
         // Property change callbacks may run while the GPU is rendering. Defer
@@ -37,14 +37,16 @@ pub fn attach(app: &AppWindow) -> Result<(), slint::PlatformError> {
         timer.start(slint::TimerMode::SingleShot, Duration::ZERO, move || {
             let Some(app) = weak.upgrade() else { return };
             let result = (|| -> Result<(), slint::PlatformError> {
-                let source = app.global::<AppState>();
-                let target = capture.global::<AppState>();
+                let source_login_state = app.global::<crate::LoginState>();
+                let source_runtime_state = app.global::<crate::RuntimeState>();
+                let target_login_state = capture.global::<crate::LoginState>();
+                let target_runtime_state = capture.global::<crate::RuntimeState>();
                 crate::windows::sync_theme(app.global::<Theme>(), capture.global::<Theme>(), None);
                 macro_rules! copy {
-                ($($get:ident => $set:ident),* $(,)?) => { $(target.$set(source.$get());)* };
+                ($($get:ident => $set:ident),* $(,)?) => { $(target_login_state.$set(source_login_state.$get());)* };
             }
+                target_runtime_state.set_runtime_enabled(source_runtime_state.get_runtime_enabled());
                 copy!(
-                    get_runtime_enabled => set_runtime_enabled,
                     get_login_tab => set_login_tab,
                     get_login_country_code => set_login_country_code,
                     get_login_sms_country_code => set_login_sms_country_code,
@@ -71,17 +73,17 @@ pub fn attach(app: &AppWindow) -> Result<(), slint::PlatformError> {
                 let front = capture.window().take_snapshot()?;
                 capture.set_show_back(true);
                 let back = capture.window().take_snapshot()?;
-                target.set_login_password("".into());
-                target.set_login_code("".into());
+                target_login_state.set_login_password("".into());
+                target_login_state.set_login_code("".into());
                 // Programmatic Slint Images have no GPU cache key. Feeding the
                 // full frame to every Image would upload it 296 times (~1GB).
                 // Upload disjoint strips instead: total texture bytes stay O(frame).
-                source.set_login_front_strips(strips(&front));
-                source.set_login_back_strips(strips(&back));
-                source.set_login_front_frame(slint::Image::from_rgba8(front));
-                source.set_login_back_frame(slint::Image::from_rgba8(back));
-                source.set_login_render_scale(app.window().scale_factor());
-                source.set_login_flip_ready(true);
+                source_login_state.set_login_front_strips(strips(&front));
+                source_login_state.set_login_back_strips(strips(&back));
+                source_login_state.set_login_front_frame(slint::Image::from_rgba8(front));
+                source_login_state.set_login_back_frame(slint::Image::from_rgba8(back));
+                source_login_state.set_login_render_scale(app.window().scale_factor());
+                source_login_state.set_login_flip_ready(true);
                 Ok(())
             })();
             if let Err(error) = result {

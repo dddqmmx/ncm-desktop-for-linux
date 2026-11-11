@@ -3,7 +3,7 @@ use super::{
     data::Preferences,
     view::{self, View},
 };
-use crate::{AppState, AppWindow};
+use crate::AppWindow;
 use i_slint_backend_testing::{mock_elapsed_time, ElementHandle, ElementRoot};
 use serde_json::{json, Value};
 use slint::{platform::WindowEvent, ComponentHandle, LogicalPosition, Model, PhysicalSize};
@@ -111,7 +111,8 @@ fn artist_layout_matches_electron_with_long_descriptions_and_wrapped_grids() {
     init();
     let app = AppWindow::new().unwrap();
     view::initialize(&app, &Preferences::default());
-    let state = app.global::<AppState>();
+    let navigation_state = app.global::<crate::NavigationState>();
+    let artist_state = app.global::<crate::ArtistState>();
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let mut controller = View::new(tx, Preferences::default());
     app.show().unwrap();
@@ -122,25 +123,25 @@ fn artist_layout_matches_electron_with_long_descriptions_and_wrapped_grids() {
         let name = case["name"].as_str().unwrap();
         // Expose below-the-fold elements to the testing backend, without changing page width.
         app.window().set_size(PhysicalSize::new(width, 10000));
-        state.set_current_route("home".into());
+        navigation_state.set_current_route("home".into());
         settle(&app);
-        state.set_current_route("artist".into());
+        navigation_state.set_current_route("artist".into());
         controller.apply(&app, event(0, case["fixture"].clone()));
         seed_artwork(&app);
         settle(&app);
         let gt = &case["geometry"];
         for (key, id) in [
-            ("main", "artist-main-content"),
-            ("header", "artist-header"),
-            ("avatar", "artist-avatar-col"),
-            ("name", "artist-name-box"),
-            ("summary", "artist-summary"),
-            ("pills", "artist-pills"),
-            ("actions", "artist-actions"),
+            ("main", "ArtistView::artist-main-content"),
+            ("header", "ArtistView::artist-header"),
+            ("avatar", "ArtistHeader::artist-avatar-col"),
+            ("name", "ArtistHeader::artist-name-box"),
+            ("summary", "ArtistHeader::artist-summary"),
+            ("pills", "ArtistHeader::artist-pills"),
+            ("actions", "ArtistHeader::artist-actions"),
         ] {
             rect(
                 &format!("{name}/{width}/{key}"),
-                &element(&app, &format!("ArtistView::{id}")),
+                &element(&app, id),
                 &gt[key],
             );
         }
@@ -171,17 +172,18 @@ fn artist_layout_matches_electron_with_long_descriptions_and_wrapped_grids() {
         if name != "empty" {
             rect(
                 "songsCard",
-                &element(&app, "ArtistView::artist-songs-card"),
+                &element(&app, "ArtistSongsSection::artist-songs-card"),
                 &gt["songsCard"],
             );
             let rows: Vec<_> =
                 ElementHandle::find_by_element_type_name(&app, "ArtistSongRow").collect();
-            assert_eq!(rows.len(), state.get_artist_top_songs().row_count());
+            assert_eq!(rows.len(), artist_state.get_artist_top_songs().row_count());
             for (i, row) in rows.iter().enumerate() {
                 rect("song", row, &gt["sections"][1]["items"][i]);
             }
             for (i, cover) in
-                ElementHandle::find_by_element_id(&app, "ArtistView::latest-cover").enumerate()
+                ElementHandle::find_by_element_id(&app, "ArtistLatestSection::latest-cover")
+                    .enumerate()
             {
                 rect("latest cover", &cover, &gt["sections"][0]["covers"][i]);
             }
@@ -232,7 +234,8 @@ fn artist_loads_sorted_releases_and_handles_switch_retry_and_empty_data() {
     init();
     let app = AppWindow::new().unwrap();
     view::initialize(&app, &Preferences::default());
-    let state = app.global::<AppState>();
+    let artist_state = app.global::<crate::ArtistState>();
+    let navigation_state = app.global::<crate::NavigationState>();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut controller = View::new(tx, Preferences::default());
     app.show().unwrap();
@@ -247,10 +250,10 @@ fn artist_loads_sorted_releases_and_handles_switch_retry_and_empty_data() {
     controller.action(&app, "artist", -1, "");
     let first = next_page(&mut rx);
     assert_eq!(first.data["id"], "9007199254740991");
-    assert!(state.get_artist_loading());
+    assert!(artist_state.get_artist_loading());
     settle(&app);
     let loading = element(&app, "ArtistView::artist-state");
-    let spinner = element(&app, "ArtistView::artist-loading-spinner");
+    let spinner = element(&app, "ArtistLoadState::artist-loading-spinner");
     assert!(
         (spinner.absolute_position().x + spinner.size().width / 2.0
             - loading.absolute_position().x
@@ -270,8 +273,8 @@ fn artist_loads_sorted_releases_and_handles_switch_retry_and_empty_data() {
             ..event(first.token, json!({}))
         },
     );
-    assert!(!state.get_artist_loading());
-    assert_eq!(state.get_artist_load_error(), "歌手加载失败");
+    assert!(!artist_state.get_artist_loading());
+    assert_eq!(artist_state.get_artist_load_error(), "歌手加载失败");
     controller.action(&app, "artist-retry", -1, "");
     let retry = next_page(&mut rx);
     assert_eq!(retry.data["id"], first.data["id"]);
@@ -282,7 +285,7 @@ fn artist_loads_sorted_releases_and_handles_switch_retry_and_empty_data() {
             json!({"detail":{"data":{"artist":{"name":"stale"}}}}),
         ),
     );
-    assert!(state.get_artist_loading());
+    assert!(artist_state.get_artist_loading());
     let body = json!({
         "detail":{"data":{"artist":{"name":"歌手", "briefDesc":"  ", "avatar":"https://example.test/avatar.jpg", "cover":"https://example.test/cover.jpg"}}},
         "album":{"hotAlbums":[
@@ -294,32 +297,46 @@ fn artist_loads_sorted_releases_and_handles_switch_retry_and_empty_data() {
         "top":{"songs":[{"id":"9007199254740990","name":"Song","dt":180000},{"id":2,"name":"Song two"}]}
     });
     controller.apply(&app, event(retry.token, body));
-    assert!(!state.get_artist_loading());
-    assert!(state.get_artist_load_error().is_empty());
+    assert!(!artist_state.get_artist_loading());
+    assert!(artist_state.get_artist_load_error().is_empty());
     assert_eq!(
-        state.get_artist_latest().row_data(0).unwrap().title,
+        artist_state.get_artist_latest().row_data(0).unwrap().title,
         "New single"
     );
-    assert_eq!(state.get_artist_latest().row_data(0).unwrap().year, "2024");
-    assert_eq!(state.get_artist_albums().row_count(), 1);
-    assert_eq!(state.get_artist_eps().row_count(), 2);
     assert_eq!(
-        state.get_artist_pills().row_data(1).unwrap(),
+        artist_state.get_artist_latest().row_data(0).unwrap().year,
+        "2024"
+    );
+    assert_eq!(artist_state.get_artist_albums().row_count(), 1);
+    assert_eq!(artist_state.get_artist_eps().row_count(), 2);
+    assert_eq!(
+        artist_state.get_artist_pills().row_data(1).unwrap(),
         "2 张 EP / 单曲"
     );
-    assert_eq!(state.get_artist_mvs().row_data(0).unwrap().year, "2023");
     assert_eq!(
-        state.get_artist_top_songs().row_data(0).unwrap().badge,
+        artist_state.get_artist_mvs().row_data(0).unwrap().year,
+        "2023"
+    );
+    assert_eq!(
+        artist_state
+            .get_artist_top_songs()
+            .row_data(0)
+            .unwrap()
+            .badge,
         "hot"
     );
     assert_eq!(
-        state.get_artist_top_songs().row_data(1).unwrap().badge,
+        artist_state
+            .get_artist_top_songs()
+            .row_data(1)
+            .unwrap()
+            .badge,
         "rec"
     );
-    assert!(state
+    assert!(artist_state
         .get_artist_summary()
         .contains("最新发布《New single》"));
-    let album = state.get_artist_latest().row_data(0).unwrap();
+    let album = artist_state.get_artist_latest().row_data(0).unwrap();
     controller.action(&app, "album", album.id, "");
     let album_page = next_page(&mut rx);
     assert_eq!(album_page.data["id"], "402");
@@ -330,11 +347,11 @@ fn artist_loads_sorted_releases_and_handles_switch_retry_and_empty_data() {
             json!({"detail":{"data":{"artist":{"name":"stale"}}}}),
         ),
     );
-    assert_eq!(state.get_current_route(), "album");
-    assert_eq!(state.get_artist_name(), "歌手");
+    assert_eq!(navigation_state.get_current_route(), "album");
+    assert_eq!(artist_state.get_artist_name(), "歌手");
     controller.action(&app, "artist-retry", -1, "");
     let empty = next_page(&mut rx);
-    assert_eq!(state.get_artist_top_songs().row_count(), 0);
+    assert_eq!(artist_state.get_artist_top_songs().row_count(), 0);
     controller.apply(
         &app,
         event(
@@ -342,18 +359,18 @@ fn artist_loads_sorted_releases_and_handles_switch_retry_and_empty_data() {
             json!({"detail":{"data":{"artist":{"name":"Empty"}}}}),
         ),
     );
-    assert!(!state.get_artist_loading());
-    assert!(state.get_artist_load_error().is_empty());
-    assert_eq!(state.get_artist_albums().row_count(), 0);
+    assert!(!artist_state.get_artist_loading());
+    assert!(artist_state.get_artist_load_error().is_empty());
+    assert_eq!(artist_state.get_artist_albums().row_count(), 0);
     assert_eq!(
-        state.get_artist_summary(),
+        artist_state.get_artist_summary(),
         "当前已收录 0 首热门歌曲、0 张专辑。"
     );
     controller.action(&app, "artist-retry", -1, "");
     let missing = next_page(&mut rx);
     controller.apply(&app, event(missing.token, json!({})));
-    assert!(!state.get_artist_loading());
-    assert_eq!(state.get_artist_load_error(), "未获取到歌手详情");
+    assert!(!artist_state.get_artist_loading());
+    assert_eq!(artist_state.get_artist_load_error(), "未获取到歌手详情");
 }
 
 fn seed_artwork(app: &AppWindow) {
@@ -362,8 +379,8 @@ fn seed_artwork(app: &AppWindow) {
         .make_mut_slice()
         .fill(slint::Rgba8Pixel::new(99, 102, 241, 255));
     let cover = slint::Image::from_rgba8(pixels);
-    let state = app.global::<AppState>();
-    state.set_artist_avatar(cover.clone());
+    let artist_state = app.global::<crate::ArtistState>();
+    artist_state.set_artist_avatar(cover.clone());
     let releases = |items: slint::ModelRc<crate::ArtistReleaseItem>| {
         view::model(
             items
@@ -375,12 +392,12 @@ fn seed_artwork(app: &AppWindow) {
                 .collect(),
         )
     };
-    state.set_artist_latest(releases(state.get_artist_latest()));
-    state.set_artist_albums(releases(state.get_artist_albums()));
-    state.set_artist_eps(releases(state.get_artist_eps()));
-    state.set_artist_mvs(releases(state.get_artist_mvs()));
-    state.set_artist_top_songs(view::model(
-        state
+    artist_state.set_artist_latest(releases(artist_state.get_artist_latest()));
+    artist_state.set_artist_albums(releases(artist_state.get_artist_albums()));
+    artist_state.set_artist_eps(releases(artist_state.get_artist_eps()));
+    artist_state.set_artist_mvs(releases(artist_state.get_artist_mvs()));
+    artist_state.set_artist_top_songs(view::model(
+        artist_state
             .get_artist_top_songs()
             .iter()
             .map(|mut song| {
@@ -406,7 +423,8 @@ fn real_artist_page_scrolls_through_songs_albums_and_mvs() {
         .unwrap();
     let app = AppWindow::new().unwrap();
     view::initialize(&app, &Preferences::default());
-    app.global::<AppState>().set_current_route("artist".into());
+    app.global::<crate::NavigationState>()
+        .set_current_route("artist".into());
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let mut controller = View::new(tx, Preferences::default());
     let baseline: Value =
@@ -437,8 +455,8 @@ fn real_artist_page_scrolls_through_songs_albums_and_mvs() {
             };
             match stage.get() {
                 1 => {
-                    let summary = element(&app, "ArtistView::artist-summary");
-                    let actions = element(&app, "ArtistView::artist-actions");
+                    let summary = element(&app, "ArtistHeader::artist-summary");
+                    let actions = element(&app, "ArtistHeader::artist-actions");
                     assert!(
                         actions.absolute_position().y
                             >= summary.absolute_position().y + summary.size().height + 19.0
@@ -458,7 +476,7 @@ fn real_artist_page_scrolls_through_songs_albums_and_mvs() {
                     assert!(mvs.absolute_position().y < 1000.0);
                     assert!(mvs.absolute_position().y + mvs.size().height <= 1000.0);
                     snapshot(&app, "artist-real-mvs");
-                    app.global::<AppState>().set_artist_loading(true);
+                    app.global::<crate::ArtistState>().set_artist_loading(true);
                 }
                 7 => {
                     assert!(

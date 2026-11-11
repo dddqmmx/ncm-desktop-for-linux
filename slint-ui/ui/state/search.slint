@@ -1,0 +1,11 @@
+import { CategoryItem } from "../models.slint";
+import { DemoHome } from "../fixtures/home.slint";
+
+// Search input, result presentation and category browsing.
+export global SearchState {
+    in-out property <string> search-query: "";
+    in-out property <bool> search-is-floating: false;
+    in-out property <bool> search-show-results: false;
+    in-out property <int> search-result-count: 42;
+    in-out property <[CategoryItem]> browse-categories: DemoHome.browse-categories;
+}

@@ -1,6 +1,8 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { NavigationState } from "../state/navigation.slint";
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
-import { AppState } from "../state.slint";
+
 
 export component CoverRequest inherits Rectangle {
     in property <int> cover-id: -1;
@@ -10,14 +12,14 @@ export component CoverRequest inherits Rectangle {
     width: 100%; height: 100%;
     visible: false;
     property <int> requested-id: self.width > 0px && self.height > 0px
-        && self.absolute-position.y < AppState.window-height
+        && self.absolute-position.y < NavigationState.window-height
         && self.absolute-position.y + self.height > 0px
-        && self.absolute-position.x < AppState.window-width
+        && self.absolute-position.x < NavigationState.window-width
         && self.absolute-position.x + self.width > 0px ? root.cover-id : -1;
-    init => { if root.requested-id >= 0 { AppState.request-cover(root.requested-id, root.pixel-size); } }
-    changed requested-id => { if root.requested-id >= 0 { AppState.request-cover(root.requested-id, root.pixel-size); } }
-    changed pixel-size => { if root.requested-id >= 0 { AppState.request-cover(root.requested-id, root.pixel-size); } }
-    changed missing => { if root.missing && root.requested-id >= 0 { AppState.request-cover(root.requested-id, root.pixel-size); } }
+    init => { if root.requested-id >= 0 { RuntimeState.request-cover(root.requested-id, root.pixel-size); } }
+    changed requested-id => { if root.requested-id >= 0 { RuntimeState.request-cover(root.requested-id, root.pixel-size); } }
+    changed pixel-size => { if root.requested-id >= 0 { RuntimeState.request-cover(root.requested-id, root.pixel-size); } }
+    changed missing => { if root.missing && root.requested-id >= 0 { RuntimeState.request-cover(root.requested-id, root.pixel-size); } }
 }
 
 export component AppIcon inherits Rectangle {
@@ -86,16 +88,11 @@ export component RoundedCover inherits Rectangle {
     border-radius: root.radius;
     background: Theme.sys-control;
 
-    if root.is-local-fallback : Rectangle {
-        width: 100%;
-        height: 100%;
-        background: Theme.sys-control;
-
-        AppIcon {
-            source: Icons.music;
-            icon-size: root.fallback-icon-size;
-            tint: Theme.theme-color-strong;
-        }
+    // The rounded surface belongs to the root for both artwork and placeholders.
+    if root.is-local-fallback : AppIcon {
+        source: Icons.music;
+        icon-size: root.fallback-icon-size;
+        tint: Theme.theme-color-strong;
     }
 
     if !root.is-local-fallback : Image {
@@ -230,7 +227,6 @@ export component SegmentedSlider3 inherits Rectangle {
     property <int> active-idx: root.current-value == root.value-0 ? 0 : (root.current-value == root.value-1 ? 1 : 2);
     property <length> seg-w: root.width / 3;
 
-    // 滑动胶囊背景块 (.slider-bg: width calc(33.33% - 8px), left calc(idx * 33.33% + 4px))
     slider-bg := Rectangle {
         x: 4px + root.seg-w * root.active-idx;
         y: 4px;

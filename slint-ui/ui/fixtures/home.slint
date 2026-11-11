@@ -1,0 +1,40 @@
+import { Icons } from "../icons.slint";
+import { RecommendPlaylistItem, DailySongItem, CategoryItem } from "../models.slint";
+
+// Read-only sample data for demo mode and visual tests.
+export global DemoHome {
+    out property <[RecommendPlaylistItem]> recommend-playlists: [
+        { id: 101, title: "深夜编码 · 赛博合成器浪潮", desc: "根据你常听的电子与器乐推荐", cover: Icons.cover-indigo },
+        { id: 102, title: "微风与海岸线：夏日独立流行", desc: "每日私人甄选歌单", cover: Icons.cover-cyan },
+        { id: 103, title: "落日大道 1986：复古驱动", desc: "重返黄金年代模拟合成器之声", cover: Icons.cover-sunset },
+        { id: 104, title: "柔光镜下的梦幻盯鞋与梦泡", desc: "Shoegaze / Dream Pop 精选", cover: Icons.cover-rose },
+        { id: 105, title: "森林呼吸：北欧氛围与新古典", desc: "安静阅读与深度工作背景音乐", cover: Icons.cover-mint },
+        { id: 106, title: "静谧星轨：午夜极简电子", desc: "深夜独处时光专属频率", cover: Icons.cover-night },
+    ];
+
+    out property <[DailySongItem]> daily-songs: [
+        { id: 1, title: "Midnight City Lights", artist: "M83 / 落日飞车", cover: Icons.cover-indigo },
+        { id: 2, title: "Oceanic Horizon", artist: "Tycho", cover: Icons.cover-cyan },
+        { id: 3, title: "Golden Hour Glow", artist: "The Midnight", cover: Icons.cover-sunset },
+        { id: 4, title: "Velvet Echoes", artist: "Beach House", cover: Icons.cover-rose },
+        { id: 5, title: "Emerald Forest", artist: "Olafur Arnalds", cover: Icons.cover-mint },
+        { id: 6, title: "Starlight Odyssey", artist: "Daft Punk", cover: Icons.cover-night },
+        { id: 7, title: "Resonance 2026", artist: "HOME", cover: Icons.cover-indigo },
+        { id: 8, title: "Afterglow Highway", artist: "Timecop1983", cover: Icons.cover-sunset },
+    ];
+
+    out property <[CategoryItem]> browse-categories: [
+        { name: "流行", color-type: "purple" },
+        { name: "摇滚", color-type: "orange" },
+        { name: "电子", color-type: "red" },
+        { name: "民谣", color-type: "blue" },
+        { name: "轻音乐", color-type: "green" },
+        { name: "影视原声", color-type: "dark" },
+        { name: "ACG", color-type: "pink" },
+        { name: "爵士", color-type: "indigo" },
+        { name: "古典", color-type: "purple" },
+        { name: "说唱", color-type: "orange" },
+        { name: "怀旧", color-type: "blue" },
+        { name: "治愈", color-type: "green" },
+    ];
+}

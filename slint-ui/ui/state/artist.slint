@@ -1,0 +1,19 @@
+import { Icons } from "../icons.slint";
+import { ArtistReleaseItem, ArtistSongItem } from "../models.slint";
+import { DemoArtist } from "../fixtures/artist.slint";
+
+// Artist metadata, releases and top-song models.
+export global ArtistState {
+    in-out property <int> active-artist-id: -1;
+    in-out property <bool> artist-loading: false;
+    in-out property <string> artist-load-error;
+    in-out property <string> artist-name: "M83";
+    in-out property <image> artist-avatar: Icons.cover-indigo;
+    in-out property <[string]> artist-pills: ["8 张专辑", "12 张 EP / 单曲", "16 支 MV"];
+    in-out property <string> artist-summary: "法国电子与梦幻流行乐团，由 Anthony Gonzalez 于 1999 年在昂蒂布创立，以宏大的合成器音墙与电影感编曲闻名。";
+    in-out property <[ArtistReleaseItem]> artist-latest: DemoArtist.artist-latest;
+    in-out property <[ArtistSongItem]> artist-top-songs: DemoArtist.artist-top-songs;
+    in-out property <[ArtistReleaseItem]> artist-albums: DemoArtist.artist-albums;
+    in-out property <[ArtistReleaseItem]> artist-eps: DemoArtist.artist-eps;
+    in-out property <[ArtistReleaseItem]> artist-mvs: DemoArtist.artist-mvs;
+}

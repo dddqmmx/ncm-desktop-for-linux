@@ -1,0 +1,217 @@
+import { SongMenuState } from "../state/song_menu.slint";
+import { PlaylistState } from "../state/playlist.slint";
+import { FlowText } from "../components/typography.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { NavPlaylistItem } from "../models.slint";
+import { AppIcon, RoundedCover } from "../components/common.slint";
+import { VirtualRows } from "../components/virtual_rows.slint";
+
+component PlaylistPickerHeader inherits Rectangle {
+
+    height: header-labels.preferred-height + 40px;
+
+    header-labels := VerticalLayout {
+        x: 24px;
+        y: 24px;
+        width: parent.width - 96px;
+        height: self.preferred-height;
+        spacing: 2px;
+
+        FlowText {
+            text: "添加到歌单";
+            font-size: 20px;
+            font-weight: 800;
+            color: Theme.sys-text;
+        }
+
+        FlowText {
+            text: "「" + SongMenuState.add-to-playlist-song-name + "」";
+            font-size: 12px;
+            font-weight: 600;
+            color: Theme.sys-text-tertiary;
+            overflow: elide;
+        }
+    }
+
+    add-playlist-close-btn := Rectangle {
+        x: parent.width - self.width - 24px;
+        y: 24px;
+        width: 36px;
+        height: 36px;
+        border-radius: 18px;
+        background: close-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
+        animate background { duration: 200ms; easing: ease; }
+
+        close-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { SongMenuState.is-add-to-playlist-open = false; }
+        }
+
+        AppIcon {
+            x: 8px;
+            y: 8px;
+            source: Icons.close;
+            icon-size: 20px;
+            tint: close-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
+        }
+    }
+}
+
+component PlaylistCapsuleContent inherits HorizontalLayout {
+    in property <NavPlaylistItem> pl;
+    in property <bool> hovered;
+    padding-left: 12px;
+    padding-right: 12px;
+    spacing: 12px;
+    cross-axis-alignment: center;
+
+    item-cover := RoundedCover {
+        width: 44px;
+        height: 44px;
+        radius: 10px;
+        source: pl.cover;
+        cover-id: pl.id;
+    }
+
+    item-info := VerticalLayout {
+        horizontal-stretch: 1;
+        min-width: 0px;
+        alignment: center;
+        spacing: 2px;
+
+        item-name := FlowText {
+            text: pl.name;
+            font-size: 14px;
+            font-weight: 600;
+            color: Theme.sys-text;
+            overflow: elide;
+        }
+
+        item-meta := FlowText {
+            text: pl.track-count + "首 · 播放" + pl.play-count;
+            font-size: 11px;
+            color: Theme.sys-text-tertiary;
+            overflow: elide;
+        }
+    }
+
+    if pl.already-added : item-status := HorizontalLayout {
+        horizontal-stretch: 0;
+        spacing: 4px;
+        cross-axis-alignment: center;
+
+        AppIcon {
+            source: Icons.check;
+            icon-size: 18px;
+            tint: Theme.sys-success;
+        }
+
+        FlowText {
+            text: "已添加";
+            font-size: 11px;
+            font-weight: 600;
+            color: Theme.sys-text-disabled;
+        }
+    }
+
+    if !pl.already-added : item-add-icon := AppIcon {
+        source: Icons.plus;
+        icon-size: 20px;
+        tint: root.hovered ? Theme.theme-color : Theme.sys-text-disabled;
+    }
+}
+
+component PlaylistPickerList inherits Flickable {
+
+    content-width: root.width;
+    content-height: pl-col.height + (PlaylistState.created-playlists.length > 0 ? 16px : 20px);
+    changed content-height => { self.content-y = Math.max(Math.min(0px, self.height - self.content-height), Math.min(0px, self.content-y)); }
+
+    pl-col := VirtualRows {
+        x: 16px;
+        width: root.width - 42px;
+        row-count: PlaylistState.created-playlists.length;
+        row-height: 68px;
+        viewport-top: -root.content-y;
+        viewport-height: root.height;
+
+        for offset in pl-col.slot-count : Rectangle {
+            property <int> target-index: pl-col.row-index(offset);
+            property <int> item-index: -1;
+            init => { self.item-index = self.target-index; }
+            changed target-index => { self.item-index = self.target-index; }
+            visible: item-index < pl-col.end-row;
+            property <NavPlaylistItem> pl: PlaylistState.created-playlists[item-index];
+            y: (item-index) * pl-col.row-height;
+            width: parent.width;
+            height: 64px;
+            border-radius: 14px;
+            background: (!pl.already-added && item-ta.has-hover) ? Theme.sys-control : transparent;
+            opacity: pl.already-added ? 0.55 : 1.0;
+            animate background { duration: 200ms; easing: ease; }
+
+            item-ta := TouchArea {
+                enabled: !pl.already-added;
+                mouse-cursor: pl.already-added ? default : pointer;
+                clicked => {
+                    SongMenuState.add-song-to-playlist(pl.id, SongMenuState.add-to-playlist-song-id);
+                    SongMenuState.is-add-to-playlist-open = false;
+                }
+            }
+
+            PlaylistCapsuleContent {
+                pl: pl;
+                hovered: item-ta.has-hover;
+            }
+        }
+    }
+}
+
+export component AddToPlaylistModal inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.30);
+
+    TouchArea {
+        clicked => { SongMenuState.is-add-to-playlist-open = false; }
+    }
+
+    add-playlist-card := Rectangle {
+        width: Math.min(380px, root.width - 40px);
+        height: Math.min(root.height - 40px, add-playlist-header.height + 2px
+            + Math.min(360px, Math.max(100px, PlaylistState.created-playlists.length * 68px + 16px)));
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 28px;
+        background: Theme.glass-fill-strong;
+        border-width: 1px;
+        border-color: Theme.glass-border;
+        drop-shadow-blur: 48px;
+        drop-shadow-offset-y: 22px;
+        drop-shadow-color: Theme.glass-shadow-elevated;
+        clip: true;
+
+        TouchArea {}
+
+        Rectangle {
+            x: 1px;
+            y: 1px;
+            width: parent.width - 2px;
+            height: parent.height - 2px;
+
+            add-playlist-header := PlaylistPickerHeader {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+            }
+
+            playlist-scroll := PlaylistPickerList {
+                x: 0px;
+                y: add-playlist-header.height;
+                width: parent.width;
+                height: parent.height - self.y;
+            }
+        }
+    }
+}

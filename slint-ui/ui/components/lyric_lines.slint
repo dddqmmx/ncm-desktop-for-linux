@@ -1,0 +1,124 @@
+import { PlayerViewState } from "../state/player_view.slint";
+import { FlowText } from "typography.slint";
+
+
+export component LyricLineList inherits VerticalLayout {
+    in property <length> viewport-height;
+    in property <length> scroll-y;
+    in property <bool> can-seek;
+    in property <int> active-index;
+    in property <int> hovered-index;
+    in property <color> lrc-active;
+    in property <color> lrc-text;
+    in property <color> lrc-status;
+    in-out property <length> active-center;
+    in-out property <int> nearest-index;
+    callback seek-line(int);
+    callback update-hover(int, length, length);
+    callback cancel-user-scroll(bool);
+    width: 100%;
+    // CSS percentage block padding is relative to the container width.
+    padding-top: root.width / 2 + 12px;
+    padding-bottom: root.width / 2 + 12px;
+    padding-left: 40px;
+    padding-right: 40px;
+    spacing: 12px;
+    alignment: start;
+
+    for line[idx] in PlayerViewState.lyrics : lyric-line-item := Rectangle {
+        accessible-role: list-item;
+        accessible-label: line.text;
+        accessible-item-index: idx;
+        property <string> seek-hint: root.can-seek ? "跳转到 " + line.time-str + " 播放" : "";
+        accessible-description: self.seek-hint;
+        property <bool> is-active: idx == root.active-index;
+        property <bool> is-centered: PlayerViewState.show-lyric-seek-indicator && idx == PlayerViewState.centered-lyric-index;
+        property <length> line-center: self.y + self.height / 2;
+        // The boundary is halfway between adjacent centers, including
+        // wrapped/translated rows. A midpoint tie selects the next row.
+        property <bool> at-center:
+            (idx == 0 || root.viewport-height / 2 - root.scroll-y
+            >= (PlayerViewState.lyrics[idx - 1].layout-center + self.line-center) / 2)
+            && (idx == PlayerViewState.lyrics.length - 1 || root.viewport-height / 2 - root.scroll-y
+            < (self.line-center + PlayerViewState.lyrics[idx + 1].layout-center) / 2);
+        property <length> viewport-center: self.line-center + root.scroll-y;
+        property <float> edge-opacity: Math.clamp(Math.min(self.viewport-center,
+            root.viewport-height - self.viewport-center) / Math.max(1px, root.viewport-height * 0.2), 0, 1);
+        property <bool> is-hovered: root.hovered-index == idx;
+        property <float> emphasis: self.is-active ? 1 : self.is-centered
+            ? (self.is-hovered ? 0.9 : 0.75) : self.is-hovered && root.can-seek ? 0.65 : 0.3;
+        animate emphasis { duration: 150ms; easing: cubic-bezier(0.23, 1, 0.32, 1); }
+        opacity: self.emphasis * self.edge-opacity;
+        height: line-box.preferred-height + 20px;
+        function update-geometry() {
+            if line.layout-center != self.line-center {
+                PlayerViewState.lyrics[idx].layout-center = self.line-center;
+            }
+            if self.is-active { root.active-center = self.line-center; }
+            if self.at-center { root.nearest-index = idx; }
+        }
+        init => { self.update-geometry(); }
+        changed is-active => { if self.is-active { root.active-center = self.line-center; } }
+        changed line-center => { self.update-geometry(); }
+        changed layout-center => { self.update-geometry(); }
+        property <length> layout-center: line.layout-center;
+        changed at-center => {
+            if self.at-center { root.nearest-index = idx; }
+        }
+        line-ta := TouchArea {
+            mouse-cursor: root.can-seek ? pointer : default;
+            clicked => { root.seek-line(idx); }
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.move {
+                    root.update-hover(idx, line-ta.absolute-position.x + line-ta.mouse-x,
+                        line-ta.absolute-position.y + line-ta.mouse-y);
+                }
+                if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                    root.cancel-user-scroll(false);
+                }
+            }
+        }
+
+        line-box := VerticalLayout {
+            width: 100%;
+            y: 10px;
+            spacing: 4px;
+            alignment: start;
+            transform-origin: { x: self.width / 2, y: self.height / 2 };
+            transform-scale-x: lyric-line-item.is-active ? 1.1 : 1;
+            transform-scale-y: lyric-line-item.is-active ? 1.1 : 1;
+            animate transform-scale-x, transform-scale-y { duration: 350ms; easing: cubic-bezier(0.23, 1, 0.32, 1); }
+
+            lyric-main-text := FlowText {
+                text: line.text;
+                font-size: 26px;
+                font-weight: is-active ? 700 : 500;
+                color: is-active ? root.lrc-active : root.lrc-text;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                line-height: 1.4;
+                animate color { duration: 150ms; easing: ease; }
+            }
+            if PlayerViewState.show-pronunciation && line.pronunciation != "" : FlowText {
+                text: line.pronunciation;
+                font-size: 15px;
+                font-weight: 500;
+                line-height: 1.35;
+                color: is-active ? root.lrc-text : root.lrc-status;
+                opacity: 0.78;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            if PlayerViewState.show-translation && line.translation != "" : FlowText {
+                text: line.translation;
+                font-size: 16px;
+                font-weight: 500;
+                line-height: 1.35;
+                color: is-active ? root.lrc-text : root.lrc-status;
+                opacity: 0.86;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

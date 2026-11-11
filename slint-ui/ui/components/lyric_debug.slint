@@ -1,0 +1,35 @@
+import { PlayerState } from "../state/player.slint";
+import { PlayerViewState } from "../state/player_view.slint";
+export component LyricDebugHud inherits Rectangle {
+    x: 8px;
+    y: 8px;
+    width: 310px;
+    height: 78px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.60);
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 2px;
+        Text {
+            text: "时间: " + PlayerState.current-time-str + " / " + PlayerState.duration-time-str;
+            font-size: 12px;
+            color: #00ff00;
+        }
+        Text {
+            text: "进度: " + Math.round(PlayerState.progress-percent) + "% / 缓冲: " + Math.round(PlayerState.buffered-percent) + "%";
+            font-size: 12px;
+            color: #00ff00;
+        }
+        Text {
+            text: "play=" + (PlayerState.is-playing ? "true" : "false") + " load=" + (PlayerState.is-loading ? "true" : "false") + " userScroll=" + (PlayerViewState.show-lyric-seek-indicator ? "true" : "false");
+            font-size: 12px;
+            color: #00ff00;
+        }
+        Text {
+            text: "lyric: #" + PlayerViewState.active-lyric-index + " / " + PlayerViewState.lyrics.length;
+            font-size: 12px;
+            color: #00ff00;
+        }
+    }
+}

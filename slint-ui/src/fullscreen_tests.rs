@@ -1,4 +1,4 @@
-use crate::{AppState, AppWindow, LyricLineItem};
+use crate::{AppWindow, LyricLineItem};
 use i_slint_backend_testing::{mock_elapsed_time, ElementHandle, ElementRoot};
 use slint::{platform::WindowEvent, ComponentHandle, LogicalPosition, Model, VecModel};
 use std::{cell::RefCell, rc::Rc, time::Duration};
@@ -16,7 +16,7 @@ fn advance(app: &AppWindow, ms: u64) {
     let _ = app.root_element().size();
 }
 fn rows(app: &AppWindow) -> Vec<ElementHandle> {
-    ElementHandle::find_by_element_id(app, "LyricPanelView::lyric-line-item").collect()
+    ElementHandle::find_by_element_id(app, "LyricLineList::lyric-line-item").collect()
 }
 fn row(app: &AppWindow, index: usize) -> ElementHandle {
     rows(app)
@@ -65,6 +65,88 @@ fn snapshot(app: &AppWindow, name: &str) {
 }
 
 #[test]
+fn fullscreen_progress_fills_from_the_start_and_seeks_across_resizes() {
+    slint::platform::set_platform(Box::new(i_slint_backend_testing::TestingBackend::new(
+        i_slint_backend_testing::TestingBackendOptions {
+            mock_time: true,
+            threading: false,
+            renderer_name: Some("software".into()),
+        },
+    )))
+    .unwrap();
+    let app = AppWindow::new().unwrap();
+    app.global::<crate::PlayerViewState>()
+        .set_is_fullscreen(true);
+    app.global::<crate::RuntimeState>()
+        .set_runtime_enabled(true);
+    let player = app.global::<crate::PlayerState>();
+    let requests = Rc::new(RefCell::new(Vec::new()));
+    let received = requests.clone();
+    let weak = app.as_weak();
+    player.on_seek_requested(move |value| {
+        received.borrow_mut().push(value);
+        weak.upgrade()
+            .unwrap()
+            .global::<crate::PlayerState>()
+            .set_progress_percent(value);
+    });
+    app.show().unwrap();
+    for (width, height) in [(1435, 1000), (1100, 800), (800, 1000)] {
+        app.window()
+            .set_size(slint::PhysicalSize::new(width, height));
+        advance(&app, 900);
+        let track = element(&app, "FullscreenProgress::fullscreen-progress-bar");
+        assert!(track.size().width > 100.0);
+        for progress in [0.0_f32, 38.0, 100.0] {
+            player.set_progress_percent(progress);
+            player.set_buffered_percent(progress + 20.0);
+            advance(&app, 300);
+            for (id, percent) in [
+                ("played-fill", progress),
+                ("buffered-fill", (progress + 20.0).min(100.0)),
+            ] {
+                let fill = element(&app, &format!("FullscreenProgress::{id}"));
+                assert!(
+                    (fill.absolute_position().x - track.absolute_position().x).abs() < 0.5,
+                    "{id} must grow from the start of the track at {width}px"
+                );
+                assert!((fill.size().width - track.size().width * percent / 100.0).abs() < 0.5);
+            }
+        }
+        let at = |fraction| {
+            LogicalPosition::new(
+                track.absolute_position().x + track.size().width * fraction,
+                midpoint(&track).y,
+            )
+        };
+        let left = slint::platform::PointerEventButton::Left;
+        click_at(&app, at(0.25), left);
+        assert!((player.get_progress_percent() - 25.0).abs() < 0.1);
+        app.window().dispatch_event(WindowEvent::PointerPressed {
+            position: at(0.5),
+            button: left,
+        });
+        for fraction in [0.75, -0.1, 1.1] {
+            app.window().dispatch_event(WindowEvent::PointerMoved {
+                position: at(fraction),
+            });
+            assert!((player.get_progress_percent() - fraction.clamp(0.0, 1.0) * 100.0).abs() < 0.1);
+        }
+        app.window().dispatch_event(WindowEvent::PointerReleased {
+            position: at(1.1),
+            button: left,
+        });
+        let count = requests.borrow().len();
+        click_at(&app, at(0.5), slint::platform::PointerEventButton::Right);
+        assert_eq!(requests.borrow().len(), count, "right click must not seek");
+        player.set_progress_percent(38.0);
+        player.set_buffered_percent(68.0);
+        advance(&app, 300);
+        snapshot(&app, &format!("fullscreen-progress-{width}"));
+    }
+}
+
+#[test]
 fn fullscreen_lyrics_match_electron_layout_follow_and_manual_scroll() {
     slint::platform::set_platform(Box::new(i_slint_backend_testing::TestingBackend::new(
         i_slint_backend_testing::TestingBackendOptions {
@@ -75,18 +157,23 @@ fn fullscreen_lyrics_match_electron_layout_follow_and_manual_scroll() {
     )))
     .unwrap();
     let app = AppWindow::new().unwrap();
-    let state = app.global::<AppState>();
-    state.set_is_fullscreen(true);
-    state.set_is_comment_open(false);
-    state.set_is_loading(false);
-    state.set_current_song_is_local(false);
-    state.set_lyrics(
+    let player_view_state = app.global::<crate::PlayerViewState>();
+    let player_state = app.global::<crate::PlayerState>();
+    player_view_state.set_is_fullscreen(true);
+    player_view_state.set_is_comment_open(false);
+    player_state.set_is_loading(false);
+    player_state.set_current_song_is_local(false);
+    player_view_state.set_lyrics(
         Rc::new(VecModel::from(
-            state.get_lyrics().iter().take(5).collect::<Vec<_>>(),
+            player_view_state
+                .get_lyrics()
+                .iter()
+                .take(5)
+                .collect::<Vec<_>>(),
         ))
         .into(),
     );
-    state.set_active_lyric_index(3);
+    player_view_state.set_active_lyric_index(3);
     app.show().unwrap();
     advance(&app, 900);
     let baseline: serde_json::Value =
@@ -106,7 +193,7 @@ fn fullscreen_lyrics_match_electron_layout_follow_and_manual_scroll() {
     }
     snapshot(&app, "fullscreen-slint-initial");
     let previous_center = center(&app, &initial[4]);
-    state.set_active_lyric_index(4);
+    player_view_state.set_active_lyric_index(4);
     advance(&app, 80);
     let during = center(&app, &rows(&app)[4]);
     assert!(during < previous_center - 1.0);
@@ -124,7 +211,7 @@ fn fullscreen_lyrics_match_electron_layout_follow_and_manual_scroll() {
         (rows(&app)[3].size().height - rows(&app)[4].size().height).abs() < 0.5,
         "activation changed layout height"
     );
-    state.set_show_translation(false);
+    player_view_state.set_show_translation(false);
     advance(&app, 80);
     assert!(
         (center(&app, &rows(&app)[4])
@@ -134,7 +221,7 @@ fn fullscreen_lyrics_match_electron_layout_follow_and_manual_scroll() {
             .abs()
             < 2.0
     );
-    state.set_show_pronunciation(false);
+    player_view_state.set_show_pronunciation(false);
     advance(&app, 80);
     for (index, line) in rows(&app).iter().enumerate() {
         let expected = &baseline["withoutExtras"]["rows"][index];
@@ -145,16 +232,16 @@ fn fullscreen_lyrics_match_electron_layout_follow_and_manual_scroll() {
     }
 
     // Long, wrapped lyrics and optional translations use their actual measured height.
-    state.set_lyrics(Rc::new(VecModel::from((0..80).map(|index| LyricLineItem {
+    player_view_state.set_lyrics(Rc::new(VecModel::from((0..80).map(|index| LyricLineItem {
         time_str: format!("{}:{:02}", index / 12, index % 12 * 5).into(),
         text: if index == 22 { "这是一行很长的歌词，需要在窗口内自动换行，保持所有文字完整显示，不得与下一行重叠".into() } else { format!("Song line {index}").into() },
         translation: if index % 2 == 0 { "翻译文字".into() } else { "".into() },
         pronunciation: "".into(),
         ..Default::default()
     }).collect::<Vec<_>>())).into());
-    state.set_show_translation(true);
-    state.set_active_lyric_index(20);
-    state.set_lyric_position_reset(state.get_lyric_position_reset() + 1);
+    player_view_state.set_show_translation(true);
+    player_view_state.set_active_lyric_index(20);
+    player_view_state.set_lyric_position_reset(player_view_state.get_lyric_position_reset() + 1);
     advance(&app, 100);
     let viewport_height = element(&app, "LyricPanelView::lyric-scroll").size().height;
     assert!((center(&app, &row(&app, 20)) - viewport_height / 2.0).abs() < 1.0);
@@ -181,29 +268,33 @@ fn fullscreen_lyrics_match_electron_layout_follow_and_manual_scroll() {
         delta_y: -180.0,
     });
     advance(&app, 600);
-    assert!(state.get_show_lyric_seek_indicator());
-    let centered = state.get_centered_lyric_index() as usize;
+    assert!(player_view_state.get_show_lyric_seek_indicator());
+    let centered = player_view_state.get_centered_lyric_index() as usize;
     assert!(centered > 20);
     assert_eq!(
-        state.get_centered_lyric_time(),
-        state.get_lyrics().row_data(centered).unwrap().time_str
+        player_view_state.get_centered_lyric_time(),
+        player_view_state
+            .get_lyrics()
+            .row_data(centered)
+            .unwrap()
+            .time_str
     );
     assert!(
         (center(&app, &row(&app, centered)) - viewport_height / 2.0).abs() < 2.0,
         "manual scroll did not snap to a line"
     );
     let before = center(&app, &row(&app, 20));
-    state.set_active_lyric_index(21);
+    player_view_state.set_active_lyric_index(21);
     advance(&app, 600);
     assert!(
         (center(&app, &row(&app, 20)) - before).abs() < 1.0,
         "playback stole manual scroll"
     );
     advance(&app, 3000);
-    assert!(!state.get_show_lyric_seek_indicator());
+    assert!(!player_view_state.get_show_lyric_seek_indicator());
     assert!((center(&app, &row(&app, 21)) - viewport_height / 2.0).abs() < 1.0);
-    state.set_active_lyric_index(60);
-    state.set_lyric_position_reset(state.get_lyric_position_reset() + 1);
+    player_view_state.set_active_lyric_index(60);
+    player_view_state.set_lyric_position_reset(player_view_state.get_lyric_position_reset() + 1);
     advance(&app, 32);
     assert!(
         (center(&app, &row(&app, 60)) - viewport_height / 2.0).abs() < 1.0,
@@ -215,25 +306,27 @@ fn fullscreen_lyrics_match_electron_layout_follow_and_manual_scroll() {
 fn opening_fullscreen_requests_artwork_even_when_a_thumbnail_is_already_loaded() {
     i_slint_backend_testing::init_no_event_loop();
     let app = AppWindow::new().unwrap();
-    let state = app.global::<AppState>();
-    state.set_current_song_id(42);
-    state.set_current_song_cover(slint::Image::from_rgba8(slint::SharedPixelBuffer::new(
+    let player_state = app.global::<crate::PlayerState>();
+    let runtime_state = app.global::<crate::RuntimeState>();
+    let player_view_state = app.global::<crate::PlayerViewState>();
+    player_state.set_current_song_id(42);
+    player_state.set_current_song_cover(slint::Image::from_rgba8(slint::SharedPixelBuffer::new(
         128, 128,
     )));
     let requests = Rc::new(RefCell::new(Vec::new()));
     let sink = requests.clone();
-    state.on_request_cover(move |id, size| sink.borrow_mut().push((id, size)));
+    runtime_state.on_request_cover(move |id, size| sink.borrow_mut().push((id, size)));
     app.show().unwrap();
     advance(&app, 400);
     requests.borrow_mut().clear();
-    state.set_is_fullscreen(true);
+    player_view_state.set_is_fullscreen(true);
     advance(&app, 500);
     assert!(
         requests.borrow().contains(&(42, 1600)),
         "fullscreen reused a small cover without requesting artwork"
     );
     requests.borrow_mut().clear();
-    state.set_current_song_id(43);
+    player_state.set_current_song_id(43);
     advance(&app, 32);
     assert!(
         requests.borrow().contains(&(43, 1600)),
@@ -245,12 +338,13 @@ fn opening_fullscreen_requests_artwork_even_when_a_thumbnail_is_already_loaded()
 fn fullscreen_hover_and_center_indicator_match_electron() {
     i_slint_backend_testing::init_no_event_loop();
     let app = AppWindow::new().unwrap();
-    let state = app.global::<AppState>();
-    state.set_is_fullscreen(true);
-    state.set_is_loading(false);
-    state.set_show_pronunciation(false);
-    state.set_show_translation(false);
-    state.set_lyrics(
+    let player_view_state = app.global::<crate::PlayerViewState>();
+    let player_state = app.global::<crate::PlayerState>();
+    player_view_state.set_is_fullscreen(true);
+    player_state.set_is_loading(false);
+    player_view_state.set_show_pronunciation(false);
+    player_view_state.set_show_translation(false);
+    player_view_state.set_lyrics(
         Rc::new(VecModel::from(
             (0..80)
                 .map(|index| LyricLineItem {
@@ -262,7 +356,7 @@ fn fullscreen_hover_and_center_indicator_match_electron() {
         ))
         .into(),
     );
-    state.set_active_lyric_index(20);
+    player_view_state.set_active_lyric_index(20);
     app.show().unwrap();
     advance(&app, 900);
     let hovered = row(&app, 21);
@@ -280,11 +374,11 @@ fn fullscreen_hover_and_center_indicator_match_electron() {
         delta_y: -68.4,
     });
     advance(&app, 750);
-    assert_eq!(state.get_centered_lyric_index(), 21);
+    assert_eq!(player_view_state.get_centered_lyric_index(), 21);
     let viewport = element(&app, "LyricPanelView::lyric-scroll");
-    let guide = element(&app, "LyricPanelView::seek-guide");
-    let play = element(&app, "LyricPanelView::seek-play-button");
-    let time = element(&app, "LyricPanelView::seek-time");
+    let guide = element(&app, "LyricSeekIndicator::seek-guide");
+    let play = element(&app, "LyricSeekIndicator::seek-play-button");
+    let time = element(&app, "LyricSeekIndicator::seek-time");
     assert!(
         guide.size().width > viewport.size().width * 0.7,
         "guide collapsed between time and play button"
@@ -336,10 +430,10 @@ fn fullscreen_hover_and_center_indicator_match_electron() {
         "hovering a lyric did not show its seek tooltip"
     );
 
-    state.set_is_loading(true);
+    player_state.set_is_loading(true);
     advance(&app, 32);
-    assert!(!state.get_show_lyric_seek_indicator());
-    assert_eq!(state.get_centered_lyric_index(), -1);
+    assert!(!player_view_state.get_show_lyric_seek_indicator());
+    assert_eq!(player_view_state.get_centered_lyric_index(), -1);
     advance(&app, 220);
     assert!((row(&app, 22).computed_opacity() - 0.3).abs() < 0.02);
     assert!(
@@ -347,9 +441,9 @@ fn fullscreen_hover_and_center_indicator_match_electron() {
             .next()
             .is_none()
     );
-    state.set_is_loading(false);
+    player_state.set_is_loading(false);
     advance(&app, 32);
-    assert!(state.get_show_lyric_seek_indicator());
+    assert!(player_view_state.get_show_lyric_seek_indicator());
 
     // The guide/time overlay passes clicks through to the centered lyric.
     let center_point = midpoint(&row(&app, 21));
@@ -364,8 +458,8 @@ fn fullscreen_hover_and_center_indicator_match_electron() {
         slint::platform::PointerEventButton::Left,
     );
     advance(&app, 32);
-    assert_eq!(state.get_active_lyric_index(), 21);
-    assert!(!state.get_show_lyric_seek_indicator());
+    assert_eq!(player_view_state.get_active_lyric_index(), 21);
+    assert!(!player_view_state.get_show_lyric_seek_indicator());
 
     app.window().dispatch_event(WindowEvent::PointerScrolled {
         position: pointer,
@@ -373,8 +467,8 @@ fn fullscreen_hover_and_center_indicator_match_electron() {
         delta_y: -68.4,
     });
     advance(&app, 750);
-    assert_eq!(state.get_centered_lyric_index(), 22);
-    let play_point = midpoint(&element(&app, "LyricPanelView::seek-play-button"));
+    assert_eq!(player_view_state.get_centered_lyric_index(), 22);
+    let play_point = midpoint(&element(&app, "LyricSeekIndicator::seek-play-button"));
     app.window().dispatch_event(WindowEvent::PointerScrolled {
         position: play_point,
         delta_x: 0.0,
@@ -382,23 +476,23 @@ fn fullscreen_hover_and_center_indicator_match_electron() {
     });
     advance(&app, 750);
     assert_eq!(
-        state.get_centered_lyric_index(),
+        player_view_state.get_centered_lyric_index(),
         23,
         "the play button swallowed the wheel"
     );
     click_at(&app, play_point, slint::platform::PointerEventButton::Left);
     advance(&app, 32);
-    assert_eq!(state.get_active_lyric_index(), 23);
-    assert_eq!(state.get_current_time_str(), "1:55");
-    assert!(!state.get_show_lyric_seek_indicator());
+    assert_eq!(player_view_state.get_active_lyric_index(), 23);
+    assert_eq!(player_state.get_current_time_str(), "1:55");
+    assert!(!player_view_state.get_show_lyric_seek_indicator());
 
     // A tall next line can contain the viewport center while its center is
     // farther away than the preceding short line (Electron chooses nearest).
-    let mut mixed = state.get_lyrics().iter().collect::<Vec<_>>();
+    let mut mixed = player_view_state.get_lyrics().iter().collect::<Vec<_>>();
     mixed[21].text = "Long line\nSecond line\nThird line\nFourth line".into();
-    state.set_lyrics(Rc::new(VecModel::from(mixed)).into());
-    state.set_active_lyric_index(20);
-    state.set_lyric_position_reset(state.get_lyric_position_reset() + 1);
+    player_view_state.set_lyrics(Rc::new(VecModel::from(mixed)).into());
+    player_view_state.set_active_lyric_index(20);
+    player_view_state.set_lyric_position_reset(player_view_state.get_lyric_position_reset() + 1);
     advance(&app, 200);
     app.window().dispatch_event(WindowEvent::PointerScrolled {
         position: pointer,
@@ -407,7 +501,7 @@ fn fullscreen_hover_and_center_indicator_match_electron() {
     });
     advance(&app, 48);
     assert_eq!(
-        state.get_centered_lyric_index(),
+        player_view_state.get_centered_lyric_index(),
         20,
         "indicator selected the containing row instead of the nearest line center"
     );
@@ -422,10 +516,10 @@ fn fullscreen_hover_and_center_indicator_match_electron() {
     );
     advance(&app, 600);
     assert!(
-        !state.get_show_lyric_seek_indicator(),
+        !player_view_state.get_show_lyric_seek_indicator(),
         "right click in padding did not cancel manual scrolling"
     );
-    assert_eq!(state.get_centered_lyric_index(), -1);
+    assert_eq!(player_view_state.get_centered_lyric_index(), -1);
     assert!((center(&app, &row(&app, 20)) - viewport.size().height / 2.0).abs() < 1.0);
 }
 
@@ -457,10 +551,11 @@ fn real_fullscreen_artwork_and_lyric_follow() {
         | WinitEvent::MouseInput { .. } => EventResult::PreventDefault,
         _ => EventResult::Propagate,
     });
-    let state = app.global::<AppState>();
-    state.set_current_song_title("全屏显示验证 · 模拟数据".into());
-    state.set_is_loading(false);
-    state.set_is_fullscreen(true);
+    let player_state = app.global::<crate::PlayerState>();
+    let player_view_state = app.global::<crate::PlayerViewState>();
+    player_state.set_current_song_title("全屏显示验证 · 模拟数据".into());
+    player_state.set_is_loading(false);
+    player_view_state.set_is_fullscreen(true);
     let mut pixels = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(1600, 1600);
     for (i, pixel) in pixels.make_mut_slice().iter_mut().enumerate() {
         let x = i % 1600;
@@ -473,8 +568,8 @@ fn real_fullscreen_artwork_and_lyric_follow() {
             255,
         );
     }
-    state.set_current_song_cover(slint::Image::from_rgba8(pixels));
-    state.set_lyrics(
+    player_state.set_current_song_cover(slint::Image::from_rgba8(pixels));
+    player_view_state.set_lyrics(
         Rc::new(VecModel::from(
             (0..80)
                 .map(|index| LyricLineItem {
@@ -496,7 +591,7 @@ fn real_fullscreen_artwork_and_lyric_follow() {
         ))
         .into(),
     );
-    state.set_active_lyric_index(20);
+    player_view_state.set_active_lyric_index(20);
     app.show().unwrap();
     let weak = app.as_weak();
     let samples = Rc::new(RefCell::new(Vec::new()));
@@ -512,7 +607,7 @@ fn real_fullscreen_artwork_and_lyric_follow() {
         move || {
             let Some(app) = weak.upgrade() else { return };
             let elapsed = stage_started.elapsed().as_millis();
-            let state = app.global::<AppState>();
+            let player_view_state = app.global::<crate::PlayerViewState>();
             if elapsed >= 800 && stage == 0 {
                 if !captured_initial {
                     snapshot(&app, "fullscreen-real-initial");
@@ -521,7 +616,7 @@ fn real_fullscreen_artwork_and_lyric_follow() {
                     // turn after the potentially slow GPU readback.
                     return;
                 }
-                state.set_active_lyric_index(21);
+                player_view_state.set_active_lyric_index(21);
                 stage_started = std::time::Instant::now();
                 stage = 1;
             } else if elapsed >= 100 && stage == 1 {
@@ -538,8 +633,8 @@ fn real_fullscreen_artwork_and_lyric_follow() {
                 stage_started = std::time::Instant::now();
                 stage = 3;
             } else if elapsed >= 1200 && stage == 3 {
-                assert!(state.get_show_lyric_seek_indicator());
-                hover_index = state.get_centered_lyric_index() as usize;
+                assert!(player_view_state.get_show_lyric_seek_indicator());
+                hover_index = player_view_state.get_centered_lyric_index() as usize;
                 app.window().dispatch_event(WindowEvent::PointerMoved {
                     position: midpoint(&row(&app, hover_index)),
                 });
@@ -550,9 +645,9 @@ fn real_fullscreen_artwork_and_lyric_follow() {
                     (row(&app, hover_index).computed_opacity() - 0.9).abs() < 0.02,
                     "real hover {hover_index}: opacity={}, centered={}, active={}, indicator={}",
                     row(&app, hover_index).computed_opacity(),
-                    state.get_centered_lyric_index(),
-                    state.get_active_lyric_index(),
-                    state.get_show_lyric_seek_indicator()
+                    player_view_state.get_centered_lyric_index(),
+                    player_view_state.get_active_lyric_index(),
+                    player_view_state.get_show_lyric_seek_indicator()
                 );
                 assert!(ElementHandle::find_by_element_id(&app, "LyricPanelView::lyric-hover-hint").next().is_some(),
                     "real hover did not show the lyric hint");
@@ -561,8 +656,8 @@ fn real_fullscreen_artwork_and_lyric_follow() {
                 let next = row(&app, hover_index + 1);
                 let delta = center(&app, &next) - center(&app, &from);
                 println!("real scroll: hover={hover_index}, center={}, next={}, delta={delta}, model={}/{}", center(&app, &from), center(&app, &next),
-                    state.get_lyrics().row_data(hover_index).unwrap().layout_center,
-                    state.get_lyrics().row_data(hover_index + 1).unwrap().layout_center);
+                    player_view_state.get_lyrics().row_data(hover_index).unwrap().layout_center,
+                    player_view_state.get_lyrics().row_data(hover_index + 1).unwrap().layout_center);
                 app.window().dispatch_event(WindowEvent::PointerScrolled {
                     position: midpoint(&from),
                     delta_x: 0.0,
@@ -571,7 +666,7 @@ fn real_fullscreen_artwork_and_lyric_follow() {
                 stage_started = std::time::Instant::now();
                 stage = 5;
             } else if elapsed >= 700 && stage == 5 {
-                assert_eq!(state.get_centered_lyric_index() as usize, hover_index + 1,
+                assert_eq!(player_view_state.get_centered_lyric_index() as usize, hover_index + 1,
                     "after wheel: previous center={}, next center={}", center(&app, &row(&app, hover_index)), center(&app, &row(&app, hover_index + 1)));
                 assert!(
                     (row(&app, hover_index).computed_opacity() - 0.65).abs() < 0.02,
@@ -601,7 +696,7 @@ fn real_fullscreen_artwork_and_lyric_follow() {
         samples[1],
         viewport_height / 2.0
     );
-    assert!(!state.get_show_lyric_seek_indicator());
+    assert!(!player_view_state.get_show_lyric_seek_indicator());
     assert!(
         (center(&app, &row(&app, 21)) - viewport_height / 2.0).abs() < 1.0,
         "manual scrolling did not return to the active line"
@@ -616,7 +711,7 @@ fn real_fullscreen_artwork_and_lyric_follow() {
             "real window lyric gap {index}: {gap}"
         );
     }
-    assert_eq!(state.get_current_song_cover().size().width, 1600);
-    println!("real fullscreen: lyric center during/after follow={samples:?}; cover={}px; manual follow resumed", state.get_current_song_cover().size().width);
+    assert_eq!(player_state.get_current_song_cover().size().width, 1600);
+    println!("real fullscreen: lyric center during/after follow={samples:?}; cover={}px; manual follow resumed", player_state.get_current_song_cover().size().width);
     app.hide().unwrap();
 }

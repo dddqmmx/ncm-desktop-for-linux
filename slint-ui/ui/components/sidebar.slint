@@ -1,8 +1,134 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { NavigationState } from "../state/navigation.slint";
+import { AccountState } from "../state/account.slint";
+import { LoginState } from "../state/login.slint";
+import { SettingsState } from "../state/settings.slint";
+import { PlaylistState } from "../state/playlist.slint";
+import { FlowText } from "typography.slint";
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
-import { AppState, NavPlaylistItem } from "../state.slint";
+import { NavPlaylistItem } from "../models.slint";
 import { AppIcon, RoundedCover } from "common.slint";
 import { VirtualRows } from "virtual_rows.slint";
+import { InsetShadow } from "inset_shadow.slint";
+
+component SidebarCreatePlaylistButton inherits Rectangle {
+
+    property <int> restore-focus: PlaylistState.playlist-restore-focus;
+    changed restore-focus => {
+        if self.restore-focus == 1 { create-focus.focus(); PlaylistState.playlist-restore-focus = 0; }
+    }
+
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: create-touch.has-hover ? Theme.sys-control-hover : transparent;
+    accessible-role: button;
+    accessible-label: "新建歌单";
+    accessible-action-default => { PlaylistState.open-create-playlist(); }
+    create-focus := FocusScope {
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" { PlaylistState.open-create-playlist(); return accept; }
+            return reject;
+        }
+    }
+    create-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { create-focus.focus(); PlaylistState.open-create-playlist(); }
+    }
+    AppIcon { x: 5px; y: 5px; source: Icons.plus; icon-size: 16px; tint: Theme.sys-text-tertiary; }
+}
+
+component SidebarProfileMenu inherits VerticalLayout {
+
+    spacing: 0px;
+
+    Rectangle {
+        height: AccountState.is-logged-in ? profile-label.height + 24px + 1px : 0px;
+        visible: AccountState.is-logged-in;
+        border-top-left-radius: 20px;
+        border-top-right-radius: 20px;
+        background: menu-ta-1.has-hover ? Theme.sys-control : transparent;
+        animate background { duration: 200ms; easing: ease; }
+
+        menu-ta-1 := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                NavigationState.current-route = "artist";
+            }
+        }
+        profile-label := FlowText {
+            width: 100%;
+            y: (parent.height - self.height) / 2;
+            text: "修改个人信息";
+            font-size: 13px;
+            color: menu-ta-1.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            y: parent.height - 1px;
+            width: 100%;
+            height: 1px;
+            background: Theme.sys-border;
+        }
+    }
+
+    settings-menu-item := Rectangle {
+        height: settings-label.height + 24px + 1px;
+        accessible-role: button;
+        accessible-label: "设置";
+        accessible-action-default => { SettingsState.open-settings-window(); }
+        background: menu-ta-2.has-hover ? Theme.sys-control : transparent;
+        animate background { duration: 200ms; easing: ease; }
+
+        menu-ta-2 := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                SettingsState.open-settings-window();
+            }
+        }
+        settings-label := FlowText {
+            width: 100%;
+            y: (parent.height - self.height) / 2;
+            text: "设置";
+            font-size: 13px;
+            color: menu-ta-2.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        if AccountState.is-logged-in : Rectangle {
+            y: parent.height - 1px;
+            width: 100%;
+            height: 1px;
+            background: Theme.sys-border;
+        }
+    }
+
+    Rectangle {
+        height: AccountState.is-logged-in ? logout-label.height + 24px : 0px;
+        visible: AccountState.is-logged-in;
+        background: menu-ta-3.has-hover ? Theme.sys-control : transparent;
+        animate background { duration: 200ms; easing: ease; }
+
+        menu-ta-3 := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                if RuntimeState.runtime-enabled { RuntimeState.runtime-action("logout", -1, ""); }
+                AccountState.is-logged-in = false;
+            }
+        }
+        logout-label := FlowText {
+            width: 100%;
+            y: (parent.height - self.height) / 2;
+            text: "退出登录";
+            font-size: 13px;
+            color: Theme.sys-danger;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
 
 component SidebarNavItem inherits Rectangle {
     in property <string> label;
@@ -11,7 +137,8 @@ component SidebarNavItem inherits Rectangle {
     in property <bool> compact: false;
     callback clicked();
 
-    height: 42.39px;
+    height: Math.max(20px, nav-metric.height) + 20px;
+    nav-metric := FlowText { visible: false; text: "Ag"; font-size: 14px; }
     border-radius: 12px;
     background: root.active
         ? Theme.sys-control-selected
@@ -63,7 +190,8 @@ component SidebarPlaylistRow inherits Rectangle {
     in property <bool> compact: false;
     callback clicked();
 
-    height: 42.39px;
+    height: Math.max(20px, nav-metric.height) + 20px;
+    nav-metric := FlowText { visible: false; text: "Ag"; font-size: 14px; }
     border-radius: 12px;
     background: root.active
         ? Theme.sys-control-selected
@@ -106,8 +234,206 @@ component SidebarPlaylistRow inherits Rectangle {
     }
 }
 
+component SidebarPlaylistGroup inherits Rectangle {
+    in property <bool> is-compact;
+    in property <length> viewport-top;
+    in property <length> viewport-height;
+    nav-metric := FlowText { visible: false; text: "Ag"; font-size: 14px; }
+    height: playlist-rows.height + (PlaylistState.created-playlists.length > 0 ? 20px : 24px);
+    playlist-rows := VirtualRows {
+        width: parent.width;
+        row-count: PlaylistState.created-playlists.length;
+        row-height: Math.max(20px, nav-metric.height) + 24px;
+        viewport-top: root.viewport-top - self.absolute-position.y;
+        viewport-height: root.viewport-height;
+        for offset in playlist-rows.slot-count : SidebarPlaylistRow {
+            property <int> target-index: playlist-rows.row-index(offset);
+            property <int> item-index: -1;
+            init => { self.item-index = self.target-index; }
+            changed target-index => { self.item-index = self.target-index; }
+            visible: item-index < playlist-rows.end-row;
+            y: (item-index) * playlist-rows.row-height;
+            width: parent.width;
+            item: PlaylistState.created-playlists[item-index];
+            compact: root.is-compact;
+            active: NavigationState.current-route == "playlist" && PlaylistState.active-playlist-id == self.item.id;
+            clicked => { PlaylistState.open-playlist(self.item.id); }
+        }
+    }
+}
+
+component SidebarProfileBubble inherits Rectangle {
+    in property <bool> is-compact;
+    in property <bool> hovered;
+    property <bool> show-menu: !root.is-compact && (root.hovered);
+    property <length> menu-limit: self.show-menu ? 200px : 0px;
+    property <length> menu-padding: self.show-menu ? 8px : 0px;
+    out property <length> menu-h: Math.min(self.menu-limit, menu-items.preferred-height);
+    out property <length> hover-offset-y: self.show-menu ? -5px : 0px;
+    animate menu-limit, menu-padding { duration: 400ms; easing: ease; }
+    animate hover-offset-y { duration: 400ms; easing: cubic-bezier(0.165, 0.84, 0.44, 1.0); }
+
+    x: 0px;
+    y: 0px;
+    width: 100%;
+    height: 56px + self.menu-h;
+    border-radius: root.is-compact ? 20px : 30px;
+    background: Theme.is-dark
+        ? (self.show-menu ? rgba(0, 0, 0, 0.23) : rgba(0, 0, 0, 0.16))
+        : (self.show-menu ? Theme.sys-control-hover : Theme.sys-control);
+    clip: true;
+    animate background { duration: 400ms; easing: cubic-bezier(0.165, 0.84, 0.44, 1.0); }
+
+    // The whole capsule remains recessed as the menu grows. Decoration stays
+    // behind the menu and trigger so it never dims text or captures pointer input.
+    InsetShadow {
+        width: 100%;
+        height: 100%;
+        radius: root.border-radius;
+        shade: Theme.is-dark
+            ? rgba(0, 0, 0, root.show-menu ? 0.62 : 0.52)
+            : rgba(41, 51, 67, root.show-menu ? 0.30 : 0.24);
+        highlight: Theme.is-dark
+            ? rgba(184, 201, 227, root.show-menu ? 0.14 : 0.10)
+            : rgba(255, 255, 255, root.show-menu ? 0.72 : 0.62);
+        animate shade, highlight { duration: 400ms; easing: ease; }
+    }
+
+    // 悬浮展开菜单 (.bubble-menu: transition all 0.4s ease)
+    bubble-menu := Rectangle {
+        x: 6px;
+        y: 6px;
+        width: parent.width - 12px;
+        height: root.menu-h;
+        opacity: root.show-menu ? 1.0 : 0.0;
+        clip: true;
+        animate opacity { duration: 400ms; easing: ease; }
+
+        menu-items := SidebarProfileMenu {
+            height: self.preferred-height;
+            padding-bottom: root.menu-padding;
+        }
+    }
+
+    // 底部头像与昵称触发行 (.bubble-trigger: x=35, y=921, width=206, height=44, padding 6px 12px, gap 12px)
+    bubble-trigger := Rectangle {
+        x: 6px;
+        y: parent.height - 50px;
+        width: parent.width - 12px;
+        height: 44px;
+
+        avatar-wrapper := RoundedCover {
+            x: root.is-compact ? (parent.width - 32px) / 2 : 12px;
+            y: 6px;
+            width: 32px;
+            height: 32px;
+            radius: 16px;
+            source: AccountState.is-logged-in ? AccountState.user-avatar : Icons.artist-fallback;
+        }
+
+        if !root.is-compact : Text {
+            x: 56px;
+            y: 0px;
+            width: parent.width - 68px;
+            height: 44px;
+            text: AccountState.is-logged-in ? AccountState.user-nickname : "请登录";
+            font-size: 13px;
+            font-weight: 600;
+            color: Theme.sys-text-secondary;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+component SidebarNavigation inherits Flickable {
+    nav-metric := FlowText { visible: false; text: "Ag"; font-size: 14px; }
+    in property <bool> is-compact;
+
+    content-width: self.width;
+    content-height: content-col.preferred-height;
+    changed content-height => { self.content-y = Math.max(Math.min(0px, self.height - self.content-height), Math.min(0px, self.content-y)); }
+
+    content-col := VerticalLayout {
+        width: 100%;
+        padding-top: root.is-compact ? 20px : 30px;
+        padding-left: root.is-compact ? 5px : 20px;
+        padding-right: root.is-compact ? 5px : 20px;
+        padding-bottom: 10px;
+        spacing: 0px;
+
+        // 主导航 (.first-nav: gap 4px, margin-bottom 24px)
+        VerticalLayout {
+            spacing: 4px;
+            padding-bottom: 24px;
+
+            nav-item-search := SidebarNavItem {
+                label: "搜索";
+                icon: Icons.search;
+                compact: root.is-compact;
+                active: NavigationState.current-route == "search";
+                clicked => { NavigationState.current-route = "search"; }
+            }
+
+            nav-item-home := SidebarNavItem {
+                label: "主页";
+                icon: Icons.home;
+                compact: root.is-compact;
+                active: NavigationState.current-route == "home";
+                clicked => { NavigationState.current-route = "home"; }
+            }
+
+            nav-item-favorites := SidebarNavItem {
+                label: "喜欢的音乐";
+                icon: Icons.heart;
+                compact: root.is-compact;
+                active: NavigationState.current-route == "favorites";
+                clicked => { NavigationState.current-route = "favorites"; }
+            }
+
+            nav-item-local := SidebarNavItem {
+                label: "本地音乐";
+                icon: Icons.music;
+                compact: root.is-compact;
+                active: NavigationState.current-route == "local-music";
+                clicked => { NavigationState.current-route = "local-music"; }
+            }
+        }
+
+        // 创建的歌单标题 (.nav-group-title: font-size 12px, weight 600, margin-bottom 8px, padding-left 12px)
+        if AccountState.is-logged-in : nav-group-header := Rectangle {
+            height: 26px;
+            if !root.is-compact : nav-group-title := FlowText {
+                x: 12px;
+                y: (parent.height - self.height) / 2;
+
+                text: "创建的歌单";
+                font-size: 12px;
+                font-weight: 600;
+                color: Theme.sys-text-tertiary;
+                vertical-alignment: center;
+            }
+            create-playlist-btn := SidebarCreatePlaylistButton {
+                x: root.is-compact ? (parent.width - self.width - 12px) / 2 : parent.width - 38px;
+            }
+        }
+
+        if AccountState.is-logged-in : Rectangle {
+            height: 8px;
+        }
+
+        // 创建的歌单列表
+        if AccountState.is-logged-in : playlist-group := SidebarPlaylistGroup {
+                                       is-compact: root.is-compact;
+                                       viewport-top: root.absolute-position.y;
+                                       viewport-height: root.height;
+                                   }
+    }
+}
+
 export component SideNavBar inherits Rectangle {
-    property <bool> is-compact: AppState.window-width <= 1000px;
+    function open-login() { if !AccountState.is-logged-in { LoginState.is-login-open = true; } }
+    property <bool> is-compact: NavigationState.window-width <= 1000px;
 
     width: self.is-compact ? 96px : 276px;
 
@@ -134,130 +460,12 @@ export component SideNavBar inherits Rectangle {
             height: parent.height - 2px;
 
             // 导航滚动区 (.sidebar-content: x=9, y=9, width=258, height=886)
-            sidebar-content := Flickable {
+            sidebar-content := SidebarNavigation {
                 x: 0px;
                 y: 0px;
                 width: 100%;
                 height: parent.height - (root.is-compact ? 74px : 96px) - profile-bubble.menu-h;
-                content-width: self.width;
-                content-height: content-col.preferred-height;
-                changed content-height => { self.content-y = Math.max(Math.min(0px, self.height - self.content-height), Math.min(0px, self.content-y)); }
-
-                content-col := VerticalLayout {
-                    width: 100%;
-                    padding-top: root.is-compact ? 20px : 30px;
-                    padding-left: root.is-compact ? 5px : 20px;
-                    padding-right: root.is-compact ? 5px : 20px;
-                    padding-bottom: 10px;
-                    spacing: 0px;
-
-                    // 主导航 (.first-nav: gap 4px, margin-bottom 24px)
-                    VerticalLayout {
-                        spacing: 4px;
-                        padding-bottom: 24px;
-
-                        nav-item-search := SidebarNavItem {
-                            label: "搜索";
-                            icon: Icons.search;
-                            compact: root.is-compact;
-                            active: AppState.current-route == "search";
-                            clicked => { AppState.current-route = "search"; }
-                        }
-
-                        nav-item-home := SidebarNavItem {
-                            label: "主页";
-                            icon: Icons.home;
-                            compact: root.is-compact;
-                            active: AppState.current-route == "home";
-                            clicked => { AppState.current-route = "home"; }
-                        }
-
-                        nav-item-favorites := SidebarNavItem {
-                            label: "喜欢的音乐";
-                            icon: Icons.heart;
-                            compact: root.is-compact;
-                            active: AppState.current-route == "favorites";
-                            clicked => { AppState.current-route = "favorites"; }
-                        }
-
-                        nav-item-local := SidebarNavItem {
-                            label: "本地音乐";
-                            icon: Icons.music;
-                            compact: root.is-compact;
-                            active: AppState.current-route == "local-music";
-                            clicked => { AppState.current-route = "local-music"; }
-                        }
-                    }
-
-                    // 创建的歌单标题 (.nav-group-title: font-size 12px, weight 600, margin-bottom 8px, padding-left 12px)
-                    if AppState.is-logged-in : nav-group-header := Rectangle {
-                        height: 26px;
-                        if !root.is-compact : nav-group-title := Text {
-                            x: 12px;
-                            y: (parent.height - self.height) / 2;
-                            height: 19.19px;
-                            text: "创建的歌单";
-                            font-size: 12px;
-                            font-weight: 600;
-                            color: Theme.sys-text-tertiary;
-                            vertical-alignment: center;
-                        }
-                        create-playlist-btn := Rectangle {
-                            property <int> restore-focus: AppState.playlist-restore-focus;
-                            changed restore-focus => {
-                                if self.restore-focus == 1 { create-focus.focus(); AppState.playlist-restore-focus = 0; }
-                            }
-                            x: root.is-compact ? (parent.width - self.width - 12px) / 2 : parent.width - 38px;
-                            width: 26px;
-                            height: 26px;
-                            border-radius: 8px;
-                            background: create-touch.has-hover ? Theme.sys-control-hover : transparent;
-                            accessible-role: button;
-                            accessible-label: "新建歌单";
-                            accessible-action-default => { AppState.open-create-playlist(); }
-                            create-focus := FocusScope {
-                                key-pressed(event) => {
-                                    if event.text == " " || event.text == "\n" { AppState.open-create-playlist(); return accept; }
-                                    return reject;
-                                }
-                            }
-                            create-touch := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { create-focus.focus(); AppState.open-create-playlist(); }
-                            }
-                            AppIcon { x: 5px; y: 5px; source: Icons.plus; icon-size: 16px; tint: Theme.sys-text-tertiary; }
-                        }
-                    }
-
-                    if AppState.is-logged-in : Rectangle {
-                        height: 8px;
-                    }
-
-                    // 创建的歌单列表
-                    if AppState.is-logged-in : Rectangle {
-                        height: playlist-rows.height + (AppState.created-playlists.length > 0 ? 20px : 24px);
-                        playlist-rows := VirtualRows {
-                            width: parent.width;
-                            row-count: AppState.created-playlists.length;
-                            row-height: 46.39px;
-                            viewport-top: sidebar-content.absolute-position.y - self.absolute-position.y;
-                            viewport-height: sidebar-content.height;
-                            for offset in playlist-rows.slot-count : SidebarPlaylistRow {
-                                property <int> target-index: playlist-rows.row-index(offset);
-                                property <int> item-index: -1;
-                                init => { self.item-index = self.target-index; }
-                                changed target-index => { self.item-index = self.target-index; }
-                                visible: item-index < playlist-rows.end-row;
-                                y: (item-index) * playlist-rows.row-height;
-                                width: parent.width;
-                                item: AppState.created-playlists[item-index];
-                                compact: root.is-compact;
-                                active: AppState.current-route == "playlist" && AppState.active-playlist-id == self.item.id;
-                                clicked => { AppState.open-playlist(self.item.id); }
-                            }
-                        }
-                    }
-                }
+                is-compact: root.is-compact;
             }
 
             // The empty top inset replaces the system title bar's drag region.
@@ -272,152 +480,12 @@ export component SideNavBar inherits Rectangle {
                 height: profile-bubble.height - profile-bubble.hover-offset-y;
                 mouse-cursor: pointer;
                 clicked => {
-                    if !AppState.is-logged-in { AppState.is-login-open = true; }
+                    root.open-login();
                 }
 
-                profile-bubble := Rectangle {
-                    property <bool> show-menu: !root.is-compact && (bubble-hover.has-hover);
-                    property <length> menu-limit: self.show-menu ? 200px : 0px;
-                    property <length> menu-padding: self.show-menu ? 8px : 0px;
-                    property <length> menu-h: Math.min(self.menu-limit, (AppState.is-logged-in ? 136.4px : 45.8px) + self.menu-padding);
-                    property <length> hover-offset-y: self.show-menu ? -5px : 0px;
-                    animate menu-limit, menu-padding { duration: 400ms; easing: ease; }
-                    animate hover-offset-y { duration: 400ms; easing: cubic-bezier(0.165, 0.84, 0.44, 1.0); }
-
-                    x: 0px;
-                    y: 0px;
-                    width: 100%;
-                    height: 56px + self.menu-h;
-                    border-radius: root.is-compact ? 20px : 30px;
-                    background: self.show-menu ? Theme.sys-control-hover : Theme.sys-control;
-                    clip: true;
-                    animate background { duration: 400ms; easing: cubic-bezier(0.165, 0.84, 0.44, 1.0); }
-
-                    // 悬浮展开菜单 (.bubble-menu: transition all 0.4s ease)
-                    bubble-menu := Rectangle {
-                        x: 6px;
-                        y: 6px;
-                        width: parent.width - 12px;
-                        height: profile-bubble.menu-h;
-                        opacity: profile-bubble.show-menu ? 1.0 : 0.0;
-                        clip: true;
-                        animate opacity { duration: 400ms; easing: ease; }
-
-                        VerticalLayout {
-                            height: (AppState.is-logged-in ? 136.4px : 45.8px) + profile-bubble.menu-padding;
-                            padding-bottom: profile-bubble.menu-padding;
-                            spacing: 0px;
-
-                            Rectangle {
-                                height: AppState.is-logged-in ? 45.8px : 0px;
-                                visible: AppState.is-logged-in;
-                                border-radius: 20px;
-                                background: menu-ta-1.has-hover ? Theme.sys-control : transparent;
-                                animate background { duration: 200ms; easing: ease; }
-
-                                menu-ta-1 := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => {
-                                        AppState.current-route = "artist";
-                                    }
-                                }
-                                Text {
-                                    text: "修改个人信息";
-                                    font-size: 13px;
-                                    color: menu-ta-1.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                                Rectangle {
-                                    y: parent.height - 1px;
-                                    width: 100%;
-                                    height: 1px;
-                                    background: Theme.sys-border;
-                                }
-                            }
-
-                            settings-menu-item := Rectangle {
-                                height: 45.8px;
-                                accessible-role: button;
-                                accessible-label: "设置";
-                                accessible-action-default => { AppState.open-settings-window(); }
-                                background: menu-ta-2.has-hover ? Theme.sys-control : transparent;
-                                animate background { duration: 200ms; easing: ease; }
-
-                                menu-ta-2 := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => {
-                                        AppState.open-settings-window();
-                                    }
-                                }
-                                Text {
-                                    text: "设置";
-                                    font-size: 13px;
-                                    color: menu-ta-2.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                                if AppState.is-logged-in : Rectangle {
-                                    y: parent.height - 1px;
-                                    width: 100%;
-                                    height: 1px;
-                                    background: Theme.sys-border;
-                                }
-                            }
-
-                            Rectangle {
-                                height: AppState.is-logged-in ? 44.8px : 0px;
-                                visible: AppState.is-logged-in;
-                                background: menu-ta-3.has-hover ? Theme.sys-control : transparent;
-                                animate background { duration: 200ms; easing: ease; }
-
-                                menu-ta-3 := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => {
-                                        if AppState.runtime-enabled { AppState.runtime-action("logout", -1, ""); }
-                            AppState.is-logged-in = false;
-                                    }
-                                }
-                                Text {
-                                    text: "退出登录";
-                                    font-size: 13px;
-                                    color: Theme.sys-danger;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
-                    }
-
-                    // 底部头像与昵称触发行 (.bubble-trigger: x=35, y=921, width=206, height=44, padding 6px 12px, gap 12px)
-                    bubble-trigger := Rectangle {
-                        x: 6px;
-                        y: parent.height - 50px;
-                        width: parent.width - 12px;
-                        height: 44px;
-
-                        avatar-wrapper := RoundedCover {
-                            x: root.is-compact ? (parent.width - 32px) / 2 : 12px;
-                            y: 6px;
-                            width: 32px;
-                            height: 32px;
-                            radius: 16px;
-                            source: AppState.is-logged-in ? AppState.user-avatar : Icons.artist-fallback;
-                        }
-
-                        if !root.is-compact : Text {
-                            x: 56px;
-                            y: 0px;
-                            width: parent.width - 68px;
-                            height: 44px;
-                            text: AppState.is-logged-in ? AppState.user-nickname : "请登录";
-                            font-size: 13px;
-                            font-weight: 600;
-                            color: Theme.sys-text-secondary;
-                            vertical-alignment: center;
-                            overflow: elide;
-                        }
-                    }
+                profile-bubble := SidebarProfileBubble {
+                    is-compact: root.is-compact;
+                    hovered: bubble-hover.has-hover;
                 }
             }
         }

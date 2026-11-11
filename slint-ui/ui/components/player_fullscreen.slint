@@ -1,765 +1,35 @@
-import { Theme } from "../theme.slint";
+import { PlayerState } from "../state/player.slint";
+import { PlayerViewState } from "../state/player_view.slint";
+import { FullscreenVisualPanel } from "fullscreen_visual.slint";
+import { CommentPanelView } from "comment_panel.slint";
+import { LyricPanelView } from "lyric_panel.slint";
 import { Icons } from "../icons.slint";
-import { AppState, LyricLineItem, CommentItem, AuxButtonItem } from "../state.slint";
-import { AppIcon, PlaybackSpinner, RoundedCover, VolumeRow } from "common.slint";
 
-component FullscreenAuxBtn inherits Rectangle {
-    in property <string> btn-id;
-    in property <color> text-color: #ffffff;
+import { AppIcon } from "common.slint";
 
-    width: 20px;
-    height: 20px;
+component FullscreenBackButton inherits Rectangle {
+    in property <color> text-color;
+    in property <color> contrast-color;
+    width: 44px;
+    height: 44px;
+    border-radius: 22px;
+    background: back-ta.has-hover ? rgba(255, 255, 255, 0.24) : root.contrast-color;
+    animate background { duration: 300ms; easing: ease; }
 
-    property <bool> is-active:
-        (root.btn-id == "favorite" && AppState.current-song-favorite) ||
-        (root.btn-id == "comment" && AppState.is-comment-open) ||
-        (root.btn-id == "volume" && AppState.is-fullscreen-volume-open);
-
-    property <bool> is-disabled:
-        (root.btn-id == "favorite" && AppState.current-song-is-local) ||
-        (root.btn-id == "comment" && AppState.current-song-is-local);
-
-    opacity: root.is-disabled ? 0.25 : ((root.is-active || ta.has-hover) ? 1.0 : 0.55);
-    animate opacity { duration: 200ms; easing: ease; }
-
-    ta := TouchArea {
-        enabled: !root.is-disabled;
-        mouse-cursor: root.is-disabled ? default : pointer;
+    back-ta := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
-            if (root.btn-id == "favorite") {
-                AppState.toggle-favorite(AppState.current-song-id);
-            } else if (root.btn-id == "comment") {
-                AppState.is-comment-open = !AppState.is-comment-open;
-            } else if (root.btn-id == "playMode") {
-                AppState.cycle-play-mode();
-            } else if (root.btn-id == "volume") {
-                AppState.is-fullscreen-volume-open = !AppState.is-fullscreen-volume-open;
-            }
+            PlayerViewState.is-fullscreen-volume-open = false;
+            PlayerViewState.is-fullscreen = false;
         }
     }
 
     AppIcon {
-        x: 0px;
-        y: 0px;
-        icon-size: 20px;
+        x: 10px;
+        y: 10px;
+        source: Icons.chevron-down;
+        icon-size: 24px;
         tint: root.text-color;
-        source: root.btn-id == "favorite"
-            ? (AppState.current-song-favorite ? Icons.heart-fill : Icons.heart)
-            : (root.btn-id == "comment"
-                ? Icons.comment
-                : (root.btn-id == "playMode"
-                    ? (AppState.play-mode == "random" ? Icons.shuffle : (AppState.play-mode == "single" ? Icons.single : Icons.loop))
-                    : (AppState.volume-percent <= 0.5 ? Icons.volume-mute : Icons.volume)));
-    }
-}
-
-component LyricPanelView inherits Rectangle {
-    in property <bool> is-dark: true;
-
-    property <color> lrc-text: root.is-dark ? rgba(255, 255, 255, 0.90) : rgba(0, 0, 0, 0.90);
-    property <color> lrc-active: root.is-dark ? #ffffff : #000000;
-    property <color> lrc-status: root.is-dark ? rgba(255, 255, 255, 0.50) : rgba(0, 0, 0, 0.50);
-    property <color> lrc-toggle-bg: root.is-dark ? rgba(255, 255, 255, 0.88) : rgba(0, 0, 0, 0.72);
-    property <color> lrc-toggle-bg-active: root.is-dark ? #ffffff : rgba(0, 0, 0, 0.88);
-    property <color> lrc-toggle-border: root.is-dark ? rgba(255, 255, 255, 0.20) : rgba(0, 0, 0, 0.16);
-    property <color> lrc-toggle-fg: root.is-dark ? rgba(0, 0, 0, 0.72) : rgba(255, 255, 255, 0.82);
-    property <color> lrc-toggle-fg-active: root.is-dark ? #000000 : #ffffff;
-
-    clip: true;
-
-    property <int> active-index: AppState.active-lyric-index;
-    property <int> reset-position: AppState.lyric-position-reset;
-    property <bool> extras: AppState.show-pronunciation;
-    property <bool> translation: AppState.show-translation;
-    property <bool> user-scrolling: false;
-    property <bool> snapping: false;
-    property <bool> snap-scroll: true;
-    property <bool> needs-center: true;
-    property <bool> snap-next: true;
-    property <length> active-center: 0px;
-    property <int> nearest-index: -1;
-    property <length> centered-center: root.nearest-index >= 0 && root.nearest-index < AppState.lyrics.length
-        ? AppState.lyrics[root.nearest-index].layout-center : 0px;
-    property <bool> can-seek: AppState.lyrics.length > 0 && !AppState.is-loading;
-    property <bool> tooltip-ready: true;
-    property <bool> tooltip-pointer-ready: false;
-    property <int> hovered-index: -1; // -2 is the center play button.
-    property <length> pointer-x: -1px;
-    property <length> pointer-y: -1px;
-
-    function update-hover(index: int, x: length, y: length) {
-        // Chromium retains :hover while content scrolls under a stationary
-        // pointer. Slint also sends moves after layout; ignore those here.
-        if Math.abs(x - root.pointer-x) > 0.05px || Math.abs(y - root.pointer-y) > 0.05px {
-            root.pointer-x = x;
-            root.pointer-y = y;
-            root.hovered-index = index;
-            root.tooltip-pointer-ready = true;
-            root.tooltip-ready = false;
-            tooltip-idle.start();
-            tooltip-idle.restart();
-        }
-    }
-
-    function update-indicator() {
-        let show = root.user-scrolling && root.can-seek
-            && root.nearest-index >= 0 && root.nearest-index < AppState.lyrics.length;
-        AppState.centered-lyric-index = show ? root.nearest-index : -1;
-        AppState.centered-lyric-time = show ? AppState.lyrics[root.nearest-index].time-str : "";
-        AppState.show-lyric-seek-indicator = show;
-    }
-    changed nearest-index => { root.update-indicator(); }
-    changed can-seek => { root.update-indicator(); }
-
-    function request-center(snap: bool) {
-        if root.user-scrolling { return; }
-        root.snap-next = root.snap-next || snap;
-        root.needs-center = true;
-    }
-    function mark-user-scroll() {
-        root.tooltip-pointer-ready = false;
-        root.user-scrolling = true;
-        root.snapping = false;
-        root.update-indicator();
-        resume-follow.start();
-        resume-follow.restart();
-        snap-to-line.start();
-        snap-to-line.restart();
-    }
-    function scroll-by(delta: length) {
-        root.snap-scroll = true;
-        root.mark-user-scroll();
-        lyric-scroll.content-y = Math.clamp(lyric-scroll.content-y + delta,
-            Math.min(0px, root.height - lyric-scroll.content-height), 0px);
-    }
-    public function cancel-user-scroll(snap: bool) {
-        root.tooltip-pointer-ready = false;
-        root.user-scrolling = false;
-        root.update-indicator();
-        resume-follow.stop();
-        snap-to-line.stop();
-        root.request-center(snap);
-    }
-    function seek-line(index: int) {
-        if !root.can-seek || index < 0 || index >= AppState.lyrics.length { return; }
-        if AppState.runtime-enabled {
-            AppState.runtime-action("lyric-seek", index, "");
-        } else {
-            AppState.active-lyric-index = index;
-            AppState.current-time-str = AppState.lyrics[index].time-str;
-        }
-        root.cancel-user-scroll(true);
-    }
-    changed active-index => { root.request-center(false); }
-    changed reset-position => { root.cancel-user-scroll(true); }
-    changed extras => { root.cancel-user-scroll(true); }
-    changed translation => { root.cancel-user-scroll(true); }
-    changed height => { root.cancel-user-scroll(true); }
-    changed width => { root.cancel-user-scroll(true); }
-    changed active-center => { root.request-center(false); }
-
-    // Coalesce layout changes before centering; scaling never changes row height.
-    Timer {
-        interval: 1ms;
-        running: root.needs-center;
-        triggered => {
-            root.needs-center = false;
-            if !root.user-scrolling && root.active-index >= 0 {
-                root.snap-scroll = root.snap-next;
-                lyric-scroll.content-y = Math.clamp(root.height / 2 - root.active-center,
-                    Math.min(0px, root.height - lyric-scroll.content-height), 0px);
-            }
-            root.snap-next = false;
-        }
-    }
-    resume-follow := Timer {
-        interval: 3s;
-        running: false;
-        triggered => { root.cancel-user-scroll(false); }
-    }
-    snap-to-line := Timer {
-        interval: 160ms;
-        running: false;
-        triggered => {
-            self.stop();
-            if root.user-scrolling {
-                root.snapping = true;
-                root.snap-scroll = false;
-                lyric-scroll.content-y = Math.clamp(root.height / 2 - root.centered-center,
-                    Math.min(0px, root.height - lyric-scroll.content-height), 0px);
-            }
-        }
-    }
-    tooltip-idle := Timer {
-        interval: 500ms;
-        running: false;
-        triggered => { self.stop(); root.tooltip-ready = true; }
-    }
-
-    // Track actual pointer movement across the entire panel, including gaps.
-    lyric-pointer := TouchArea {
-        width: 100%;
-        height: 100%;
-        changed has-hover => {
-            if !self.has-hover {
-                root.hovered-index = -1;
-                root.tooltip-pointer-ready = false;
-                root.pointer-x = -1px;
-                root.pointer-y = -1px;
-            }
-        }
-        pointer-event(event) => {
-            if event.kind == PointerEventKind.move {
-                root.update-hover(-1, lyric-pointer.absolute-position.x + lyric-pointer.mouse-x,
-                    lyric-pointer.absolute-position.y + lyric-pointer.mouse-y);
-            }
-            if event.kind == PointerEventKind.down && event.button == PointerEventButton.right
-                && root.user-scrolling {
-                root.cancel-user-scroll(false);
-            }
-        }
-
-        lyric-scroll := Flickable {
-            width: 100%;
-            height: 100%;
-            content-width: self.width;
-            content-height: lrc-col.preferred-height;
-            animate content-y { duration: root.snap-scroll ? 0ms : 350ms; easing: ease; }
-            flicked => { root.mark-user-scroll(); }
-            changed content-y => {
-                root.tooltip-ready = false;
-                root.tooltip-pointer-ready = false;
-                tooltip-idle.start();
-                tooltip-idle.restart();
-                if root.user-scrolling {
-                    resume-follow.start();
-                    resume-follow.restart();
-                    if !root.snapping {
-                        snap-to-line.start();
-                        snap-to-line.restart();
-                    }
-                }
-            }
-
-            lrc-col := VerticalLayout {
-                width: 100%;
-                // CSS percentage block padding is relative to the container width.
-                padding-top: root.width / 2 + 12px;
-                padding-bottom: root.width / 2 + 12px;
-                padding-left: 40px;
-                padding-right: 40px;
-                spacing: 12px;
-                alignment: start;
-
-                for line[idx] in AppState.lyrics : lyric-line-item := Rectangle {
-                    accessible-role: list-item;
-                    accessible-label: line.text;
-                    accessible-item-index: idx;
-                    property <string> seek-hint: root.can-seek ? "跳转到 " + line.time-str + " 播放" : "";
-                    accessible-description: self.seek-hint;
-                    property <bool> is-active: idx == root.active-index;
-                    property <bool> is-centered: AppState.show-lyric-seek-indicator && idx == AppState.centered-lyric-index;
-                    property <length> line-center: self.y + self.height / 2;
-                    // The boundary is halfway between adjacent centers, including
-                    // wrapped/translated rows. A midpoint tie selects the next row.
-                    property <bool> at-center:
-                        (idx == 0 || root.height / 2 - lyric-scroll.content-y
-                            >= (AppState.lyrics[idx - 1].layout-center + self.line-center) / 2)
-                        && (idx == AppState.lyrics.length - 1 || root.height / 2 - lyric-scroll.content-y
-                            < (self.line-center + AppState.lyrics[idx + 1].layout-center) / 2);
-                    property <length> viewport-center: self.line-center + lyric-scroll.content-y;
-                    property <float> edge-opacity: Math.clamp(Math.min(self.viewport-center,
-                        root.height - self.viewport-center) / Math.max(1px, root.height * 0.2), 0, 1);
-                    property <bool> is-hovered: root.hovered-index == idx;
-                    property <float> emphasis: self.is-active ? 1 : self.is-centered
-                        ? (self.is-hovered ? 0.9 : 0.75) : self.is-hovered && root.can-seek ? 0.65 : 0.3;
-                    animate emphasis { duration: 150ms; easing: cubic-bezier(0.23, 1, 0.32, 1); }
-                    opacity: self.emphasis * self.edge-opacity;
-                    height: line-box.preferred-height + 20px;
-                    function update-geometry() {
-                        if line.layout-center != self.line-center {
-                            AppState.lyrics[idx].layout-center = self.line-center;
-                        }
-                        if self.is-active { root.active-center = self.line-center; }
-                        if self.at-center { root.nearest-index = idx; }
-                    }
-                    init => { self.update-geometry(); }
-                    changed is-active => { if self.is-active { root.active-center = self.line-center; } }
-                    changed line-center => { self.update-geometry(); }
-                    changed layout-center => { self.update-geometry(); }
-                    property <length> layout-center: line.layout-center;
-                    changed at-center => {
-                        if self.at-center { root.nearest-index = idx; }
-                    }
-                    line-ta := TouchArea {
-                        mouse-cursor: root.can-seek ? pointer : default;
-                        clicked => { root.seek-line(idx); }
-                        pointer-event(event) => {
-                            if event.kind == PointerEventKind.move {
-                                root.update-hover(idx, lyric-pointer.absolute-position.x + lyric-pointer.mouse-x,
-                                    lyric-pointer.absolute-position.y + lyric-pointer.mouse-y);
-                            }
-                            if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
-                                root.cancel-user-scroll(false);
-                            }
-                        }
-                    }
-
-                    line-box := VerticalLayout {
-                        width: 100%;
-                        y: 10px;
-                        spacing: 4px;
-                        alignment: start;
-                        transform-origin: { x: self.width / 2, y: self.height / 2 };
-                        transform-scale-x: lyric-line-item.is-active ? 1.1 : 1;
-                        transform-scale-y: lyric-line-item.is-active ? 1.1 : 1;
-                        animate transform-scale-x, transform-scale-y { duration: 350ms; easing: cubic-bezier(0.23, 1, 0.32, 1); }
-
-                        lyric-main-text := Text {
-                            text: line.text;
-                            font-size: 26px;
-                            height: Math.max(1, Math.round(self.preferred-height / 36.4px)) * 36.4px;
-                            font-weight: is-active ? 700 : 500;
-                            color: is-active ? root.lrc-active : root.lrc-text;
-                            horizontal-alignment: center;
-                            wrap: word-wrap;
-                            line-height-factor: 36.4px / (main-probe.font-metrics.ascent - main-probe.font-metrics.descent);
-                            main-probe := Text { visible: false; font-size: 26px; font-weight: parent.font-weight; }
-                            animate color { duration: 150ms; easing: ease; }
-                        }
-                        if AppState.show-pronunciation && line.pronunciation != "" : Text {
-                            text: line.pronunciation;
-                            font-size: 15px;
-                            height: Math.max(1, Math.round(self.preferred-height / 20.25px)) * 20.25px;
-                            font-weight: 500;
-                            line-height-factor: 20.25px / (pronunciation-probe.font-metrics.ascent - pronunciation-probe.font-metrics.descent);
-                            pronunciation-probe := Text { visible: false; font-size: 15px; font-weight: 500; }
-                            color: is-active ? root.lrc-text : root.lrc-status;
-                            opacity: 0.78;
-                            horizontal-alignment: center;
-                            wrap: word-wrap;
-                        }
-                        if AppState.show-translation && line.translation != "" : Text {
-                            text: line.translation;
-                            font-size: 16px;
-                            height: Math.max(1, Math.round(self.preferred-height / 21.6px)) * 21.6px;
-                            font-weight: 500;
-                            line-height-factor: 21.6px / (translation-probe.font-metrics.ascent - translation-probe.font-metrics.descent);
-                            translation-probe := Text { visible: false; font-size: 16px; font-weight: 500; }
-                            color: is-active ? root.lrc-text : root.lrc-status;
-                            opacity: 0.86;
-                            horizontal-alignment: center;
-                            wrap: word-wrap;
-                        }
-                    }
-                }
-            }
-        }
-
-        // 手动滚动中心指示器 (.lyric-seek-indicator: transition opacity 0.2s ease)
-        lyric-seek-indicator := HorizontalLayout {
-            x: 12px;
-            y: (parent.height - self.height) / 2;
-            width: parent.width - 24px;
-            height: 28px;
-            spacing: 10px;
-            alignment: stretch;
-            opacity: AppState.show-lyric-seek-indicator ? 1.0 : 0.0;
-            visible: AppState.show-lyric-seek-indicator || self.opacity > 0.01;
-            animate opacity { duration: 200ms; easing: ease; }
-
-            seek-time := Text {
-                text: AppState.centered-lyric-time;
-                font-size: 12px;
-                font-weight: 600;
-                color: root.lrc-status;
-                vertical-alignment: center;
-            }
-
-            seek-guide := Rectangle {
-                horizontal-stretch: 1;
-                height: 1px;
-                y: (parent.height - self.height) / 2;
-                opacity: 0.35;
-                for dash in Math.ceil(self.width / 6px) : Rectangle {
-                    x: dash * 6px;
-                    width: Math.min(3px, seek-guide.width - self.x);
-                    height: 1px;
-                    background: root.lrc-status;
-                }
-            }
-
-            seek-play-button := Rectangle {
-                accessible-role: button;
-                accessible-label: "从此处播放";
-                accessible-enabled: AppState.show-lyric-seek-indicator;
-                accessible-action-default => { root.seek-line(AppState.centered-lyric-index); }
-                width: 28px;
-                height: 28px;
-                border-radius: 14px;
-                background: root.hovered-index == -2 ? root.lrc-toggle-bg-active : root.lrc-toggle-bg;
-                border-width: 1px;
-                border-color: root.lrc-toggle-border;
-                animate background { duration: 200ms; easing: ease; }
-
-                seek-btn-ta := TouchArea {
-                    enabled: AppState.show-lyric-seek-indicator;
-                    mouse-cursor: pointer;
-                    scroll-event(event) => { root.scroll-by(event.delta-y); return accept; }
-                    pointer-event(event) => {
-                        if event.kind == PointerEventKind.move {
-                            root.update-hover(-2, lyric-pointer.absolute-position.x + lyric-pointer.mouse-x,
-                                lyric-pointer.absolute-position.y + lyric-pointer.mouse-y);
-                        }
-                        if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
-                            root.cancel-user-scroll(false);
-                        }
-                    }
-                    clicked => {
-                        root.seek-line(AppState.centered-lyric-index);
-                    }
-                }
-
-                AppIcon {
-                    x: 7px;
-                    y: 7px;
-                    source: Icons.play;
-                    icon-size: 14px;
-                    tint: root.hovered-index == -2 ? root.lrc-toggle-fg-active : root.lrc-toggle-fg;
-                }
-            }
-        }
-
-        // 歌词同步 Debug HUD (.lyric-debug-hud)
-        if AppState.setting-lyric-debug : Rectangle {
-            x: 8px;
-            y: 8px;
-            width: 310px;
-            height: 78px;
-            border-radius: 8px;
-            background: rgba(0, 0, 0, 0.60);
-
-            VerticalLayout {
-                padding: 8px;
-                spacing: 2px;
-                Text {
-                    text: "clock(currentTime): 92410 ms";
-                    font-size: 12px;
-                    color: #00ff00;
-                }
-                Text {
-                    text: "backend raw: 92395 ms (Δ 15)";
-                    font-size: 12px;
-                    color: #00ff00;
-                }
-                Text {
-                    text: "play=" + (AppState.is-playing ? "true" : "false") + " buf=false load=false userScroll=" + (AppState.show-lyric-seek-indicator ? "true" : "false");
-                    font-size: 12px;
-                    color: #00ff00;
-                }
-                Text {
-                    text: "lyric: #" + AppState.active-lyric-index + " @92.00s Look at the horizon";
-                    font-size: 12px;
-                    color: #00ff00;
-                }
-            }
-        }
-
-        // 右下角发音/翻译切换工具栏 (.lyric-toolbar: bottom 14px, right 20px, gap 8px -> x=1283, y=914 at 1435x1000)
-        HorizontalLayout {
-            x: parent.width - 20px - 72px;
-            y: parent.height - 14px - 32px;
-            width: 72px;
-            height: 32px;
-            spacing: 8px;
-
-            // 发音切换 (.lyric-toggle: 32x32, transition 0.2s ease)
-            lyric-toggle-pronunciation := Rectangle {
-                width: 32px;
-                height: 32px;
-                border-radius: 16px;
-                background: (AppState.show-pronunciation || pro-ta.has-hover) ? root.lrc-toggle-bg-active : root.lrc-toggle-bg;
-                border-width: 1px;
-                border-color: root.lrc-toggle-border;
-                animate background { duration: 200ms; easing: ease; }
-
-                pro-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    pointer-event(event) => {
-                        if event.kind == PointerEventKind.move {
-                            root.update-hover(-1, lyric-pointer.absolute-position.x + lyric-pointer.mouse-x,
-                                lyric-pointer.absolute-position.y + lyric-pointer.mouse-y);
-                        }
-                        if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
-                            root.cancel-user-scroll(false);
-                        }
-                    }
-                    clicked => { AppState.show-pronunciation = !AppState.show-pronunciation; }
-                }
-
-                AppIcon {
-                    x: 7px;
-                    y: 7px;
-                    source: Icons.equalizer;
-                    icon-size: 18px;
-                    tint: (AppState.show-pronunciation || pro-ta.has-hover) ? root.lrc-toggle-fg-active : root.lrc-toggle-fg;
-                }
-            }
-
-            // 翻译切换 (.lyric-toggle: 32x32, transition 0.2s ease)
-            lyric-toggle-translation := Rectangle {
-                width: 32px;
-                height: 32px;
-                border-radius: 16px;
-                background: (AppState.show-translation || tr-ta.has-hover) ? root.lrc-toggle-bg-active : root.lrc-toggle-bg;
-                border-width: 1px;
-                border-color: root.lrc-toggle-border;
-                animate background { duration: 200ms; easing: ease; }
-
-                tr-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    pointer-event(event) => {
-                        if event.kind == PointerEventKind.move {
-                            root.update-hover(-1, lyric-pointer.absolute-position.x + lyric-pointer.mouse-x,
-                                lyric-pointer.absolute-position.y + lyric-pointer.mouse-y);
-                        }
-                        if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
-                            root.cancel-user-scroll(false);
-                        }
-                    }
-                    clicked => { AppState.show-translation = !AppState.show-translation; }
-                }
-
-                AppIcon {
-                    x: 7px;
-                    y: 7px;
-                    source: Icons.translate;
-                    icon-size: 18px;
-                    tint: (AppState.show-translation || tr-ta.has-hover) ? root.lrc-toggle-fg-active : root.lrc-toggle-fg;
-                }
-            }
-        }
-        // One input-transparent hint for the panel. A native tooltip window can
-        // generate enter/leave events when opened/closed on Wayland, changing
-        // the retained hover target even though the pointer has not moved.
-        if root.can-seek && root.tooltip-ready && root.tooltip-pointer-ready
-            && ((root.hovered-index >= 0 && root.hovered-index < AppState.lyrics.length)
-                || (root.hovered-index == -2 && AppState.show-lyric-seek-indicator))
-            : lyric-hover-hint := Rectangle {
-            x: Math.clamp(root.pointer-x - root.absolute-position.x + 8px, 4px,
-                Math.max(4px, root.width - self.width - 4px));
-            y: Math.clamp(root.pointer-y - root.absolute-position.y + 20px, 4px,
-                Math.max(4px, root.height - self.height - 4px));
-            width: hint-text.preferred-width + 18px;
-            height: hint-text.preferred-height + 12px;
-            border-radius: 4px;
-            border-width: 1px;
-            border-color: root.lrc-toggle-border;
-            background: root.is-dark ? #24242d : #f7f7fa;
-            hint-text := Text {
-                x: 9px;
-                y: 6px;
-                text: root.hovered-index == -2 ? "从此处播放"
-                    : "跳转到 " + AppState.lyrics[root.hovered-index].time-str + " 播放";
-                accessible-role: text;
-                accessible-label: self.text;
-                color: root.lrc-active;
-                font-size: 12px;
-            }
-        }
-    } // lyric-pointer
-}
-
-component CommentPanelView inherits Rectangle {
-    in property <bool> is-dark: true;
-
-    property <color> cmt-text: root.is-dark ? rgba(255, 255, 255, 0.92) : rgba(0, 0, 0, 0.90);
-    property <color> cmt-secondary: root.is-dark ? rgba(255, 255, 255, 0.62) : rgba(0, 0, 0, 0.60);
-    property <color> cmt-tertiary: root.is-dark ? rgba(255, 255, 255, 0.42) : rgba(0, 0, 0, 0.40);
-    property <color> cmt-surface: root.is-dark ? rgba(255, 255, 255, 0.07) : rgba(0, 0, 0, 0.045);
-    property <color> cmt-border: root.is-dark ? rgba(255, 255, 255, 0.14) : rgba(0, 0, 0, 0.10);
-    property <color> cmt-divider: root.is-dark ? rgba(255, 255, 255, 0.08) : rgba(0, 0, 0, 0.06);
-
-    clip: true;
-
-    // .comment-scroll: padding 4px 16px 20px 2px (含 10px scrollbar-gutter -> content width = 627.5 - 18 = 609.5, x = 747.5 + 2 = 749.5)
-    Flickable {
-        width: 100%;
-        height: 100%;
-        content-width: self.width;
-        content-height: cmt-col.preferred-height;
-
-        cmt-col := VerticalLayout {
-            width: 100%;
-            padding-top: 4px;
-            padding-right: 16px;
-            padding-bottom: 20px;
-            padding-left: 2px;
-            spacing: 0px;
-
-            for item in AppState.comments : VerticalLayout {
-                spacing: 0px;
-
-                if item.is-hot-header : Rectangle {
-                    height: 6px;
-                }
-
-                if item.is-hot-header : comment-section-hot := Rectangle {
-                    height: 31.19px;
-                    Text {
-                        x: 2px;
-                        y: 6px;
-                        text: "热门评论";
-                        font-size: 12px;
-                        font-weight: 700;
-                        color: root.cmt-tertiary;
-                    }
-                }
-
-                if item.is-recent-header : Rectangle {
-                    height: 6px;
-                }
-
-                if item.is-recent-header : comment-section-recent := Rectangle {
-                    height: 31.19px;
-                    Text {
-                        x: 2px;
-                        y: 6px;
-                        text: "最新评论";
-                        font-size: 12px;
-                        font-weight: 700;
-                        color: root.cmt-tertiary;
-                    }
-                }
-
-                // 单条评论 (.comment-item: padding 14px 0, gap 12px)
-                HorizontalLayout {
-                    padding-top: 14px;
-                    padding-bottom: 14px;
-                    spacing: 12px;
-
-                    RoundedCover {
-                        width: 36px;
-                        height: 36px;
-                        radius: 18px;
-                        source: item.avatar;
-                        cover-id: item.id;
-                    }
-
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        spacing: 6px;
-
-                        // .comment-meta
-                        HorizontalLayout {
-                            spacing: 8px;
-                            alignment: space-between;
-
-                            HorizontalLayout {
-                                spacing: 8px;
-                                alignment: start;
-
-                                Text {
-                                    text: item.nickname;
-                                    font-size: 13px;
-                                    font-weight: 600;
-                                    color: root.cmt-secondary;
-                                    vertical-alignment: center;
-                                }
-
-                                if item.is-vip : Rectangle {
-                                    width: 28px;
-                                    height: 16px;
-                                    border-radius: 6px;
-                                    border-width: 1px;
-                                    border-color: root.cmt-border;
-
-                                    Text {
-                                        text: "VIP";
-                                        font-size: 9px;
-                                        font-weight: 800;
-                                        color: root.cmt-tertiary;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                            }
-
-                            Text {
-                                text: item.time;
-                                font-size: 11px;
-                                color: root.cmt-tertiary;
-                                vertical-alignment: center;
-                            }
-                        }
-
-                        // .comment-content
-                        Text {
-                            text: item.content;
-                            font-size: 14px;
-                            color: root.cmt-text;
-                            wrap: word-wrap;
-                        }
-
-                        // 楼中楼回复 (.comment-reply: border-radius 10px, padding 8px 10px, font-size 12.5px)
-                        if item.has-reply : Rectangle {
-                            border-radius: 10px;
-                            background: root.cmt-surface;
-                            height: 34.75px;
-
-                            Text {
-                                x: 10px;
-                                y: 8px;
-                                width: parent.width - 20px;
-                                text: "@" + item.reply-nickname + "：" + item.reply-content;
-                                font-size: 12.5px;
-                                color: root.cmt-secondary;
-                                wrap: word-wrap;
-                            }
-                        }
-
-                        // .comment-footer
-                        HorizontalLayout {
-                            padding-top: 2px;
-                            spacing: 5px;
-                            alignment: start;
-
-                            AppIcon {
-                                source: Icons.like;
-                                icon-size: 13px;
-                                tint: root.cmt-tertiary;
-                                opacity: 0.7;
-                            }
-
-                            Text {
-                                text: item.liked;
-                                font-size: 11px;
-                                color: root.cmt-tertiary;
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
-                }
-
-                // 底部分割线
-                Rectangle {
-                    height: 1px;
-                    background: root.cmt-divider;
-                }
-            }
-
-            // 底部提示 (.list-footer)
-            Rectangle {
-                height: 48px;
-                Text {
-                    text: "没有更多评论了";
-                    font-size: 12px;
-                    color: root.cmt-tertiary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-            }
-        }
     }
 }
 
@@ -768,14 +38,14 @@ export component PlayerFullscreen inherits Rectangle {
     width: 100%;
     height: 100%;
 
-    property <color> text-color: AppState.fullscreen-is-dark ? #ffffff : #000000;
-    property <color> contrast-color: AppState.fullscreen-is-dark ? rgba(255, 255, 255, 0.15) : rgba(0, 0, 0, 0.10);
-    property <color> btn-bg: AppState.fullscreen-is-dark ? #ffffff : #000000;
-    property <color> btn-text: AppState.fullscreen-is-dark ? #000000 : #ffffff;
+    property <color> text-color: PlayerViewState.fullscreen-is-dark ? #ffffff : #000000;
+    property <color> contrast-color: PlayerViewState.fullscreen-is-dark ? rgba(255, 255, 255, 0.15) : rgba(0, 0, 0, 0.10);
+    property <color> btn-bg: PlayerViewState.fullscreen-is-dark ? #ffffff : #000000;
+    property <color> btn-text: PlayerViewState.fullscreen-is-dark ? #000000 : #ffffff;
 
     TouchArea {
         clicked => {
-            AppState.is-fullscreen-volume-open = false;
+            PlayerViewState.is-fullscreen-volume-open = false;
         }
     }
 
@@ -783,7 +53,7 @@ export component PlayerFullscreen inherits Rectangle {
     Rectangle {
         width: 100%;
         height: 100%;
-        background: @linear-gradient(135deg, AppState.fullscreen-bg-primary 0%, AppState.fullscreen-bg-secondary 100%);
+        background: @linear-gradient(135deg, PlayerViewState.fullscreen-bg-primary 0%, PlayerViewState.fullscreen-bg-secondary 100%);
         animate background { duration: 1500ms; easing: ease; }
     }
 
@@ -796,10 +66,10 @@ export component PlayerFullscreen inherits Rectangle {
 
     // 主内容容器 (.player-content: padding 40px 60px)
     if root.presented : player-content := VerticalLayout {
-        padding-top: 40px;
-        padding-bottom: 40px;
-        padding-left: 60px;
-        padding-right: 60px;
+        padding-top: root.width <= 1000px ? 20px : root.width <= 1100px ? 30px : 40px;
+        padding-bottom: root.width <= 1000px ? 20px : root.width <= 1100px ? 30px : 40px;
+        padding-left: root.width <= 1000px ? 20px : root.width <= 1100px ? 30px : 60px;
+        padding-right: root.width <= 1000px ? 20px : root.width <= 1100px ? 30px : 60px;
         spacing: 40px;
 
         // 顶部栏 (.top-bar)
@@ -808,421 +78,64 @@ export component PlayerFullscreen inherits Rectangle {
             alignment: space-between;
 
             // 返回按钮 (.back-btn: x=60, y=40, 44x44, border-radius 50%, transition all 0.3s)
-            fullscreen-back-btn := Rectangle {
-                width: 44px;
-                height: 44px;
-                border-radius: 22px;
-                background: back-ta.has-hover ? rgba(255, 255, 255, 0.24) : root.contrast-color;
-                animate background { duration: 300ms; easing: ease; }
-
-                back-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        AppState.is-fullscreen-volume-open = false;
-                        AppState.is-fullscreen = false;
-                    }
-                }
-
-                AppIcon {
-                    x: 10px;
-                    y: 10px;
-                    source: Icons.chevron-down;
-                    icon-size: 24px;
-                    tint: root.text-color;
-                }
+            fullscreen-back-btn := FullscreenBackButton {
+                text-color: root.text-color;
+                contrast-color: root.contrast-color;
             }
 
             Rectangle { width: 1px; }
         }
 
         // 主双栏布局 (.main-layout: x=60, y=124, width=1315, height=836, gap=60px)
-        fullscreen-main-layout := HorizontalLayout {
+        fullscreen-main-layout := FlexboxLayout {
             vertical-stretch: 1;
-            spacing: 60px;
+            min-height: 0px;
+            flex-direction: root.width <= 1000px ? column : row;
+            alignment: stretch;
+            cross-axis-alignment: stretch;
+            flex-wrap: no-wrap;
+            spacing: root.width <= 1000px ? 40px : root.width <= 1100px ? 30px : 60px;
 
-            // 左侧：封面与走带控制 (.visual-panel: width=627.5px, height=836px)
-            visual-panel := Rectangle {
+            visual-panel := FullscreenVisualPanel {
                 horizontal-stretch: 1;
-
-                // 内部 450px 宽控制柱垂直居中 (总高 = 450 + 40 + 60.8 + 8 + 21.09 + 30 + 19.19 + 30 + 72 = 731.08px -> top y = (836 - 731.08)/2 = 52.46px -> window y = 124 + 52.5 = 176.5px)
-                Rectangle {
-                    width: Math.min(parent.width, 450px);
-                    height: 731px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-
-                    // 1. 封面容器 (.cover-wrapper: x=148.75, y=176.5, 450x450, transition transform 0.8s cubic-bezier(0.2, 0, 0.2, 1))
-                    fullscreen-cover-wrapper := Rectangle {
-                        x: 0px;
-                        y: 0px;
-                        width: 450px;
-                        height: 450px;
-
-                        property <float> cover-scale: AppState.is-playing ? 1.02 : 1.0;
-                        animate cover-scale { duration: 800ms; easing: cubic-bezier(0.2, 0.0, 0.2, 1.0); }
-
-                        fullscreen-cover-scaled := RoundedCover {
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            width: parent.width * parent.cover-scale;
-                            height: parent.height * parent.cover-scale;
-                            radius: 24px;
-                            source: AppState.current-song-cover;
-                            cover-id: AppState.current-song-id;
-                            requested-size: 1600;
-                            is-local-fallback: AppState.current-song-is-local && !AppState.current-song-has-cover;
-                            fallback-icon-size: 112px;
-                            drop-shadow-blur: 60px;
-                            drop-shadow-offset-y: 30px;
-                            drop-shadow-color: rgba(0, 0, 0, 0.30);
-                        }
-                    }
-
-                    // 2. 曲名与歌手 (.track-meta: y = 450 + 40 = 490px -> window y = 176.5 + 490 = 666.5px)
-                    fullscreen-track-title := Rectangle {
-                        x: 0px;
-                        y: 490px;
-                        width: 450px;
-                        height: 60.8px;
-
-                        Text {
-                            width: 100%;
-                            height: 100%;
-                            text: AppState.current-song-title;
-                            font-size: 38px;
-                            font-weight: 800;
-                            color: root.text-color;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            overflow: elide;
-                        }
-                    }
-
-                    // 歌手行 (y = 490 + 60.8 + 8 = 558.8px, height 21.09px)
-                    Rectangle {
-                        x: 0px;
-                        y: 558.8px;
-                        width: 450px;
-                        height: 21.09px;
-
-                        artist-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => {
-                                AppState.is-fullscreen = false;
-                                if AppState.runtime-enabled { AppState.runtime-action("artist", -1, ""); } else { AppState.current-route = "artist"; }
-                            }
-                        }
-
-                        Text {
-                            width: 100%;
-                            height: 100%;
-                            text: AppState.current-song-artist;
-                            font-size: 18px;
-                            color: root.text-color;
-                            opacity: artist-ta.has-hover ? 1.0 : 0.70;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-                    }
-
-                    // 3. 进度条容器 (.progress-container: y = 558.8 + 21.09 + 30 = 609.89px, height 19.19px, gap 15px, time-text min-width 72px)
-                    Rectangle {
-                        x: 0px;
-                        y: 609.89px;
-                        width: 450px;
-                        height: 19.19px;
-
-                        Text {
-                            x: 0px;
-                            y: 0px;
-                            width: 72px;
-                            height: 19.19px;
-                            text: AppState.current-time-str;
-                            font-size: 12px;
-                            font-weight: 600;
-                            color: root.text-color;
-                            opacity: 0.6;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-
-                        // .progress-bar-bg: x = 72 + 15 = 87px -> window x = 148.75 + 87 = 235.75, y = 176.5 + 609.89 + 6.5 = 792.89, width = 450 - 144 - 30 = 276px, height = 6px
-                        fullscreen-progress-bar := Rectangle {
-                            x: 87px;
-                            y: 6.5px;
-                            width: 276px;
-                            height: 6px;
-                            border-radius: 3px;
-                            background: root.contrast-color;
-                            clip: true;
-
-                            Rectangle {
-                                x: 0px;
-                                y: 0px;
-                                width: parent.width * Math.clamp(AppState.buffered-percent / 100.0, 0.0, 1.0);
-                                height: 100%;
-                                border-radius: 3px;
-                                background: root.contrast-color;
-                                animate width { duration: 250ms; easing: ease; }
-                            }
-
-                            Rectangle {
-                                x: 0px;
-                                y: 0px;
-                                width: parent.width * Math.clamp(AppState.progress-percent / 100.0, 0.0, 1.0);
-                                height: 100%;
-                                border-radius: 3px;
-                                background: root.text-color;
-                            }
-                        }
-
-                        TouchArea {
-                            x: 87px;
-                            y: 0px;
-                            width: 276px;
-                            height: 19.19px;
-                            mouse-cursor: pointer;
-                            pointer-event(ev) => {
-                                if (ev.kind == PointerEventKind.down || (ev.kind == PointerEventKind.move && self.pressed)) {
-                                    AppState.seek-to(Math.clamp(self.mouse-x / self.width, 0.0, 1.0) * 100.0);
-                                }
-                            }
-                        }
-
-                        Text {
-                            x: 378px;
-                            y: 0px;
-                            width: 72px;
-                            height: 19.19px;
-                            text: AppState.duration-time-str;
-                            font-size: 12px;
-                            font-weight: 600;
-                            color: root.text-color;
-                            opacity: 0.6;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-                    }
-
-                    // 4. 走带三列按钮行 (.btns-row: y = 609.89 + 19.19 + 30 = 659px -> window y = 176.5 + 659 = 835.5px, height 72px)
-                    Rectangle {
-                        x: 0px;
-                        y: 659px;
-                        width: 450px;
-                        height: 72px;
-
-                        // 全屏音量悬浮气泡 (.volume-popup: transition opacity 0.2s ease, transform 0.2s ease)
-                        property <length> fs-vol-offset-y: (AppState.is-fullscreen-volume-open && AppState.can-adjust-volume) ? 0px : 6px;
-                        property <float> fs-vol-opacity: (AppState.is-fullscreen-volume-open && AppState.can-adjust-volume) ? 1.0 : 0.0;
-                        animate fs-vol-offset-y, fs-vol-opacity { duration: 200ms; easing: ease; }
-
-                        Rectangle {
-                            width: 196px;
-                            height: 42px;
-                            x: parent.width - self.width;
-                            y: -52px + parent.fs-vol-offset-y;
-                            opacity: parent.fs-vol-opacity;
-                            visible: parent.fs-vol-opacity > 0.01;
-                            border-radius: 14px;
-                            background: root.contrast-color;
-                            border-width: 1px;
-                            border-color: rgba(255, 255, 255, 0.12);
-                            drop-shadow-blur: 24px;
-                            drop-shadow-offset-y: 8px;
-                            drop-shadow-color: rgba(0, 0, 0, 0.25);
-
-                            TouchArea {}
-
-                            HorizontalLayout {
-                                padding-left: 14px;
-                                padding-right: 14px;
-                                alignment: center;
-
-                                VolumeRow {
-                                    volume <=> AppState.volume-percent;
-                                    disabled: AppState.session-volume-locked;
-                                    slider-width: 120px;
-                                }
-                            }
-                        }
-
-                        HorizontalLayout {
-                            width: 100%;
-                            height: 72px;
-                            spacing: 24px;
-
-                            // 左侧辅助按钮列 (.btns-side-left: minmax(0, 1fr), justify-content flex-end, gap 24px)
-                            Rectangle {
-                                horizontal-stretch: 1;
-                                height: 72px;
-
-                                HorizontalLayout {
-                                    x: 0px;
-                                    y: 0px;
-                                    width: 100%;
-                                    height: 100%;
-                                    alignment: end;
-                                    spacing: 24px;
-
-                                    for item in AppState.fullscreen-aux-left : Rectangle {
-                                        width: item.visible && (item.id != "volume" || AppState.can-adjust-volume) ? 20px : 0px;
-                                        height: 20px;
-                                        y: (parent.height - self.height) / 2;
-                                        visible: item.visible && (item.id != "volume" || AppState.can-adjust-volume);
-
-                                        FullscreenAuxBtn {
-                                            btn-id: item.id;
-                                            text-color: root.text-color;
-                                        }
-                                    }
-                                }
-                            }
-
-                            // 中间走带三键 (.btns-transport: width 200px, gap 40px, 播放键中心 x = 148.75 + 225 = 373.75 -> left x = 337.75)
-                            Rectangle {
-                                width: 200px;
-                                height: 72px;
-
-                                HorizontalLayout {
-                                    x: 0px;
-                                    y: 0px;
-                                    width: 100%;
-                                    height: 100%;
-                                    spacing: 40px;
-                                    alignment: center;
-
-                                    // 上一首
-                                    Rectangle {
-                                        width: 24px;
-                                        height: 24px;
-                                        y: (parent.height - self.height) / 2;
-                                        opacity: prev-ta.has-hover ? 1.0 : 0.8;
-
-                                        prev-ta := TouchArea {
-                                            mouse-cursor: pointer;
-                                            clicked => {
-                                                if AppState.runtime-enabled { AppState.step-song(-1); } else if (AppState.active-lyric-index > 0) {
-                                                    AppState.active-lyric-index -= 1;
-                                                }
-                                            }
-                                        }
-
-                                        AppIcon {
-                                            source: Icons.prev;
-                                            icon-size: 24px;
-                                            tint: root.text-color;
-                                        }
-                                    }
-
-                                    // 72x72 主播放按钮 (.play-main-btn: x=337.75, y=835.48, 72x72, transition transform 0.2s, background 0.5s)
-                                    fullscreen-play-btn := Rectangle {
-                                        width: 72px;
-                                        height: 72px;
-                                        border-radius: 36px;
-                                        background: root.btn-bg;
-                                        animate background { duration: 500ms; easing: ease; }
-                                        accessible-role: button;
-                                        accessible-label: AppState.is-loading ? "正在加载" : (AppState.is-playing ? "暂停" : "播放");
-                                        accessible-enabled: !AppState.is-loading;
-
-                                        main-play-ta := TouchArea {
-                                            mouse-cursor: AppState.is-loading ? wait : pointer;
-                                            clicked => {
-                                                AppState.toggle-playback();
-                                            }
-                                        }
-
-                                        if AppState.is-loading : PlaybackSpinner {
-                                            x: (parent.width - self.width) / 2;
-                                            y: (parent.height - self.height) / 2;
-                                            width: 26px;
-                                            tint: root.btn-text;
-                                            track-color: root.contrast-color;
-                                        }
-
-                                        if !AppState.is-loading : AppIcon {
-                                            x: 20px;
-                                            y: 20px;
-                                            source: AppState.is-playing ? Icons.pause : Icons.play;
-                                            icon-size: 32px;
-                                            tint: root.btn-text;
-                                        }
-                                    }
-
-                                    // 下一首
-                                    Rectangle {
-                                        width: 24px;
-                                        height: 24px;
-                                        y: (parent.height - self.height) / 2;
-                                        opacity: next-ta.has-hover ? 1.0 : 0.8;
-
-                                        next-ta := TouchArea {
-                                            mouse-cursor: pointer;
-                                            clicked => {
-                                                if AppState.runtime-enabled { AppState.step-song(1); } else if (AppState.active-lyric-index < AppState.lyrics.length - 1) {
-                                                    AppState.active-lyric-index += 1;
-                                                }
-                                            }
-                                        }
-
-                                        AppIcon {
-                                            source: Icons.next;
-                                            icon-size: 24px;
-                                            tint: root.text-color;
-                                        }
-                                    }
-                                }
-                            }
-
-                            // 右侧辅助按钮列 (.btns-side-right: minmax(0, 1fr), justify-content flex-start, gap 24px)
-                            Rectangle {
-                                horizontal-stretch: 1;
-                                height: 72px;
-
-                                HorizontalLayout {
-                                    x: 0px;
-                                    y: 0px;
-                                    width: 100%;
-                                    height: 100%;
-                                    alignment: start;
-                                    spacing: 24px;
-
-                                    for item in AppState.fullscreen-aux-right : Rectangle {
-                                        width: item.visible && (item.id != "volume" || AppState.can-adjust-volume) ? 20px : 0px;
-                                        height: 20px;
-                                        y: (parent.height - self.height) / 2;
-                                        visible: item.visible && (item.id != "volume" || AppState.can-adjust-volume);
-
-                                        FullscreenAuxBtn {
-                                            btn-id: item.id;
-                                            text-color: root.text-color;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                vertical-stretch: 1;
+                preferred-width: 0px;
+                preferred-height: 0px;
+                min-width: 0px;
+                min-height: 0px;
+                max-width: root.width;
+                max-height: root.height;
+                text-color: root.text-color;
+                contrast-color: root.contrast-color;
+                btn-bg: root.btn-bg;
+                btn-text: root.btn-text;
+                compact: root.width <= 1000px;
             }
 
             // 右侧：歌词面板 / 评论面板（x=747.5, y=124, width=627.5, height=836）
             right-panel := Rectangle {
                 horizontal-stretch: 1;
-                height: 100%;
+                vertical-stretch: 1;
+                preferred-width: 0px;
+                preferred-height: 0px;
+                min-width: 0px;
+                min-height: 0px;
+                max-width: root.width;
+                max-height: root.height;
 
-                if AppState.is-comment-open && !AppState.current-song-is-local : CommentPanelView {
+                if PlayerViewState.is-comment-open && !PlayerState.current-song-is-local : CommentPanelView {
                     width: 100%;
                     height: 100%;
-                    is-dark: AppState.fullscreen-is-dark;
+                    is-dark: PlayerViewState.fullscreen-is-dark;
                 }
 
-                if !AppState.is-comment-open && !AppState.current-song-is-local : LyricPanelView {
+                if !PlayerViewState.is-comment-open && !PlayerState.current-song-is-local : LyricPanelView {
                     width: 100%;
                     height: 100%;
-                    is-dark: AppState.fullscreen-is-dark;
+                    is-dark: PlayerViewState.fullscreen-is-dark;
                 }
 
-                if AppState.current-song-is-local : Rectangle {
+                if PlayerState.current-song-is-local : Rectangle {
                     width: 100%;
                     height: 100%;
                 }

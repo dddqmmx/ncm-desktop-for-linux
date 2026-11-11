@@ -3,6 +3,7 @@ use super::{
     data::{self, items, text, Preferences, Song, Storage},
     images::{DecodedImage, ImageLoader},
     library,
+    playback::{clamp_position, PlaybackState},
 };
 use serde_json::{json, Value};
 use std::{
@@ -45,6 +46,7 @@ pub struct Services {
     epoch: AtomicU64,
     auth_task: Mutex<Option<tokio::task::AbortHandle>>,
     play_version: AtomicU64,
+    active_play_token: AtomicU64,
     playback_gate: tokio::sync::Mutex<()>,
     mutation_gate: tokio::sync::Mutex<()>,
     library_gate: tokio::sync::Mutex<()>,
@@ -391,6 +393,8 @@ impl Services {
         request_token: u64,
     ) -> Result<Value, String> {
         let song: Song = serde_json::from_value(data["song"].clone()).map_err(|e| e.to_string())?;
+        let start_secs =
+            Some(clamp_position(&song, data["position_ms"].as_u64().unwrap_or(0)) as f64 / 1000.0);
         let player = self.player()?;
         let prefs = self.prefs.read().unwrap().clone();
         let (strict, exclusive) = prefs.output_options(prefs.device.as_deref());
@@ -426,7 +430,7 @@ impl Services {
             player
                 .play_file(
                     path.to_string_lossy().into_owned(),
-                    None,
+                    start_secs,
                     Some(strict),
                     Some(exclusive),
                 )
@@ -436,7 +440,7 @@ impl Services {
             *self.metadata.lock().unwrap() = source.metadata_path.clone();
             if source.r#type == "file" {
                 player
-                    .play_file(source.value, None, Some(strict), Some(exclusive))
+                    .play_file(source.value, start_secs, Some(strict), Some(exclusive))
                     .await
             } else if let (Some(cache), Some(meta)) = (source.cache_path, source.metadata_path) {
                 player
@@ -447,14 +451,14 @@ impl Services {
                         Some(song.duration as i64),
                         source.cache_ahead_secs,
                         source.max_cache_ahead_bytes,
-                        None,
+                        start_secs,
                         Some(strict),
                         Some(exclusive),
                     )
                     .await
             } else {
                 player
-                    .play_url(source.value, None, Some(strict), Some(exclusive))
+                    .play_url(source.value, start_secs, Some(strict), Some(exclusive))
                     .await
             }
         };
@@ -462,12 +466,10 @@ impl Services {
         if version != self.play_version.load(Ordering::Acquire) {
             return Ok(Value::Null);
         }
+        self.active_play_token
+            .store(request_token, Ordering::Release);
         player
-            .set_volume(if prefs.software_volume {
-                prefs.volume
-            } else {
-                1.0
-            })
+            .set_volume(self.prefs.read().unwrap().effective_volume())
             .map_err(|e| e.to_string())?;
         let services = self.clone();
         tokio::spawn(async move {
@@ -521,6 +523,10 @@ impl Services {
         let _gate = self.library_gate.lock().await;
         let action = text(&data["action"]);
         let mut prefs = self.prefs.read().unwrap().clone();
+        if action == "remove-track" {
+            let songs = library::remove_track(&self.storage, &text(&data["id"]))?;
+            return Ok(json!({ "songs": songs, "folders": prefs.folders, "truncated": false }));
+        }
         match action.as_str() {
             "add" => {
                 let Some(folder) = rfd::AsyncFileDialog::new()
@@ -727,6 +733,7 @@ impl Services {
             }
             "toggle" | "seek" | "stop" => {
                 if cmd.name == "stop" {
+                    self.active_play_token.store(0, Ordering::Release);
                     self.play_version.fetch_add(1, Ordering::AcqRel);
                 }
                 let result = self.player().and_then(|player| {
@@ -747,6 +754,16 @@ impl Services {
                     self.event("audio-error", 0, epoch, Err(error));
                 }
             }
+            "save-playback" => {
+                // This runs in command order, so shutdown cannot overtake a final save.
+                let result = serde_json::from_value::<PlaybackState>(cmd.data)
+                    .map_err(|e| e.to_string())
+                    .and_then(|saved| self.storage.save("playback.json", &saved));
+                if let Err(error) = result {
+                    eprintln!("无法保存播放状态: {error}");
+                    self.event("save-playback", cmd.token, epoch, Err(error));
+                }
+            }
             "preferences" => {
                 if let Ok(mut next) = serde_json::from_value::<Preferences>(cmd.data) {
                     let old = self.prefs.read().unwrap().clone();
@@ -759,11 +776,7 @@ impl Services {
                         self.event("preferences", 0, epoch, Err(error));
                     }
                     if let Some(player) = &self.player {
-                        let _ = player.set_volume(if next.software_volume {
-                            next.volume
-                        } else {
-                            1.0
-                        });
+                        let _ = player.set_volume(next.effective_volume());
                     }
                     let service = self.clone();
                     tokio::spawn(async move {
@@ -825,6 +838,7 @@ impl Services {
                     self.epoch.fetch_add(1, Ordering::AcqRel);
                 }
                 let version = if cmd.name == "play" {
+                    self.active_play_token.store(0, Ordering::Release);
                     let version = self.play_version.fetch_add(1, Ordering::AcqRel) + 1;
                     if let Some(player) = &self.player {
                         let _ = player.stop();
@@ -846,6 +860,7 @@ impl Services {
         let Some(player) = &self.player else {
             return;
         };
+        let play_token = self.active_play_token.load(Ordering::Acquire);
         let snapshot = player.snapshot();
         let metadata = self.metadata.lock().unwrap().clone();
         let mut buffered = 0.0;
@@ -863,6 +878,8 @@ impl Services {
             self.epoch.load(Ordering::Acquire),
             Ok(json!({
                 "progress": snapshot.progress_ms,
+                "play_token": play_token,
+                "active": matches!(snapshot.status, native::PlaybackStatus::Playing | native::PlaybackStatus::Paused),
                 "playing": snapshot.status == native::PlaybackStatus::Playing,
                 "paused": snapshot.status == native::PlaybackStatus::Paused,
                 "buffering": snapshot.buffering,
@@ -910,6 +927,7 @@ pub async fn run(
         epoch: AtomicU64::new(0),
         auth_task: Mutex::new(None),
         play_version: AtomicU64::new(0),
+        active_play_token: AtomicU64::new(0),
         playback_gate: tokio::sync::Mutex::new(()),
         mutation_gate: tokio::sync::Mutex::new(()),
         library_gate: tokio::sync::Mutex::new(()),
@@ -934,11 +952,7 @@ pub async fn run(
         .set_song_max_cache_ahead_bytes((prefs.cache_ahead_mb * 1024 * 1024) as i64)
         .await;
     if let Some(p) = &services.player {
-        let _ = p.set_volume(if prefs.software_volume {
-            prefs.volume
-        } else {
-            1.0
-        });
+        let _ = p.set_volume(prefs.effective_volume());
         if prefs.device.is_some() {
             let (strict, exclusive) = prefs.output_options(prefs.device.as_deref());
             if let Err(e) = p
@@ -1026,6 +1040,7 @@ mod tests {
                 epoch: AtomicU64::new(0),
                 auth_task: Mutex::new(None),
                 play_version: AtomicU64::new(0),
+                active_play_token: AtomicU64::new(0),
                 playback_gate: tokio::sync::Mutex::new(()),
                 mutation_gate: tokio::sync::Mutex::new(()),
                 library_gate: tokio::sync::Mutex::new(()),
@@ -1407,6 +1422,7 @@ mod tests {
             epoch: AtomicU64::new(1),
             auth_task: Mutex::new(None),
             play_version: AtomicU64::new(0),
+            active_play_token: AtomicU64::new(0),
             playback_gate: tokio::sync::Mutex::new(()),
             mutation_gate: tokio::sync::Mutex::new(()),
             library_gate: tokio::sync::Mutex::new(()),

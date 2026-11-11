@@ -1,0 +1,11 @@
+// UI-to-runtime command bridge and transient status messages.
+export global RuntimeState {
+    in-out property <bool> runtime-enabled: false;
+    in-out property <string> runtime-message;
+
+    callback runtime-changed(string);
+    callback request-cover(int, int);
+    callback runtime-action(string, int, string);
+
+    changed runtime-message => { self.runtime-changed("runtime-message"); }
+}

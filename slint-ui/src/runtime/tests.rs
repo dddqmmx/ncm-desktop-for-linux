@@ -5,7 +5,7 @@ use super::{
     download, library,
     view::View,
 };
-use crate::{AppState, AppWindow};
+use crate::AppWindow;
 use i_slint_backend_testing::ElementHandle;
 use serde_json::{json, Value};
 use slint::{ComponentHandle, Model};
@@ -184,7 +184,8 @@ fn decoded_images_update_existing_rows_and_discard_stale_account_and_qr_results(
     i_slint_backend_testing::init_no_event_loop();
     let app = AppWindow::new().unwrap();
     super::view::initialize(&app, &Preferences::default());
-    let state = app.global::<AppState>();
+    let home_state = app.global::<crate::HomeState>();
+    let login_state = app.global::<crate::LoginState>();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut view = View::new(tx, Preferences::default());
     view.apply(
@@ -201,7 +202,7 @@ fn decoded_images_update_existing_rows_and_discard_stale_account_and_qr_results(
             }}),
         ),
     );
-    let rows = state.get_recommend_playlists();
+    let rows = home_state.get_recommend_playlists();
     let pixels = || slint::SharedPixelBuffer::clone_from_slice(&[12u8, 34, 56, 255], 1, 1);
     let cover = |epoch| DecodedImage {
         target: ImageTarget::Cover("https://example.test/one.jpg".into(), 800),
@@ -212,7 +213,7 @@ fn decoded_images_update_existing_rows_and_discard_stale_account_and_qr_results(
     assert_eq!(rows.row_data(0).unwrap().cover.size().width, 0);
     view.apply_images(&app, [cover(0)].into_iter());
     assert_eq!(
-        state.get_recommend_playlists(),
+        home_state.get_recommend_playlists(),
         rows,
         "cover delivery rebuilt the list"
     );
@@ -242,7 +243,7 @@ fn decoded_images_update_existing_rows_and_discard_stale_account_and_qr_results(
     );
 
     // The form's unchecked default must not disable QR session persistence.
-    assert!(!state.get_login_remember());
+    assert!(!login_state.get_login_remember());
     view.action(&app, "qr", -1, "");
     let request = rx.try_recv().unwrap();
     assert_eq!(request.name, "qr");
@@ -256,29 +257,34 @@ fn decoded_images_update_existing_rows_and_discard_stale_account_and_qr_results(
         &app,
         [qr(0, request.token), qr(1, request.token + 1)].into_iter(),
     );
-    assert_eq!(state.get_login_qr_image().size().width, 0);
+    assert_eq!(login_state.get_login_qr_image().size().width, 0);
     view.apply_images(&app, [qr(1, request.token)].into_iter());
-    let accepted = state.get_login_qr_image();
+    let accepted = login_state.get_login_qr_image();
     assert_eq!(accepted.size().width, 1);
     view.action(&app, "cancel-login", -1, "");
     view.apply_images(&app, [qr(1, request.token)].into_iter());
-    assert_eq!(state.get_login_qr_image(), accepted);
+    assert_eq!(login_state.get_login_qr_image(), accepted);
 }
 #[test]
 fn real_view_search_queue_seek_auth_and_stale_response_regression() {
     i_slint_backend_testing::init_no_event_loop();
     let app = AppWindow::new().unwrap();
     super::view::initialize(&app, &Preferences::default());
-    let s = app.global::<AppState>();
+    let detail_state = app.global::<crate::DetailState>();
+    let player_state = app.global::<crate::PlayerState>();
+    let account_state = app.global::<crate::AccountState>();
+    let search_state = app.global::<crate::SearchState>();
+    let queue_state = app.global::<crate::QueueState>();
+    let login_state = app.global::<crate::LoginState>();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut v = View::new(tx, Preferences::default());
-    assert_eq!(s.get_detail_tracks().row_count(), 0);
-    assert!(!s.get_is_playing());
-    assert!(!s.get_is_logged_in());
-    s.set_search_query("first".into());
+    assert_eq!(detail_state.get_detail_tracks().row_count(), 0);
+    assert!(!player_state.get_is_playing());
+    assert!(!account_state.get_is_logged_in());
+    search_state.set_search_query("first".into());
     v.action(&app, "search", -1, "");
     let first = rx.try_recv().unwrap();
-    s.set_search_query("second".into());
+    search_state.set_search_query("second".into());
     v.action(&app, "search", -1, "");
     let second = rx.try_recv().unwrap();
     let page = |title: &str| {
@@ -302,19 +308,22 @@ fn real_view_search_queue_seek_auth_and_stale_response_regression() {
     };
 
     v.apply(&app, response("page", first.token, 0, page("stale")));
-    assert_eq!(s.get_detail_tracks().row_count(), 0);
+    assert_eq!(detail_state.get_detail_tracks().row_count(), 0);
     v.apply(&app, response("page", second.token, 0, page("current")));
-    assert_eq!(s.get_detail_tracks().row_data(0).unwrap().name, "current");
-    let handle = s.get_detail_tracks().row_data(0).unwrap().id;
+    assert_eq!(
+        detail_state.get_detail_tracks().row_data(0).unwrap().name,
+        "current"
+    );
+    let handle = detail_state.get_detail_tracks().row_data(0).unwrap().id;
     v.action(&app, "play", handle, "");
     let play = rx.try_recv().unwrap();
     assert_eq!(play.name, "play");
     assert_eq!(play.data["song"]["id"], "4500000001");
-    assert_eq!(s.get_queue_songs().row_count(), 2);
-    assert!(!s.get_is_playing());
-    assert!(s.get_is_loading());
+    assert_eq!(queue_state.get_queue_songs().row_count(), 2);
+    assert!(!player_state.get_is_playing());
+    assert!(player_state.get_is_loading());
     while rx.try_recv().is_ok() {}
-    v.seek(25.0);
+    v.seek(&app, 25.0);
     assert_eq!(rx.try_recv().unwrap().data["seconds"], 50.0);
     v.apply(
         &app,
@@ -326,20 +335,23 @@ fn real_view_search_queue_seek_auth_and_stale_response_regression() {
             error: Some("no source".into()),
         },
     );
-    assert!(!s.get_is_playing());
-    assert!(!s.get_is_loading());
+    assert!(!player_state.get_is_playing());
+    assert!(!player_state.get_is_loading());
     v.action(&app, "step", 1, "");
     let next = rx.try_recv().unwrap();
     assert_eq!(next.data["song"]["id"], "4500000002");
     while rx.try_recv().is_ok() {}
-    s.set_login_phone("13000000000".into());
-    s.set_login_password("not-a-real-secret".into());
+    login_state.set_login_phone("13000000000".into());
+    login_state.set_login_password("not-a-real-secret".into());
     v.action(&app, "login", -1, "");
     let login = rx.try_recv().unwrap();
     assert_eq!(login.name, "login");
-    assert_eq!(s.get_login_password(), "not-a-real-secret");
+    assert_eq!(login_state.get_login_password(), "not-a-real-secret");
     v.apply(&app, response("page", second.token, 0, page("old account")));
-    assert_eq!(s.get_detail_tracks().row_data(0).unwrap().name, "current");
+    assert_eq!(
+        detail_state.get_detail_tracks().row_data(0).unwrap().name,
+        "current"
+    );
     v.apply(
         &app,
         Event {
@@ -350,9 +362,9 @@ fn real_view_search_queue_seek_auth_and_stale_response_regression() {
             error: Some("bad code".into()),
         },
     );
-    assert!(!s.get_is_logged_in());
-    assert_eq!(s.get_login_error(), "bad code");
-    assert!(!s.get_login_busy());
+    assert!(!account_state.get_is_logged_in());
+    assert_eq!(login_state.get_login_error(), "bad code");
+    assert!(!login_state.get_login_busy());
 }
 
 #[test]
@@ -409,35 +421,47 @@ fn attached_runtime_updates_both_windows_and_shuts_down_without_node() {
         Some(std::sync::Arc::new(Provider(std::thread::current().id()))),
     )
     .unwrap();
-    let s = app.global::<AppState>();
+    let home_state = app.global::<crate::HomeState>();
+    let settings_state = app.global::<crate::SettingsState>();
+    let audio_state = app.global::<crate::AudioState>();
+    let login_state = app.global::<crate::LoginState>();
+    let runtime_state = app.global::<crate::RuntimeState>();
+    let account_state = app.global::<crate::AccountState>();
     let pump = || {
         std::thread::sleep(std::time::Duration::from_millis(10));
         i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(60));
     };
     for _ in 0..150 {
         pump();
-        if !s.get_home_songs_loading() {
+        if !home_state.get_home_songs_loading() {
             break;
         }
     }
-    assert!(!s.get_home_songs_loading());
+    assert!(!home_state.get_home_songs_loading());
     assert_eq!(
-        s.get_daily_songs().row_data(0).unwrap().title,
+        home_state.get_daily_songs().row_data(0).unwrap().title,
         "Native runtime song"
     );
-    let settings = windows._settings.global::<AppState>();
-    s.invoke_open_settings_window();
-    settings.set_settings_tab("audio".into());
+    let settings = &windows._settings;
+    settings_state.invoke_open_settings_window();
+    settings
+        .global::<crate::SettingsState>()
+        .set_settings_tab("audio".into());
     pump();
     i_slint_backend_testing::ElementHandle::find_by_element_id(
         &windows._settings,
-        "SettingsModal::quality-select",
+        "AudioSettingsTab::quality-select",
     )
     .next()
     .unwrap()
     .mock_single_click(slint::platform::PointerEventButton::Left);
     pump();
-    assert_eq!(settings.get_setting_sound_quality(), "lossless");
+    assert_eq!(
+        settings
+            .global::<crate::AudioState>()
+            .get_setting_sound_quality(),
+        "lossless"
+    );
     i_slint_backend_testing::ElementHandle::find_by_accessible_label(
         &windows._settings,
         "标准 (128kbps)",
@@ -445,10 +469,14 @@ fn attached_runtime_updates_both_windows_and_shuts_down_without_node() {
     .next()
     .unwrap()
     .mock_single_click(slint::platform::PointerEventButton::Left);
-    settings.set_volume_percent(42.0);
-    settings.set_settings_tab("general".into());
+    settings
+        .global::<crate::AudioState>()
+        .set_volume_percent(42.0);
+    settings
+        .global::<crate::SettingsState>()
+        .set_settings_tab("general".into());
     pump();
-    ElementHandle::find_by_element_id(&windows._settings, "SettingsModal::renderer-select")
+    ElementHandle::find_by_element_id(&windows._settings, "GeneralSettingsTab::renderer-select")
         .next()
         .unwrap()
         .mock_single_click(slint::platform::PointerEventButton::Left);
@@ -473,54 +501,64 @@ fn attached_runtime_updates_both_windows_and_shuts_down_without_node() {
     let saved = storage.read::<Preferences>("preferences.json").unwrap();
     assert_eq!(saved.quality, "standard");
     assert!((saved.volume - 0.42).abs() < 0.001);
-    assert_eq!(s.get_setting_sound_quality(), "standard");
+    assert_eq!(audio_state.get_setting_sound_quality(), "standard");
     assert_eq!(saved.renderer, crate::rendering::Renderer::Software);
-    assert_eq!(s.get_setting_renderer(), "software");
-    assert!(s.get_renderer_restart_required());
+    assert_eq!(settings_state.get_setting_renderer(), "software");
+    assert!(settings_state.get_renderer_restart_required());
     let restored = AppWindow::new().unwrap();
     super::view::initialize(&restored, &saved);
     assert_eq!(
-        restored.global::<AppState>().get_setting_renderer(),
+        restored
+            .global::<crate::SettingsState>()
+            .get_setting_renderer(),
         "software"
     );
     assert_eq!(
-        restored.global::<AppState>().get_startup_renderer(),
+        restored
+            .global::<crate::SettingsState>()
+            .get_startup_renderer(),
         "software"
     );
     assert!(!restored
-        .global::<AppState>()
+        .global::<crate::SettingsState>()
         .get_renderer_restart_required());
     assert_eq!(
-        restored.global::<AppState>().get_setting_sound_quality(),
+        restored
+            .global::<crate::AudioState>()
+            .get_setting_sound_quality(),
         "standard"
     );
     assert_eq!(
         restored
-            .global::<AppState>()
+            .global::<crate::AudioState>()
             .get_setting_sound_quality_label(),
         "标准 (128kbps)"
     );
-    s.set_is_login_open(true);
+    login_state.set_is_login_open(true);
     pump();
-    s.set_login_phone("test".into());
-    s.set_login_password("test".into());
-    s.set_login_remember(false);
-    s.invoke_runtime_action("login".into(), -1, "".into());
+    login_state.set_login_phone("test".into());
+    login_state.set_login_password("test".into());
+    login_state.set_login_remember(false);
+    runtime_state.invoke_runtime_action("login".into(), -1, "".into());
     for _ in 0..150 {
         pump();
-        if s.get_is_logged_in() && s.get_user_nickname() == "Mock account" {
+        if account_state.get_is_logged_in() && account_state.get_user_nickname() == "Mock account" {
             break;
         }
     }
-    assert!(s.get_is_logged_in(), "{}", s.get_login_error());
-    assert_eq!(s.get_user_nickname(), "Mock account");
-    assert!(!s.get_is_login_open());
+    assert!(
+        account_state.get_is_logged_in(),
+        "{}",
+        login_state.get_login_error()
+    );
+    assert_eq!(account_state.get_user_nickname(), "Mock account");
+    assert!(!login_state.get_is_login_open());
     assert!(!path.join("session.json").exists());
-    s.invoke_runtime_action("logout".into(), -1, "".into());
+    runtime_state.invoke_runtime_action("logout".into(), -1, "".into());
     pump();
-    assert!(!s.get_is_logged_in());
+    assert!(!account_state.get_is_logged_in());
     // Close immediately, before the next 50ms preferences timer fires.
-    s.set_setting_renderer("opengl".into());
+    settings_state.set_setting_renderer("opengl".into());
     drop(runtime);
     assert_eq!(
         storage.preferences().unwrap().renderer,
@@ -568,6 +606,64 @@ fn renderer_preferences_default_to_vulkan_and_round_trip_without_losing_audio_se
 }
 
 #[test]
+fn bitperfect_volume_stays_disabled_across_restart_and_player_snapshots() {
+    i_slint_backend_testing::init_no_event_loop();
+    let path = temp("bitperfect-volume");
+    let storage = Storage {
+        config: path.clone(),
+        cache: path.join("cache"),
+    };
+    storage
+        .save(
+            "preferences.json",
+            &Preferences {
+                strict: true,
+                software_volume: true,
+                volume: 0.42,
+                ..Preferences::default()
+            },
+        )
+        .unwrap();
+    let restored = storage.preferences().unwrap();
+    assert_eq!(restored.effective_volume(), 1.0);
+    let app = AppWindow::new().unwrap();
+    super::view::initialize(&app, &restored);
+    let audio_state = app.global::<crate::AudioState>();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut view = View::new(tx, restored);
+    assert!(!audio_state.get_can_adjust_volume());
+
+    // Idle/unlocked snapshots cannot override the user's BitPerfect setting;
+    // a locked snapshot still blocks volume while the setting is turning off.
+    for (strict, software, locked, can_adjust, output_volume) in [
+        (true, true, false, false, 1.0),
+        (true, true, true, false, 1.0),
+        (false, true, true, false, 0.42),
+        (false, true, false, true, 0.42),
+        (false, false, false, false, 1.0),
+        (true, false, false, false, 1.0),
+    ] {
+        audio_state.set_setting_strict_bitperfect(strict);
+        audio_state.set_setting_software_volume(software);
+        view.apply(&app, response("snapshot", 0, 0, json!({"locked": locked})));
+        assert_eq!(audio_state.get_can_adjust_volume(), can_adjust);
+        assert_eq!(audio_state.get_session_volume_locked(), locked);
+        assert_eq!(audio_state.get_volume_percent(), 42.0);
+        view.save_preferences_if_changed(&app);
+        while let Ok(command) = rx.try_recv() {
+            if command.name == "preferences" {
+                let saved: Preferences = serde_json::from_value(command.data).unwrap();
+                assert_eq!(saved.strict, strict);
+                assert_eq!(saved.software_volume, software);
+                assert_eq!(saved.volume, 0.42);
+                assert_eq!(saved.effective_volume(), output_volume);
+            }
+        }
+    }
+    std::fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn virtual_outputs_disable_hardware_options_without_erasing_preferences() {
     let prefs = Preferences {
         strict: true,
@@ -590,13 +686,14 @@ fn cover_eviction_releases_playlist_rows_and_scrolling_back_can_reload() {
     i_slint_backend_testing::init_no_event_loop();
     let app = AppWindow::new().unwrap();
     super::view::initialize(&app, &Preferences::default());
-    let state = app.global::<AppState>();
+    let playlist_state = app.global::<crate::PlaylistState>();
+    let player_state = app.global::<crate::PlayerState>();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut view = View::new(tx, Preferences::default());
     view.apply(&app, response("page", 0, 0, json!({"kind":"playlist","id":"1","body":{"playlist":{
         "name":"test","tracks":(0..1_100).map(|i|json!({"id":i+1,"name":"song","al":{"picUrl":format!("https://example.test/{i}.jpg")}})).collect::<Vec<_>>()
     }}})));
-    let rows = state.get_playlist_tracks();
+    let rows = playlist_state.get_playlist_tracks();
     let cover = |index, size| DecodedImage {
         target: ImageTarget::Cover(format!("https://example.test/{index}.jpg"), size),
         epoch: 0,
@@ -606,7 +703,7 @@ fn cover_eviction_releases_playlist_rows_and_scrolling_back_can_reload() {
         view.apply_images(&app, [cover(i, 128)].into_iter());
     }
     assert_eq!(
-        state.get_playlist_tracks(),
+        playlist_state.get_playlist_tracks(),
         rows,
         "eviction rebuilt the model"
     );
@@ -641,7 +738,7 @@ fn cover_eviction_releases_playlist_rows_and_scrolling_back_can_reload() {
     view.apply_images(&app, [cover(0, 1600)].into_iter());
     view.apply_images(&app, [cover(0, 800), cover(0, 128)].into_iter());
     assert_eq!(
-        state.get_current_song_cover().size().width,
+        player_state.get_current_song_cover().size().width,
         1600,
         "late card/list image replaced fullscreen artwork"
     );
@@ -651,7 +748,8 @@ fn cover_eviction_releases_playlist_rows_and_scrolling_back_can_reload() {
 fn lyrics_follow_playback_with_offset_and_reset_on_seek() {
     i_slint_backend_testing::init_no_event_loop();
     let app = AppWindow::new().unwrap();
-    let state = app.global::<AppState>();
+    let player_view_state = app.global::<crate::PlayerViewState>();
+    let player_state = app.global::<crate::PlayerState>();
     super::view::initialize(&app, &Preferences::default());
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut view = View::new(tx, Preferences::default());
@@ -668,23 +766,23 @@ fn lyrics_follow_playback_with_offset_and_reset_on_seek() {
         ),
     );
     assert_eq!(
-        state.get_active_lyric_index(),
+        player_view_state.get_active_lyric_index(),
         -1,
         "first lyric highlighted before its timestamp"
     );
-    let reset = state.get_lyric_position_reset();
+    let reset = player_view_state.get_lyric_position_reset();
     view.apply(&app, response("snapshot", 0, 0, json!({"progress":949})));
-    assert_eq!(state.get_active_lyric_index(), -1);
+    assert_eq!(player_view_state.get_active_lyric_index(), -1);
     view.apply(&app, response("snapshot", 0, 0, json!({"progress":950})));
-    assert_eq!(state.get_active_lyric_index(), 0);
-    assert_eq!(state.get_lyric_position_reset(), reset);
+    assert_eq!(player_view_state.get_active_lyric_index(), 0);
+    assert_eq!(player_view_state.get_lyric_position_reset(), reset);
     view.apply(&app, response("snapshot", 0, 0, json!({"progress":4050})));
-    assert_eq!(state.get_active_lyric_index(), 1);
-    assert!(state.get_lyric_position_reset() > reset);
-    state.set_is_loading(true);
+    assert_eq!(player_view_state.get_active_lyric_index(), 1);
+    assert!(player_view_state.get_lyric_position_reset() > reset);
+    player_state.set_is_loading(true);
     view.action(&app, "lyric-seek", 0, "");
     assert!(rx.try_recv().is_err(), "loading song accepted lyric seek");
-    state.set_is_loading(false);
+    player_state.set_is_loading(false);
     view.action(&app, "lyric-seek", -1, "");
     assert!(
         rx.try_recv().is_err(),
@@ -692,5 +790,5 @@ fn lyrics_follow_playback_with_offset_and_reset_on_seek() {
     );
     view.action(&app, "lyric-seek", 0, "");
     assert_eq!(rx.try_recv().unwrap().data["seconds"], 1.0);
-    assert_eq!(state.get_active_lyric_index(), 0);
+    assert_eq!(player_view_state.get_active_lyric_index(), 0);
 }

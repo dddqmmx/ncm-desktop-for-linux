@@ -1,0 +1,26 @@
+import { RuntimeState } from "runtime.slint";
+
+// Context-menu anchors and explicit target of add-to-playlist actions.
+export global SongMenuState {
+    in-out property <bool> is-add-to-playlist-open: false;
+    in-out property <string> add-to-playlist-song-name: "Neon Nocturne";
+    in-out property <int> add-to-playlist-song-id: -1;
+    in-out property <int> open-menu-song-id: -1;
+    in-out property <string> open-menu-song-name: "";
+    in-out property <bool> open-menu-show-remove: false;
+    in-out property <bool> open-menu-submenu: false;
+    in-out property <length> open-menu-anchor-right;
+    in-out property <length> open-menu-anchor-top;
+    in-out property <length> open-menu-anchor-bottom;
+
+    public function close-menu() {
+        open-menu-song-id = -1;
+        open-menu-submenu = false;
+    }
+
+    public function add-song-to-playlist(playlist-id: int, song-id: int) {
+        if RuntimeState.runtime-enabled && song-id >= 0 {
+            RuntimeState.runtime-action("add-track", playlist-id, "" + song-id);
+        }
+    }
+}

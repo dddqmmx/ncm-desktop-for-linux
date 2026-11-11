@@ -3,23 +3,34 @@ slint::include_modules!();
 mod fullscreen_tests;
 #[cfg(test)]
 mod home_tests;
+#[cfg(feature = "hot-reload")]
+mod hot_reload;
 #[cfg(test)]
 mod layout_tests;
 mod login_animation;
 #[cfg(test)]
 mod login_animation_tests;
+mod playback_ui;
 #[cfg(test)]
 mod playlist_tests;
 mod playlists;
 mod rendering;
+#[cfg(test)]
+mod responsive_tests;
 mod runtime;
+#[cfg(test)]
+mod state_tests;
 #[cfg(test)]
 mod virtual_list_tests;
 #[cfg(test)]
 mod window_tests;
+#[cfg(test)]
+mod window_size_tests;
 mod windows;
 
 fn main() -> Result<(), slint::PlatformError> {
+    #[cfg(feature = "hot-reload")]
+    let _hot_reload = hot_reload::watch_atomic_saves()?;
     let demo = std::env::args().any(|arg| arg == "--demo");
     // Slint's platform is process-wide: read the persisted renderer before
     // creating any main, settings, or offscreen login window.
@@ -282,10 +293,19 @@ mod tests {
         let app = AppWindow::new().expect("AppWindow should instantiate");
         crate::login_animation::attach(&app).unwrap();
         app.window().set_size(PhysicalSize::new(1435, 1000));
-        let state = app.global::<AppState>();
+        let navigation_state = app.global::<crate::NavigationState>();
+        let queue_state = app.global::<crate::QueueState>();
+        let player_view_state = app.global::<crate::PlayerViewState>();
+        let song_menu_state = app.global::<crate::SongMenuState>();
+        let search_state = app.global::<crate::SearchState>();
+        let dialog_state = app.global::<crate::DialogState>();
+        let login_state = app.global::<crate::LoginState>();
+        let home_state = app.global::<crate::HomeState>();
+        let player_state = app.global::<crate::PlayerState>();
+        let audio_state = app.global::<crate::AudioState>();
         let theme = app.global::<Theme>();
-        state.set_window_width(1435.0);
-        state.set_window_height(1000.0);
+        navigation_state.set_window_width(1435.0);
+        navigation_state.set_window_height(1000.0);
 
         // Force layout evaluation
         let _ = app.root_element().size();
@@ -296,7 +316,7 @@ mod tests {
         // =========================================================================
 
         // --- 1. HomeView + SideNavBar + PlayerBar ---
-        state.set_current_route("home".into());
+        navigation_state.set_current_route("home".into());
         mock_elapsed_time(Duration::from_millis(50));
 
         let sidebar = find_first_element(&app, "SideNavBar::sidebar-floating");
@@ -317,7 +337,7 @@ mod tests {
             0.5,
         );
 
-        let nav_search = find_first_element(&app, "SideNavBar::nav-item-search");
+        let nav_search = find_first_element(&app, "SidebarNavigation::nav-item-search");
         assert_rect_matches_electron(
             "home.navItem(search)",
             nav_search.absolute_position(),
@@ -326,7 +346,7 @@ mod tests {
             0.5,
         );
 
-        let nav_home = find_first_element(&app, "SideNavBar::nav-item-home");
+        let nav_home = find_first_element(&app, "SidebarNavigation::nav-item-home");
         assert_rect_matches_electron(
             "home.navItemActive(home)",
             nav_home.absolute_position(),
@@ -344,7 +364,7 @@ mod tests {
             0.5,
         );
 
-        let nav_group_title = find_first_element(&app, "SideNavBar::nav-group-title");
+        let nav_group_title = find_first_element(&app, "SidebarNavigation::nav-group-title");
         assert_rect_matches_electron(
             "home.navGroupTitle",
             nav_group_title.absolute_position(),
@@ -362,7 +382,7 @@ mod tests {
             0.5,
         );
 
-        let bubble_trigger = find_first_element(&app, "SideNavBar::bubble-trigger");
+        let bubble_trigger = find_first_element(&app, "SidebarProfileBubble::bubble-trigger");
         assert_rect_matches_electron(
             "home.bubbleTrigger",
             bubble_trigger.absolute_position(),
@@ -371,7 +391,7 @@ mod tests {
             0.5,
         );
 
-        let avatar_wrapper = find_first_element(&app, "SideNavBar::avatar-wrapper");
+        let avatar_wrapper = find_first_element(&app, "SidebarProfileBubble::avatar-wrapper");
         assert_rect_matches_electron(
             "home.avatarWrapper",
             avatar_wrapper.absolute_position(),
@@ -389,7 +409,7 @@ mod tests {
             0.5,
         );
 
-        let player_cover = find_first_element(&app, "PlayerBar::player-cover");
+        let player_cover = find_first_element(&app, "PlayerTrackSummary::player-cover");
         assert_rect_matches_electron(
             "home.playerCover",
             player_cover.absolute_position(),
@@ -398,7 +418,7 @@ mod tests {
             0.5,
         );
 
-        let play_main_btn = find_first_element(&app, "PlayerBar::play-main-btn");
+        let play_main_btn = find_first_element(&app, "PlayerTransportControls::play-main-btn");
         assert_rect_matches_electron(
             "home.playMainBtn",
             play_main_btn.absolute_position(),
@@ -407,7 +427,7 @@ mod tests {
             1.0,
         );
 
-        let progress_track = find_first_element(&app, "PlayerBar::progress-track");
+        let progress_track = find_first_element(&app, "PlayerTransportControls::progress-track");
         assert_rect_matches_electron(
             "home.progressTrack",
             progress_track.absolute_position(),
@@ -425,7 +445,8 @@ mod tests {
             0.5,
         );
 
-        let home_h2 = find_first_element(&app, "HomeView::home-section-header-0");
+        let home_h2 =
+            find_first_element(&app, "RecommendedPlaylistsSection::home-section-header-0");
         assert_pos_size_matches_electron(
             "home.sectionHeaderH2",
             home_h2.absolute_position(),
@@ -473,7 +494,7 @@ mod tests {
         );
 
         // --- 2. PlaylistOverlay (plus frame-by-frame slide-fade animation verification) ---
-        state.set_is_playlist_open(true);
+        queue_state.set_is_playlist_open(true);
         // At t = 0ms (just opened), offset-y is +20px (y = 348 + 20 = 368), opacity = 0.0
         let playlist_popup = find_first_element(&app, "PlayerBar::playlist-popup");
         assert!((playlist_popup.absolute_position().y - 368.0).abs() <= 0.5);
@@ -557,97 +578,75 @@ mod tests {
         mock_elapsed_time(Duration::from_millis(300));
         assert!((bar0.size().height - h0_t0).abs() > 2.5);
 
-        state.set_is_playlist_open(false);
+        queue_state.set_is_playlist_open(false);
         mock_elapsed_time(Duration::from_millis(450));
 
         // --- 3. VolumePopup on PlayerBar (plus 200ms ease transition verification) ---
-        state.set_is_volume_popup_open(true);
+        player_view_state.set_is_volume_popup_open(true);
         let vol_popup = find_first_element(&app, "PlayerBar::volume-popup");
-        // At t = 0ms, y is +6px offset (852.5 + 6 = 858.5)
-        assert!((vol_popup.absolute_position().y - 858.5).abs() <= 0.5);
+        // The popup is anchored 14px above the actual volume button; its
+        // opening animation starts 6px below that measured position.
+        let volume_button = find_first_element(&app, "PlayerUtilityControls::volume-btn");
+        let popup_y = volume_button.absolute_position().y - 14.0 - vol_popup.size().height;
+        assert!((vol_popup.absolute_position().y - popup_y - 6.0).abs() <= 0.5);
         mock_elapsed_time(Duration::from_millis(100));
         let ease_50 = eval_css_ease(0.5) as f32;
-        assert!((vol_popup.absolute_position().y - (858.5 - 6.0 * ease_50)).abs() <= 0.8);
+        assert!((vol_popup.absolute_position().y - (popup_y + 6.0 - 6.0 * ease_50)).abs() <= 0.8);
         mock_elapsed_time(Duration::from_millis(150));
 
-        assert_rect_matches_electron(
-            "volumePopup.popup",
-            vol_popup.absolute_position(),
-            vol_popup.size(),
-            get_gt(&gt, "volumePopup", "popup"),
-            0.5,
+        assert!((vol_popup.absolute_position().y - popup_y).abs() <= 0.5);
+        assert!(
+            (vol_popup.absolute_position().x + vol_popup.size().width / 2.0
+                - volume_button.absolute_position().x
+                - volume_button.size().width / 2.0)
+                .abs()
+                <= 0.5
         );
 
         let vol_slider = find_first_element(&app, "VolumeRow::slider");
-        assert_rect_matches_electron(
-            "volumePopup.slider",
-            vol_slider.absolute_position(),
-            vol_slider.size(),
-            get_gt(&gt, "volumePopup", "slider"),
-            0.5,
-        );
+        crate::responsive_tests::assert_inside(&vol_popup, &vol_slider, "volumePopup.slider");
 
         let vol_value = find_first_element(&app, "VolumeRow::value-label");
-        assert_pos_size_matches_electron(
-            "volumePopup.value",
-            vol_value.absolute_position(),
-            vol_value.size(),
-            get_gt(&gt, "volumePopup", "value"),
-            1.5,
-            0.5,
-            5.0,
-        );
+        crate::responsive_tests::assert_inside(&vol_popup, &vol_value, "volumePopup.value");
 
         let vol_track = find_first_element(&app, "RangeSlider::track-rect");
-        assert_rect_matches_electron(
-            "volumePopup.track",
-            vol_track.absolute_position(),
-            vol_track.size(),
-            get_gt(&gt, "volumePopup", "track"),
-            0.5,
-        );
+        crate::responsive_tests::assert_inside(&vol_popup, &vol_track, "volumePopup.track");
 
-        state.set_is_volume_popup_open(false);
+        player_view_state.set_is_volume_popup_open(false);
         mock_elapsed_time(Duration::from_millis(250));
 
         // --- 4. AddToPlaylistModal ---
-        state.set_is_add_to_playlist_open(true);
+        song_menu_state.set_is_add_to_playlist_open(true);
         mock_elapsed_time(Duration::from_millis(50));
 
         let add_pl_card = find_first_element(&app, "AddToPlaylistModal::add-playlist-card");
-        assert_rect_matches_electron(
+        crate::responsive_tests::assert_inside(
+            &app.root_element(),
+            &add_pl_card,
             "addToPlaylistModal.card",
-            add_pl_card.absolute_position(),
-            add_pl_card.size(),
-            get_gt(&gt, "addToPlaylistModal", "card"),
-            0.5,
         );
 
         let add_pl_header = find_first_element(&app, "AddToPlaylistModal::add-playlist-header");
-        assert_rect_matches_electron(
+        crate::responsive_tests::assert_inside(
+            &add_pl_card,
+            &add_pl_header,
             "addToPlaylistModal.header",
-            add_pl_header.absolute_position(),
-            add_pl_header.size(),
-            get_gt(&gt, "addToPlaylistModal", "header"),
-            0.5,
         );
 
-        let add_pl_close = find_first_element(&app, "AddToPlaylistModal::add-playlist-close-btn");
-        assert_rect_matches_electron(
+        let add_pl_close = find_first_element(&app, "PlaylistPickerHeader::add-playlist-close-btn");
+        crate::responsive_tests::assert_inside(
+            &add_pl_header,
+            &add_pl_close,
             "addToPlaylistModal.closeBtn",
-            add_pl_close.absolute_position(),
-            add_pl_close.size(),
-            get_gt(&gt, "addToPlaylistModal", "closeBtn"),
-            0.5,
         );
 
-        state.set_is_add_to_playlist_open(false);
+        song_menu_state.set_is_add_to_playlist_open(false);
         mock_elapsed_time(Duration::from_millis(50));
 
         // --- 5. SearchView + Floating Bubble Header Transition ---
-        state.set_current_route("search".into());
-        state.set_search_is_floating(false);
-        state.set_search_show_results(false);
+        navigation_state.set_current_route("search".into());
+        search_state.set_search_is_floating(false);
+        search_state.set_search_show_results(false);
         mock_elapsed_time(Duration::from_millis(450));
 
         let search_title = find_first_element(&app, "SearchView::search-page-title");
@@ -661,7 +660,7 @@ mod tests {
             0.5,
         );
 
-        let search_bar = find_first_element(&app, "SearchView::search-bar-wrapper");
+        let search_bar = find_first_element(&app, "SearchQueryBar::search-bar-wrapper");
         assert_rect_matches_electron(
             "search.searchBarWrapper",
             search_bar.absolute_position(),
@@ -671,25 +670,31 @@ mod tests {
         );
 
         let cat_card = find_first_element(&app, "CategoryCard::root");
-        assert_rect_matches_electron(
-            "search.categoryCard",
-            cat_card.absolute_position(),
-            cat_card.size(),
-            get_gt(&gt, "search", "categoryCard"),
-            0.5,
+        let browse_heading = find_first_element(&app, "SearchCategories::browse-heading");
+        assert!(
+            (cat_card.absolute_position().y
+                - browse_heading.absolute_position().y
+                - browse_heading.size().height
+                - 16.0)
+                .abs()
+                <= 0.5
         );
+        crate::responsive_tests::assert_disjoint(&search_bar, &cat_card, "search heading and grid");
 
         let cat_deco = find_first_element(&app, "CategoryCard::card-decoration");
-        assert_rect_matches_electron(
-            "search.cardDecoration",
-            cat_deco.absolute_position(),
-            cat_deco.size(),
-            get_gt(&gt, "search", "cardDecoration"),
-            0.5,
+        assert!((cat_deco.size().width - 60.0).abs() < 0.5);
+        assert!((cat_deco.size().height - 60.0).abs() < 0.5);
+        assert!(
+            (cat_deco.absolute_position().x + cat_deco.size().width
+                - cat_card.absolute_position().x
+                - cat_card.size().width
+                - 10.0)
+                .abs()
+                < 0.5
         );
 
         // Trigger SearchView floating glass bubble animation (300ms title collapse + 400ms bar narrow/center)
-        state.set_search_is_floating(true);
+        search_state.set_search_is_floating(true);
         mock_elapsed_time(Duration::from_millis(150));
         let ease_150_300 = eval_css_ease(150.0 / 300.0) as f32;
         assert!(
@@ -699,14 +704,20 @@ mod tests {
         mock_elapsed_time(Duration::from_millis(300));
         assert!((search_title.size().height - 0.0).abs() <= 0.1);
         assert!((search_bar.size().width - 500.0).abs() <= 0.5);
-        state.set_search_is_floating(false);
+        search_state.set_search_is_floating(false);
         mock_elapsed_time(Duration::from_millis(450));
 
         // --- 6. PlaylistDetail + SongList + SongContextMenu ---
-        state.set_current_route("playlist".into());
-        state.set_open_menu_song_id(1);
-        state.set_open_menu_show_remove(true);
-        state.set_open_menu_submenu(false);
+        navigation_state.set_current_route("playlist".into());
+        // This legacy snapshot opens the menu without clicking a row. Supply its
+        // captured anchor explicitly; actual button placement is tested separately.
+        let menu_rect = get_gt(&gt, "playlistDetail", "contextMenu");
+        song_menu_state.set_open_menu_anchor_right(menu_rect.x + menu_rect.width);
+        song_menu_state.set_open_menu_anchor_top(menu_rect.y - 40.0);
+        song_menu_state.set_open_menu_anchor_bottom(menu_rect.y - 8.0);
+        song_menu_state.set_open_menu_song_id(1);
+        song_menu_state.set_open_menu_show_remove(true);
+        song_menu_state.set_open_menu_submenu(false);
         mock_elapsed_time(Duration::from_millis(100));
 
         let detail_container = find_first_element(&app, "MediaDetailView::detail-container");
@@ -721,118 +732,102 @@ mod tests {
         );
 
         let detail_header = find_first_element(&app, "MediaDetailView::detail-header");
-        assert_rect_matches_electron(
+        crate::responsive_tests::assert_inside(
+            &detail_container,
+            &detail_header,
             "playlistDetail.header",
-            detail_header.absolute_position(),
-            detail_header.size(),
-            get_gt(&gt, "playlistDetail", "header"),
-            0.5,
         );
 
-        let detail_cover = find_first_element(&app, "MediaDetailView::detail-cover-wrapper");
-        assert_rect_matches_electron(
+        let detail_cover = find_first_element(&app, "MediaDetailHeader::detail-cover-wrapper");
+        crate::responsive_tests::assert_inside(
+            &detail_header,
+            &detail_cover,
             "playlistDetail.coverWrapper",
-            detail_cover.absolute_position(),
-            detail_cover.size(),
-            get_gt(&gt, "playlistDetail", "coverWrapper"),
-            0.5,
         );
 
-        let detail_title = find_first_element(&app, "MediaDetailView::detail-title");
-        assert_rect_matches_electron(
+        let detail_title = find_first_element(&app, "MediaDetailHeader::detail-title");
+        crate::responsive_tests::assert_inside(
+            &detail_header,
+            &detail_title,
             "playlistDetail.title",
-            detail_title.absolute_position(),
-            detail_title.size(),
-            get_gt(&gt, "playlistDetail", "title"),
-            0.5,
         );
 
-        let detail_play_btn = find_first_element(&app, "MediaDetailView::detail-play-main-btn");
-        assert_rect_matches_electron(
+        let detail_play_btn = find_first_element(&app, "MediaDetailActions::detail-play-main-btn");
+        crate::responsive_tests::assert_inside(
+            &find_first_element(&app, "MediaDetailHeader::detail-action-bar"),
+            &detail_play_btn,
             "playlistDetail.playMainBtn",
-            detail_play_btn.absolute_position(),
-            detail_play_btn.size(),
-            get_gt(&gt, "playlistDetail", "playMainBtn"),
-            0.5,
         );
 
-        let detail_search_box = find_first_element(&app, "MediaDetailView::detail-search-box");
-        assert_rect_matches_electron(
+        let detail_search_box = find_first_element(&app, "MediaDetailActions::detail-search-box");
+        crate::responsive_tests::assert_inside(
+            &find_first_element(&app, "MediaDetailHeader::detail-action-bar"),
+            &detail_search_box,
             "playlistDetail.searchBox",
-            detail_search_box.absolute_position(),
-            detail_search_box.size(),
-            get_gt(&gt, "playlistDetail", "searchBox"),
-            0.5,
         );
 
-        let detail_sec_btn = find_first_element(&app, "MediaDetailView::detail-secondary-btn");
-        assert_rect_matches_electron(
+        let detail_sec_btn = find_first_element(&app, "MediaDetailActions::detail-secondary-btn");
+        crate::responsive_tests::assert_inside(
+            &find_first_element(&app, "MediaDetailHeader::detail-action-bar"),
+            &detail_sec_btn,
             "playlistDetail.secondaryBtn",
-            detail_sec_btn.absolute_position(),
-            detail_sec_btn.size(),
-            get_gt(&gt, "playlistDetail", "secondaryBtn"),
-            0.5,
         );
 
-        let detail_more_btn = find_first_element(&app, "MediaDetailView::playlist-actions-trigger");
-        assert_rect_matches_electron(
+        let detail_more_btn =
+            find_first_element(&app, "MediaDetailActions::playlist-actions-trigger");
+        crate::responsive_tests::assert_inside(
+            &find_first_element(&app, "MediaDetailHeader::detail-action-bar"),
+            &detail_more_btn,
             "playlistDetail.moreBtn",
-            detail_more_btn.absolute_position(),
-            detail_more_btn.size(),
-            get_gt(&gt, "playlistDetail", "moreBtn"),
-            0.5,
         );
 
         let list_header = find_first_element(&app, "SongList::list-header");
-        assert_rect_matches_electron(
+        crate::responsive_tests::assert_inside(
+            &find_first_element(&app, "MediaDetailView::song-list"),
+            &list_header,
             "playlistDetail.listHeader",
-            list_header.absolute_position(),
-            list_header.size(),
-            get_gt(&gt, "playlistDetail", "listHeader"),
-            0.5,
         );
 
         let track_row = find_first_element(&app, "SongTrackRow::root");
-        assert_rect_matches_electron(
+        crate::responsive_tests::assert_inside(
+            &find_first_element(&app, "MediaDetailView::song-list"),
+            &track_row,
             "playlistDetail.trackRow",
-            track_row.absolute_position(),
-            track_row.size(),
-            get_gt(&gt, "playlistDetail", "trackRow"),
-            0.5,
         );
 
         let mini_cover = find_first_element(&app, "SongTrackRow::mini-cover");
-        assert_rect_matches_electron(
-            "playlistDetail.miniCover",
-            mini_cover.absolute_position(),
-            mini_cover.size(),
-            get_gt(&gt, "playlistDetail", "miniCover"),
-            0.5,
-        );
+        crate::responsive_tests::assert_inside(&track_row, &mini_cover, "playlistDetail.miniCover");
 
         let ctx_menu = find_first_element(&app, "SongContextMenuOverlay::context-menu-card");
-        assert_rect_matches_electron(
+        crate::responsive_tests::assert_inside(
+            &find_first_element(&app, "SongContextMenuOverlay::root"),
+            &ctx_menu,
             "playlistDetail.contextMenu",
-            ctx_menu.absolute_position(),
-            ctx_menu.size(),
-            get_gt(&gt, "playlistDetail", "contextMenu"),
-            0.5,
         );
 
-        let ctx_item = find_first_element(&app, "SongContextMenuOverlay::context-menu-item-add");
-        assert_rect_matches_electron(
-            "playlistDetail.contextMenuItem",
-            ctx_item.absolute_position(),
-            ctx_item.size(),
-            get_gt(&gt, "playlistDetail", "contextMenuItem"),
-            0.5,
+        let next_item = find_first_element(&app, "SongContextMenuOverlay::context-menu-item-next");
+        let ctx_item = find_first_element(&app, "SongMenuAccountActions::context-menu-item-add");
+        for item in [&next_item, &ctx_item] {
+            crate::responsive_tests::assert_inside(
+                &ctx_menu,
+                item,
+                "playlistDetail.contextMenuItem",
+            );
+            assert!(item.size().height >= 30.0);
+        }
+        assert!(
+            (next_item.absolute_position().y - ctx_menu.absolute_position().y - 7.0).abs() < 0.1
+        );
+        assert!(
+            next_item.absolute_position().y + next_item.size().height
+                <= ctx_item.absolute_position().y + 0.1
         );
 
-        state.set_open_menu_song_id(-1);
+        song_menu_state.set_open_menu_song_id(-1);
 
         // --- 7. LocalMusicView + AppDialog (with 180ms ease fade verification) ---
-        state.set_current_route("local-music".into());
-        state.set_is_dialog_open(true);
+        navigation_state.set_current_route("local-music".into());
+        dialog_state.set_is_dialog_open(true);
         let dialog_container = find_first_element(&app, "AppWindow::dialog-modal-container");
         assert!((dialog_container.computed_opacity() - 0.0).abs() <= 0.01);
         mock_elapsed_time(Duration::from_millis(90));
@@ -841,22 +836,18 @@ mod tests {
         mock_elapsed_time(Duration::from_millis(120));
         assert!((dialog_container.computed_opacity() - 1.0).abs() <= 0.01);
 
-        let local_import = find_first_element(&app, "MediaDetailView::local-import-btn");
-        assert_rect_matches_electron(
+        let local_import = find_first_element(&app, "LocalLibraryActions::local-import-btn");
+        crate::responsive_tests::assert_inside(
+            &find_first_element(&app, "MediaDetailHeader::detail-action-bar"),
+            &local_import,
             "localMusic.importBtn",
-            local_import.absolute_position(),
-            local_import.size(),
-            get_gt(&gt, "localMusic", "importBtn"),
-            0.5,
         );
 
-        let local_clear = find_first_element(&app, "MediaDetailView::local-clear-btn");
-        assert_rect_matches_electron(
+        let local_clear = find_first_element(&app, "LocalLibraryActions::local-clear-btn");
+        crate::responsive_tests::assert_inside(
+            &find_first_element(&app, "MediaDetailHeader::detail-action-bar"),
+            &local_clear,
             "localMusic.clearIconBtn",
-            local_clear.absolute_position(),
-            local_clear.size(),
-            get_gt(&gt, "localMusic", "clearIconBtn"),
-            0.5,
         );
 
         let app_dialog = find_first_element(&app, "AppDialogModal::app-dialog");
@@ -868,7 +859,7 @@ mod tests {
             0.5,
         );
 
-        let dlg_primary = find_first_element(&app, "AppDialogModal::dialog-primary-btn");
+        let dlg_primary = find_first_element(&app, "DialogContent::dialog-primary-btn");
         assert_rect_matches_electron(
             "localMusic.dialogPrimaryBtn",
             dlg_primary.absolute_position(),
@@ -877,7 +868,7 @@ mod tests {
             0.5,
         );
 
-        let dlg_secondary = find_first_element(&app, "AppDialogModal::dialog-secondary-btn");
+        let dlg_secondary = find_first_element(&app, "DialogContent::dialog-secondary-btn");
         assert_rect_matches_electron(
             "localMusic.dialogSecondaryBtn",
             dlg_secondary.absolute_position(),
@@ -886,14 +877,14 @@ mod tests {
             0.5,
         );
 
-        state.set_is_dialog_open(false);
+        dialog_state.set_is_dialog_open(false);
         mock_elapsed_time(Duration::from_millis(200));
 
         // Artist geometry is checked against current Electron fixtures in runtime::artist_tests.
 
         // --- 9. Fullscreen Player + LyricPanel + CommentPanel (plus 350ms player-fade & lyric transitions) ---
-        state.set_is_comment_open(false);
-        state.set_is_fullscreen(true);
+        player_view_state.set_is_comment_open(false);
+        player_view_state.set_is_fullscreen(true);
         let fs_container = find_first_element(&app, "AppWindow::fullscreen-container");
         assert!((fs_container.absolute_position().y - 20.0).abs() <= 0.5);
         assert!((fs_container.computed_opacity() - 0.0).abs() <= 0.01);
@@ -927,43 +918,35 @@ mod tests {
             0.5,
         );
 
-        let fs_cover = find_first_element(&app, "PlayerFullscreen::fullscreen-cover-wrapper");
-        assert_rect_matches_electron(
+        let fs_cover = find_first_element(&app, "FullscreenVisualPanel::fullscreen-cover-wrapper");
+        crate::responsive_tests::assert_inside(
+            &find_first_element(&app, "PlayerFullscreen::visual-panel"),
+            &fs_cover,
             "fullscreen.coverWrapper",
-            fs_cover.absolute_position(),
-            fs_cover.size(),
-            get_gt(&gt, "fullscreen", "coverWrapper"),
-            0.5,
         );
 
-        let fs_title = find_first_element(&app, "PlayerFullscreen::fullscreen-track-title");
-        assert_rect_matches_electron(
+        let fs_title = find_first_element(&app, "FullscreenTrackMetadata::fullscreen-track-title");
+        crate::responsive_tests::assert_inside(
+            &find_first_element(&app, "PlayerFullscreen::visual-panel"),
+            &fs_title,
             "fullscreen.trackTitle",
-            fs_title.absolute_position(),
-            fs_title.size(),
-            get_gt(&gt, "fullscreen", "trackTitle"),
-            0.5,
         );
 
-        let fs_prog = find_first_element(&app, "PlayerFullscreen::fullscreen-progress-bar");
-        assert_rect_matches_electron(
+        let fs_prog = find_first_element(&app, "FullscreenProgress::fullscreen-progress-bar");
+        crate::responsive_tests::assert_inside(
+            &find_first_element(&app, "FullscreenVisualPanel::playback-controls"),
+            &fs_prog,
             "fullscreen.progressBarBg",
-            fs_prog.absolute_position(),
-            fs_prog.size(),
-            get_gt(&gt, "fullscreen", "progressBarBg"),
-            0.5,
         );
 
-        let fs_play = find_first_element(&app, "PlayerFullscreen::fullscreen-play-btn");
-        assert_rect_matches_electron(
+        let fs_play = find_first_element(&app, "FullscreenTransport::fullscreen-play-btn");
+        crate::responsive_tests::assert_inside(
+            &find_first_element(&app, "FullscreenVisualPanel::playback-controls"),
+            &fs_play,
             "fullscreen.playMainBtn",
-            fs_play.absolute_position(),
-            fs_play.size(),
-            get_gt(&gt, "fullscreen", "playMainBtn"),
-            0.5,
         );
 
-        let lrc_toggle = find_first_element(&app, "LyricPanelView::lyric-toggle-pronunciation");
+        let lrc_toggle = find_first_element(&app, "LyricToolbar::lyric-toggle-pronunciation");
         assert_rect_matches_electron(
             "fullscreen.lyricToggle",
             lrc_toggle.absolute_position(),
@@ -973,9 +956,9 @@ mod tests {
         );
 
         // Switch to CommentPanel
-        state.set_is_comment_open(true);
+        player_view_state.set_is_comment_open(true);
         mock_elapsed_time(Duration::from_millis(50));
-        let cmt_hot = find_first_element(&app, "CommentPanelView::comment-section-hot");
+        let cmt_hot = find_first_element(&app, "CommentRow::comment-section-hot");
         assert_pos_size_matches_electron(
             "commentPanel.sectionLabel",
             cmt_hot.absolute_position(),
@@ -986,13 +969,13 @@ mod tests {
             0.5,
         );
 
-        state.set_is_fullscreen(false);
+        player_view_state.set_is_fullscreen(false);
         mock_elapsed_time(Duration::from_millis(400));
 
         // --- 10. LoginModal (plus 300ms tab slide & 600ms 3D flip animation verification) ---
-        state.set_is_login_open(true);
-        state.set_login_mode("form".into());
-        state.set_login_tab("password".into());
+        login_state.set_is_login_open(true);
+        login_state.set_login_mode("form".into());
+        login_state.set_login_tab("password".into());
         mock_elapsed_time(Duration::from_millis(350));
 
         let login_card = find_first_element(&app, "LoginModal::login-card");
@@ -1004,7 +987,7 @@ mod tests {
             0.5,
         );
 
-        let login_qr_btn = find_first_element(&app, "LoginModal::login-qr-btn");
+        let login_qr_btn = find_first_element(&app, "LoginForm::login-qr-btn");
         assert_rect_matches_electron(
             "loginModal.qrBtn",
             login_qr_btn.absolute_position(),
@@ -1013,7 +996,7 @@ mod tests {
             0.5,
         );
 
-        let login_close_btn = find_first_element(&app, "LoginModal::login-close-btn");
+        let login_close_btn = find_first_element(&app, "LoginForm::login-close-btn");
         assert_rect_matches_electron(
             "loginModal.closeBtn",
             login_close_btn.absolute_position(),
@@ -1022,7 +1005,7 @@ mod tests {
             0.5,
         );
 
-        let login_seg = find_first_element(&app, "LoginModal::login-segmented-control");
+        let login_seg = find_first_element(&app, "LoginForm::login-segmented-control");
         assert_rect_matches_electron(
             "loginModal.segmentedControl",
             login_seg.absolute_position(),
@@ -1031,7 +1014,7 @@ mod tests {
             0.5,
         );
 
-        let login_seg_bg = find_first_element(&app, "LoginModal::login-segment-bg");
+        let login_seg_bg = find_first_element(&app, "LoginMethodTabs::login-segment-bg");
         assert_rect_matches_electron(
             "loginModal.segmentBg",
             login_seg_bg.absolute_position(),
@@ -1041,7 +1024,7 @@ mod tests {
         );
 
         // Animate tab switch password -> phone (300ms cubic-bezier(0.4, 0, 0.2, 1))
-        state.set_login_tab("phone".into());
+        login_state.set_login_tab("phone".into());
         mock_elapsed_time(Duration::from_millis(150));
         let bez_tab_150 = eval_cubic_bezier(0.4, 0.0, 0.2, 1.0, 0.5) as f32;
         let expected_seg_x = 554.5 + 163.0 * bez_tab_150;
@@ -1053,10 +1036,10 @@ mod tests {
         );
         mock_elapsed_time(Duration::from_millis(200));
         assert!((login_seg_bg.absolute_position().x - 717.5).abs() <= 0.5);
-        state.set_login_tab("password".into());
+        login_state.set_login_tab("password".into());
         mock_elapsed_time(Duration::from_millis(350));
 
-        let login_phone = find_first_element(&app, "LoginModal::login-phone-container");
+        let login_phone = find_first_element(&app, "LoginForm::login-phone-container");
         assert_rect_matches_electron(
             "loginModal.phoneInputContainer",
             login_phone.absolute_position(),
@@ -1065,7 +1048,7 @@ mod tests {
             0.5,
         );
 
-        let login_input = find_first_element(&app, "LoginModal::login-input-field");
+        let login_input = find_first_element(&app, "LoginForm::login-input-field");
         assert_rect_matches_electron(
             "loginModal.inputField",
             login_input.absolute_position(),
@@ -1074,7 +1057,7 @@ mod tests {
             0.5,
         );
 
-        let login_check = find_first_element(&app, "LoginModal::login-checkmark");
+        let login_check = find_first_element(&app, "LoginRememberChoice::login-checkmark");
         assert_rect_matches_electron(
             "loginModal.checkmark",
             login_check.absolute_position(),
@@ -1083,7 +1066,7 @@ mod tests {
             0.5,
         );
 
-        let login_submit = find_first_element(&app, "LoginModal::login-submit-btn");
+        let login_submit = find_first_element(&app, "LoginForm::login-submit-btn");
         assert_rect_matches_electron(
             "loginModal.submitBtn",
             login_submit.absolute_position(),
@@ -1093,7 +1076,7 @@ mod tests {
         );
 
         // Animate 600ms 3D flip to QR back face (cubic-bezier(0.4, 0, 0.2, 1))
-        state.set_login_mode("qr".into());
+        login_state.set_login_mode("qr".into());
         mock_elapsed_time(Duration::ZERO);
         mock_elapsed_time(Duration::ZERO);
         mock_elapsed_time(Duration::from_millis(240));
@@ -1106,16 +1089,10 @@ mod tests {
         mock_elapsed_time(Duration::from_millis(400));
         assert!((login_card.size().width - 400.0).abs() <= 0.5);
 
-        let login_qr_box = find_first_element(&app, "LoginModal::login-qr-box");
-        assert_rect_matches_electron(
-            "loginModal.qrBox",
-            login_qr_box.absolute_position(),
-            login_qr_box.size(),
-            get_gt(&gt, "loginModal", "qrBox"),
-            0.5,
-        );
+        let login_qr_box = find_first_element(&app, "LoginQr::login-qr-box");
+        crate::responsive_tests::assert_inside(&login_card, &login_qr_box, "loginModal.qrBox");
 
-        state.set_is_login_open(false);
+        login_state.set_is_login_open(false);
         mock_elapsed_time(Duration::from_millis(350));
 
         // --- 11. SettingsModal (plus 500ms appleScaleUp, 400ms navIndicator slide, 300ms ModernSwitch, 400ms SegmentedSlider) ---
@@ -1123,10 +1100,10 @@ mod tests {
         let settings = SettingsWindow::new().unwrap();
         settings.window().set_size(PhysicalSize::new(1435, 1000));
         settings.show().unwrap();
-        let settings_state = settings.global::<AppState>();
+        let settings_state_settings_state = settings.global::<crate::SettingsState>();
         let settings_theme = settings.global::<Theme>();
         let _ = settings.root_element().size();
-        settings_state.set_settings_tab("general".into());
+        settings_state_settings_state.set_settings_tab("general".into());
         let settings_container =
             find_first_element(&settings, "SettingsWindow::settings-modal-container");
         assert!((settings_container.absolute_position().y - 16.0).abs() <= 0.5);
@@ -1156,7 +1133,7 @@ mod tests {
             0.5,
         );
 
-        let settings_ind = find_first_element(&settings, "SettingsModal::settings-nav-indicator");
+        let settings_ind = find_first_element(&settings, "SettingsSidebar::settings-nav-indicator");
         assert_rect_matches_electron(
             "settings.navIndicator",
             settings_ind.absolute_position(),
@@ -1165,7 +1142,7 @@ mod tests {
             0.5,
         );
 
-        let settings_nav_0 = find_first_element(&settings, "SettingsModal::settings-nav-general");
+        let settings_nav_0 = find_first_element(&settings, "SettingsSidebar::settings-nav-general");
         assert_rect_matches_electron(
             "settings.navItem",
             settings_nav_0.absolute_position(),
@@ -1174,7 +1151,7 @@ mod tests {
             0.5,
         );
 
-        let settings_header = find_first_element(&settings, "SettingsModal::settings-main-header");
+        let settings_header = find_first_element(&settings, "SettingsMain::settings-main-header");
         assert_rect_matches_electron(
             "settings.mainHeader",
             settings_header.absolute_position(),
@@ -1183,18 +1160,14 @@ mod tests {
             0.5,
         );
 
-        let settings_h2 = find_first_element(&settings, "SettingsModal::settings-header-h2");
-        assert_pos_size_matches_electron(
-            "settings.mainHeaderH2",
-            settings_h2.absolute_position(),
-            settings_h2.size(),
-            get_gt(&gt, "settings", "mainHeaderH2"),
-            0.5,
-            300.0,
-            0.5,
+        let settings_h2 = find_first_element(&settings, "SettingsHeader::settings-header-h2");
+        crate::responsive_tests::assert_inside(
+            &settings_header,
+            &settings_h2,
+            "settings header title",
         );
 
-        let settings_close = find_first_element(&settings, "SettingsModal::settings-close-btn");
+        let settings_close = find_first_element(&settings, "SettingsHeader::settings-close-btn");
         assert_rect_matches_electron(
             "settings.closeBtn",
             settings_close.absolute_position(),
@@ -1204,7 +1177,7 @@ mod tests {
         );
 
         let settings_scroll =
-            find_first_element(&settings, "SettingsModal::settings-content-scroll");
+            find_first_element(&settings, "SettingsMain::settings-content-scroll");
         assert_rect_matches_electron(
             "settings.contentScroll",
             settings_scroll.absolute_position(),
@@ -1214,36 +1187,23 @@ mod tests {
         );
 
         let control_card = find_first_element(&settings, "SettingGroupCard::control-card-box");
-        assert_rect_matches_electron(
+        crate::responsive_tests::assert_inside(
+            &settings_scroll,
+            &control_card,
             "settings.controlCard",
-            control_card.absolute_position(),
-            control_card.size(),
-            get_gt(&gt, "settings", "controlCard"),
-            0.5,
         );
 
         let control_row = find_first_element(&settings, "SettingRowItem::control-row-box");
-        assert_rect_matches_electron(
-            "settings.controlRow",
-            control_row.absolute_position(),
-            control_row.size(),
-            get_gt(&gt, "settings", "controlRow"),
-            0.5,
-        );
+        crate::responsive_tests::assert_inside(&control_card, &control_row, "settings.controlRow");
 
-        let modern_sw = find_first_element(&settings, "SettingsModal::modern-switch-auto-launch");
-        assert_rect_matches_electron(
-            "settings.modernSwitch",
-            modern_sw.absolute_position(),
-            modern_sw.size(),
-            get_gt(&gt, "settings", "modernSwitch"),
-            0.5,
-        );
+        let modern_sw =
+            find_first_element(&settings, "GeneralSettingsTab::modern-switch-auto-launch");
+        crate::responsive_tests::assert_inside(&control_row, &modern_sw, "settings.modernSwitch");
 
         // Verify ModernSwitch knob animation (300ms cubic-bezier(0.2, 1, 0.3, 1), x: 2px -> 22px)
         let sw_knob = find_first_element(&settings, "ModernSwitch::knob");
         let knob_x0 = sw_knob.absolute_position().x;
-        settings_state.set_setting_auto_launch(true);
+        settings_state_settings_state.set_setting_auto_launch(true);
         mock_elapsed_time(Duration::from_millis(75));
         let bez_sw_75 = eval_cubic_bezier(0.2, 1.0, 0.3, 1.0, 75.0 / 300.0) as f32;
         assert!(
@@ -1257,7 +1217,7 @@ mod tests {
 
         // Verify SettingsSidebar nav-indicator animation (400ms cubic-bezier(0.2, 1, 0.3, 1), step 52px per tab)
         // Switch from general (idx 0, y=82.59) to appearance (idx 2, y=82.59 + 104 = 186.59)
-        settings_state.set_settings_tab("appearance".into());
+        settings_state_settings_state.set_settings_tab("appearance".into());
         mock_elapsed_time(Duration::from_millis(100));
         let bez_ind_100 = eval_cubic_bezier(0.2, 1.0, 0.3, 1.0, 100.0 / 400.0) as f32;
         let expected_ind_y = 82.59 + 104.0 * bez_ind_100;
@@ -1313,7 +1273,7 @@ mod tests {
         mock_elapsed_time(Duration::from_millis(550));
 
         // --- 12. Additional Frame-by-Frame Hover & Transition Curve Verifications ---
-        state.set_current_route("home".into());
+        navigation_state.set_current_route("home".into());
         mock_elapsed_time(Duration::from_millis(50));
 
         // 12a. SideNavBar .profile-bubble hover (400ms cubic-bezier(0.165, 0.84, 0.44, 1): height 56 -> 200.4, lift -5px)
@@ -1405,7 +1365,7 @@ mod tests {
         mock_elapsed_time(Duration::from_millis(400));
 
         // 12d. HomeView skeleton sweep animation (@keyframes skeleton-sweep 1.4s infinite)
-        state.set_home_playlists_loading(true);
+        home_state.set_home_playlists_loading(true);
         mock_elapsed_time(Duration::from_millis(50));
         let sweep_bar = find_first_element(&app, "SkeletonSweepOverlay::sweep-bar");
         let sweep_x0 = sweep_bar.absolute_position().x;
@@ -1415,16 +1375,16 @@ mod tests {
             (sweep_x1 - sweep_x0).abs() > 20.0,
             "Skeleton sweep bar must continuously animate across the 200px card"
         );
-        state.set_home_playlists_loading(false);
+        home_state.set_home_playlists_loading(false);
         mock_elapsed_time(Duration::from_millis(50));
 
         // 12e. PlayerBar buffered-bar 250ms ease width transition
-        let buf_bar = find_first_element(&app, "PlayerBar::buffered-bar");
-        let track_w = find_first_element(&app, "PlayerBar::progress-track")
+        let buf_bar = find_first_element(&app, "PlayerTransportControls::buffered-bar");
+        let track_w = find_first_element(&app, "PlayerTransportControls::progress-track")
             .size()
             .width;
         let w_start = buf_bar.size().width;
-        state.set_buffered_percent(90.0);
+        player_state.set_buffered_percent(90.0);
         let w_end = track_w * 0.90;
         mock_elapsed_time(Duration::from_millis(125));
         assert!(
@@ -1435,13 +1395,14 @@ mod tests {
         assert!((buf_bar.size().width - w_end).abs() <= 0.5);
 
         // 12f. Fullscreen 800ms cubic-bezier(0.2, 0, 0.2, 1) playing cover scale & LyricPanel 150ms/350ms cubic-bezier(0.23, 1, 0.32, 1) line activation
-        state.set_is_comment_open(false);
-        state.set_is_fullscreen(true);
+        player_view_state.set_is_comment_open(false);
+        player_view_state.set_is_fullscreen(true);
         mock_elapsed_time(Duration::from_millis(400));
 
-        let fs_scaled_cover = find_first_element(&app, "PlayerFullscreen::fullscreen-cover-scaled");
+        let fs_scaled_cover =
+            find_first_element(&app, "FullscreenVisualPanel::fullscreen-cover-scaled");
         assert!((fs_scaled_cover.size().width - 459.0).abs() <= 0.5); // 450 * 1.02 = 459px when playing
-        state.set_is_playing(false);
+        player_state.set_is_playing(false);
         mock_elapsed_time(Duration::from_millis(200)); // 25% of 800ms cubic-bezier(0.2, 0, 0.2, 1)
         let bez_cov_200 = eval_cubic_bezier(0.2, 0.0, 0.2, 1.0, 200.0 / 800.0) as f32;
         assert!(
@@ -1450,14 +1411,14 @@ mod tests {
         );
         mock_elapsed_time(Duration::from_millis(650));
         assert!((fs_scaled_cover.size().width - 450.0).abs() <= 0.5);
-        state.set_is_playing(true);
+        player_state.set_is_playing(true);
         mock_elapsed_time(Duration::from_millis(850));
 
         // Electron scales the painted contents; activation must not grow the layout row.
-        let lrc_item_2 = find_nth_element(&app, "LyricPanelView::lyric-line-item", 2);
+        let lrc_item_2 = find_nth_element(&app, "LyricLineList::lyric-line-item", 2);
         assert!((lrc_item_2.computed_opacity() - 0.30).abs() <= 0.02);
         assert!((lrc_item_2.size().height - 106.23).abs() <= 0.5);
-        state.set_active_lyric_index(2);
+        player_view_state.set_active_lyric_index(2);
         mock_elapsed_time(Duration::from_millis(75)); // 50% of 150ms opacity
         let bez_lrc_op_75 = eval_cubic_bezier(0.23, 1.0, 0.32, 1.0, 75.0 / 150.0) as f32;
         assert!(
@@ -1473,7 +1434,7 @@ mod tests {
         assert!((lrc_item_2.size().height - 106.23).abs() <= 0.5);
 
         // LyricSeekIndicator 200ms ease fade, entered through a real wheel event.
-        state.set_is_loading(false);
+        player_state.set_is_loading(false);
         for _ in 0..30 {
             let _ = app.root_element().size();
             mock_elapsed_time(Duration::from_millis(16));
@@ -1508,24 +1469,24 @@ mod tests {
         mock_elapsed_time(Duration::from_millis(220));
 
         // Regression check for commit 4f598dc: Fullscreen play button stays centered at x=337.75 regardless of side toggle visibility
-        let fs_play = find_first_element(&app, "PlayerFullscreen::fullscreen-play-btn");
+        let fs_play = find_first_element(&app, "FullscreenTransport::fullscreen-play-btn");
         assert!((fs_play.absolute_position().x - 337.75).abs() <= 0.5);
-        state.set_can_adjust_volume(false);
+        audio_state.set_setting_software_volume(false);
         mock_elapsed_time(Duration::from_millis(50));
         assert!((fs_play.absolute_position().x - 337.75).abs() <= 0.5);
-        state.set_can_adjust_volume(true);
+        audio_state.set_setting_software_volume(true);
         mock_elapsed_time(Duration::from_millis(50));
 
-        state.set_is_fullscreen(false);
+        player_view_state.set_is_fullscreen(false);
         mock_elapsed_time(Duration::from_millis(400));
 
         // =========================================================================
         // PART 2: RESPONSIVE BREAKPOINT PARITY (@media max-width: 1000px)
         // =========================================================================
-        state.set_current_route("home".into());
+        navigation_state.set_current_route("home".into());
         app.window().set_size(PhysicalSize::new(950, 800));
-        state.set_window_width(950.0);
-        state.set_window_height(800.0);
+        navigation_state.set_window_width(950.0);
+        navigation_state.set_window_height(800.0);
         let _ = app.root_element().size();
         mock_elapsed_time(Duration::from_millis(50));
 
@@ -1550,8 +1511,8 @@ mod tests {
 
         // Also verify @media (max-width: 650px) at 620x720 against Electron ground truth
         app.window().set_size(PhysicalSize::new(620, 720));
-        state.set_window_width(620.0);
-        state.set_window_height(720.0);
+        navigation_state.set_window_width(620.0);
+        navigation_state.set_window_height(720.0);
         let _ = app.root_element().size();
         mock_elapsed_time(Duration::from_millis(50));
 
@@ -1576,8 +1537,8 @@ mod tests {
 
         // Restore 1435x1000 and verify multi-frame animation curves directly against Chromium's sampled DOMMatrix values
         app.window().set_size(PhysicalSize::new(1435, 1000));
-        state.set_window_width(1435.0);
-        state.set_window_height(1000.0);
+        navigation_state.set_window_width(1435.0);
+        navigation_state.set_window_height(1000.0);
         let _ = app.root_element().size();
         mock_elapsed_time(Duration::from_millis(500));
 
@@ -1585,7 +1546,7 @@ mod tests {
         let gt_pl_y = gt.animations.get("playlistOverlayEnterY").unwrap();
         let gt_pl_op = gt.animations.get("playlistOverlayEnterOpacity").unwrap();
         assert_eq!(gt_pl_y.duration_ms, 400);
-        state.set_is_playlist_open(true);
+        queue_state.set_is_playlist_open(true);
         let pl_popup = find_first_element(&app, "PlayerBar::playlist-popup");
         let mut prev_t = 0u64;
         for (sample_y, sample_op) in gt_pl_y.samples.iter().zip(gt_pl_op.samples.iter()) {
@@ -1609,18 +1570,18 @@ mod tests {
                 sample_op.value
             );
         }
-        state.set_is_playlist_open(false);
+        queue_state.set_is_playlist_open(false);
         mock_elapsed_time(Duration::from_millis(450));
 
         // 2. Album search still expands 220px -> 260px. Playlist search now uses
         // a flex width capped at 240px, verified against the new capture separately.
-        state.set_current_route("album".into());
+        navigation_state.set_current_route("album".into());
         mock_elapsed_time(Duration::from_millis(50));
         let gt_detail_search = gt.animations.get("detailSearchFocusWidth").unwrap();
         assert_eq!(gt_detail_search.duration_ms, 300);
-        let detail_search = find_first_element(&app, "MediaDetailView::detail-search-box");
+        let detail_search = find_first_element(&app, "MediaDetailActions::detail-search-box");
         // Focus the search input inside detail-search-box by clicking its center
-        let search_input_el = find_first_element(&app, "MediaDetailView::detail-search-input");
+        let search_input_el = find_first_element(&app, "DetailSearchField::detail-search-input");
         let center_pos = LogicalPosition::new(
             search_input_el.absolute_position().x + 20.0,
             search_input_el.absolute_position().y + 20.0,
@@ -1652,10 +1613,10 @@ mod tests {
         }
 
         // 3. Compare ArtistMediaTile 300ms cubic-bezier(0.25, 1, 0.5, 1) hover lift (0 -> -4px) against Chromium's 5 sampled frames
-        state.set_current_route("artist".into());
+        navigation_state.set_current_route("artist".into());
         app.window().set_size(PhysicalSize::new(1435, 2500));
-        state.set_window_width(1435.0);
-        state.set_window_height(1000.0);
+        navigation_state.set_window_width(1435.0);
+        navigation_state.set_window_height(1000.0);
         let _ = app.root_element().size();
         mock_elapsed_time(Duration::from_millis(50));
         let gt_tile_lift = gt.animations.get("artistTileHoverLift").unwrap();
@@ -1685,19 +1646,19 @@ mod tests {
             );
         }
         app.window().set_size(PhysicalSize::new(1435, 1000));
-        state.set_window_width(1435.0);
-        state.set_window_height(1000.0);
+        navigation_state.set_window_width(1435.0);
+        navigation_state.set_window_height(1000.0);
         mock_elapsed_time(Duration::from_millis(350));
 
         // 4. Compare SettingsNavBtn active icon spring scale (300ms cubic-bezier(0.34, 1.56, 0.64, 1), 18px -> 20.7px) against Chromium's 5 sampled frames
-        settings_state.set_settings_tab("general".into());
+        settings_state_settings_state.set_settings_tab("general".into());
         settings.show().unwrap();
         settings.set_presented(true);
         mock_elapsed_time(Duration::from_millis(550));
         let gt_icon_spring = gt.animations.get("settingsNavIconScale").unwrap();
         let audio_nav_icon = find_nth_element(&settings, "SettingsNavBtn::settings-nav-icon", 1);
         assert!((audio_nav_icon.size().width - 18.0).abs() <= 0.2);
-        settings_state.set_settings_tab("audio".into());
+        settings_state_settings_state.set_settings_tab("audio".into());
         prev_t = 0;
         for sample in &gt_icon_spring.samples {
             let dt = sample.t_ms - prev_t;
@@ -1721,21 +1682,21 @@ mod tests {
         // PART 3: BEHAVIORAL STATE MACHINE PARITY
         // =========================================================================
         // 1. Play mode cycle order: loop -> random -> single -> loop
-        assert_eq!(state.get_play_mode().as_str(), "loop");
-        state.invoke_cycle_play_mode();
-        assert_eq!(state.get_play_mode().as_str(), "random");
-        state.invoke_cycle_play_mode();
-        assert_eq!(state.get_play_mode().as_str(), "single");
-        state.invoke_cycle_play_mode();
-        assert_eq!(state.get_play_mode().as_str(), "loop");
+        assert_eq!(player_state.get_play_mode().as_str(), "loop");
+        player_state.invoke_cycle_play_mode();
+        assert_eq!(player_state.get_play_mode().as_str(), "random");
+        player_state.invoke_cycle_play_mode();
+        assert_eq!(player_state.get_play_mode().as_str(), "single");
+        player_state.invoke_cycle_play_mode();
+        assert_eq!(player_state.get_play_mode().as_str(), "loop");
 
         // =========================================================================
         // PART 4: HEADLESS RASTERIZED PIXEL SNAPSHOT VERIFICATION (LIGHT & DARK)
         // =========================================================================
-        state.set_current_route("home".into());
-        state.set_is_login_open(false);
-        state.set_is_dialog_open(false);
-        state.set_is_fullscreen(false);
+        navigation_state.set_current_route("home".into());
+        login_state.set_is_login_open(false);
+        dialog_state.set_is_dialog_open(false);
+        player_view_state.set_is_fullscreen(false);
         theme.set_is_dark(false);
         theme.set_theme_mode("light".into());
         mock_elapsed_time(Duration::from_millis(600));
@@ -1759,7 +1720,7 @@ mod tests {
         );
 
         // Pause playback and advance 300ms for .inner-glow opacity (0.15 -> 0.0) transition to complete -> pure #6366f1 (99, 102, 241)
-        state.set_is_playing(false);
+        player_state.set_is_playing(false);
         mock_elapsed_time(Duration::from_millis(320));
         let paused_snap = app.window().take_snapshot().unwrap();
         let paused_px = paused_snap.as_slice()[918 * 1435 + 838];
@@ -1770,7 +1731,7 @@ mod tests {
             "PlayerBar play-main-btn paused pixel {:?} should match pure #6366f1 (99, 102, 241)",
             paused_px
         );
-        state.set_is_playing(true);
+        player_state.set_is_playing(true);
 
         // Sample app background in light mode (x=1350, y=50) -> near #eef1f6 (rgb(238, 241, 246))
         let bg_light_px = light_snap.as_slice()[50 * 1435 + 1350];

@@ -1,0 +1,75 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+
+import { SettingsText, SettingGroupCard, SettingRowItem } from "controls.slint";
+
+export component AboutSettingsTab inherits VerticalLayout {
+    VerticalLayout {
+        padding-top: 20px;
+        padding-bottom: 40px;
+        alignment: center;
+        spacing: 0px;
+
+        Rectangle {
+            width: 80px;
+            height: 80px;
+            x: (parent.width - self.width) / 2;
+
+            Image {
+                width: 80px;
+                height: 80px;
+                source: Icons.app-logo;
+                image-fit: contain;
+            }
+        }
+
+        Rectangle { height: 20px; }
+
+        SettingsText {
+            text: "NCM Desktop for Linux";
+            font-size: 20px;
+            font-weight: 700;
+            color: Theme.sys-text;
+            horizontal-alignment: center;
+        }
+
+        Rectangle { height: 8px; }
+
+        SettingsText {
+            text: "Version 1.0.0";
+            font-size: 13px;
+            color: Theme.sys-text-tertiary;
+            horizontal-alignment: center;
+        }
+    }
+
+    SettingGroupCard {
+        title: "";
+
+        SettingRowItem {
+            title: "检查更新";
+            action-width: 88px;
+            action-height: 36px;
+            show-divider: false;
+
+            Rectangle {
+                width: 88px;
+                height: 36px;
+                y: 0px;
+                border-radius: 10px;
+                background: Theme.theme-color;
+
+                TouchArea { mouse-cursor: pointer; }
+
+                SettingsText {
+                    text: "检查更新";
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: #ffffff;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

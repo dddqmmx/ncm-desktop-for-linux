@@ -1,0 +1,109 @@
+
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { RecommendPlaylistItem } from "../models.slint";
+import { AppIcon, CoverRequest } from "common.slint";
+
+
+export component MediaCard inherits Rectangle {
+    in property <RecommendPlaylistItem> item;
+    in property <int> cover-size: 800;
+    CoverRequest { cover-id: root.item.id; pixel-size: root.cover-size; missing: root.item.cover.width == 0; }
+    in-out property <bool> force-hover: false;
+    callback clicked();
+    callback play-clicked();
+
+    width: 200px;
+    height: 250px;
+    background: transparent;
+
+    property <bool> is-hovered: card-ta.has-hover || play-btn-ta.has-hover || root.force-hover;
+    property <length> card-offset-y: self.is-hovered ? -4px : 0px;
+    property <length> btn-offset-y: self.is-hovered ? 0px : 6px;
+    property <float> btn-opacity: self.is-hovered ? 1.0 : 0.0;
+
+    animate card-offset-y { duration: 250ms; easing: ease; }
+    animate btn-offset-y, btn-opacity { duration: 250ms; easing: ease; }
+
+    card-surface := Rectangle {
+        x: 0px;
+        y: root.card-offset-y;
+        width: 200px;
+        height: 250px;
+        border-radius: 18px;
+        background: Theme.sys-bg-muted;
+        drop-shadow-blur: root.is-hovered ? 40px : 24px;
+        drop-shadow-offset-y: root.is-hovered ? 16px : 8px;
+        drop-shadow-color: root.is-hovered ? Theme.sys-shadow-elevated : Theme.sys-shadow-soft;
+        clip: true;
+
+        card-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.clicked(); }
+        }
+
+        Image {
+            width: 100%;
+            height: 100%;
+            source: root.item.cover;
+            image-fit: cover;
+        }
+
+        // 底部暗角遮罩 (.card-overlay)
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            background: @linear-gradient(180deg, rgba(0, 0, 0, 0.0) 0%, rgba(0, 0, 0, 0.08) 32%, rgba(0, 0, 0, 0.72) 100%);
+        }
+
+        // 卡片内容 (.card-content: padding 24px)
+        VerticalLayout {
+            padding: 24px;
+            alignment: space-between;
+
+            Rectangle { height: 1px; }
+
+            Text {
+                text: root.item.title;
+                font-size: 24px;
+                font-weight: 800;
+                color: #ffffff;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: root.item.desc;
+                font-size: 13px;
+                font-weight: 500;
+                color: rgba(255, 255, 255, 0.90);
+                wrap: word-wrap;
+            }
+        }
+
+        // 右下角悬浮播放按钮 (.play-btn-circle: bottom 20px, right 20px, 40x40, translateY(6px -> 0))
+        play-btn-circle := Rectangle {
+            x: parent.width - 20px - 40px;
+            y: parent.height - 20px - 40px + root.btn-offset-y;
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            background: play-btn-ta.has-hover ? rgba(255, 255, 255, 0.36) : rgba(255, 255, 255, 0.25);
+            border-width: 1px;
+            border-color: rgba(255, 255, 255, 0.40);
+            opacity: root.btn-opacity;
+
+            play-btn-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.play-clicked(); }
+            }
+
+            AppIcon {
+                x: 10px;
+                y: 10px;
+                source: Icons.play;
+                icon-size: 20px;
+                tint: #ffffff;
+            }
+        }
+    }
+}

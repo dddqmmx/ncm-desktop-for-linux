@@ -1,0 +1,65 @@
+import { Icons } from "../icons.slint";
+import { RuntimeState } from "runtime.slint";
+
+// Current track and transport actions; queue ordering belongs to QueueState.
+export global PlayerState {
+    in-out property <int> current-song-id: 1;
+    in-out property <string> current-song-title: "Midnight City Lights";
+    in-out property <string> current-song-artist: "M83 / 落日飞车";
+    in-out property <image> current-song-cover: Icons.cover-indigo;
+    in-out property <bool> current-song-is-local: false;
+    in-out property <bool> current-song-has-cover: true;
+    in-out property <bool> current-song-favorite: true;
+    in-out property <bool> is-playing: true;
+    in-out property <bool> is-loading: false;
+    in-out property <string> play-mode: "loop";
+    in-out property <float> progress-percent: 38.0;
+    in-out property <float> buffered-percent: 68.0;
+    in-out property <string> current-time-str: "1:32";
+    in-out property <string> duration-time-str: "4:03";
+
+    callback seek-requested(float);
+
+    public function toggle-playback() {
+        if self.is-loading { return; }
+        if RuntimeState.runtime-enabled { RuntimeState.runtime-action("toggle", -1, ""); }
+        else { self.is-playing = !self.is-playing; }
+    }
+
+    public function toggle-favorite(id: int) {
+        if RuntimeState.runtime-enabled { RuntimeState.runtime-action("favorite", id, ""); }
+        else if self.current-song-id == id { self.current-song-favorite = !self.current-song-favorite; }
+    }
+
+    public function seek-to(value: float) {
+        if RuntimeState.runtime-enabled { self.seek-requested(value); }
+        else { self.progress-percent = value; }
+    }
+
+    public function step-song(delta: int) {
+        if RuntimeState.runtime-enabled { RuntimeState.runtime-action("step", delta, ""); }
+        else { self.progress-percent = delta > 0 ? 12.0 : 0.0; self.current-time-str = delta > 0 ? "0:29" : "0:00"; }
+    }
+
+    public function play-song(id: int, title: string, artist: string, cover: image, is-local: bool, has-cover: bool) {
+        if RuntimeState.runtime-enabled { RuntimeState.runtime-action("play", id, ""); return; }
+        self.current-song-id = id;
+        self.current-song-title = title;
+        self.current-song-artist = artist;
+        self.current-song-cover = cover;
+        self.current-song-is-local = is-local;
+        self.current-song-has-cover = has-cover;
+        self.is-playing = true;
+    }
+
+    public function cycle-play-mode() {
+        // 与 src/renderer/src/stores/player/playlist.ts:35 ['loop', 'random', 'single'] 顺序严格一致
+        if (self.play-mode == "loop") {
+            self.play-mode = "random";
+        } else if (self.play-mode == "random") {
+            self.play-mode = "single";
+        } else {
+            self.play-mode = "loop";
+        }
+    }
+}

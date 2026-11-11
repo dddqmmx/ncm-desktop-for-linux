@@ -1,0 +1,65 @@
+import { PlayerViewState } from "../state/player_view.slint";
+import { Icons } from "../icons.slint";
+
+import { AppIcon } from "common.slint";
+
+component LyricToggleButton inherits Rectangle {
+    in-out property <bool> checked;
+    in property <image> icon;
+    in property <bool> is-dark;
+    callback pointer-moved(length, length);
+    callback reset-scroll();
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    property <bool> highlighted: root.checked || touch.has-hover;
+    background: root.is-dark
+        ? (root.highlighted ? #ffffff : rgba(255, 255, 255, 0.88))
+        : (root.highlighted ? rgba(0, 0, 0, 0.88) : rgba(0, 0, 0, 0.72));
+    border-width: 1px;
+    border-color: root.is-dark ? rgba(255, 255, 255, 0.20) : rgba(0, 0, 0, 0.16);
+    animate background { duration: 200ms; easing: ease; }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.move {
+                root.pointer-moved(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+            if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                root.reset-scroll();
+            }
+        }
+        clicked => { root.checked = !root.checked; }
+    }
+    AppIcon {
+        x: 7px; y: 7px;
+        source: root.icon;
+        icon-size: 18px;
+        tint: root.is-dark
+            ? (root.highlighted ? #000000 : rgba(0, 0, 0, 0.72))
+            : (root.highlighted ? #ffffff : rgba(255, 255, 255, 0.82));
+    }
+}
+
+export component LyricToolbar inherits HorizontalLayout {
+    in property <bool> is-dark;
+    callback pointer-moved(length, length);
+    callback reset-scroll();
+    width: 72px;
+    height: 32px;
+    spacing: 8px;
+    lyric-toggle-pronunciation := LyricToggleButton {
+        checked <=> PlayerViewState.show-pronunciation;
+        icon: Icons.equalizer;
+        is-dark: root.is-dark;
+        pointer-moved(x, y) => { root.pointer-moved(x, y); }
+        reset-scroll => { root.reset-scroll(); }
+    }
+    lyric-toggle-translation := LyricToggleButton {
+        checked <=> PlayerViewState.show-translation;
+        icon: Icons.translate;
+        is-dark: root.is-dark;
+        pointer-moved(x, y) => { root.pointer-moved(x, y); }
+        reset-scroll => { root.reset-scroll(); }
+    }
+}

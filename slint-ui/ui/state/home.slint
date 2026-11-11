@@ -1,0 +1,18 @@
+import { RecommendPlaylistItem, DailySongItem, HomeChartItem } from "../models.slint";
+import { DemoHome } from "../fixtures/home.slint";
+
+// Home discovery sections and their independent loading states.
+export global HomeState {
+    in-out property <bool> home-playlists-loading: false;
+    in-out property <bool> home-songs-loading: false;
+    in-out property <[RecommendPlaylistItem]> recommend-playlists: DemoHome.recommend-playlists;
+    in-out property <[DailySongItem]> home-new-albums;
+    in-out property <[HomeChartItem]> home-charts;
+    in-out property <bool> home-albums-loaded: false;
+    in-out property <bool> home-charts-loaded: false;
+    in-out property <bool> home-albums-loading: false;
+    in-out property <bool> home-charts-loading: false;
+    in-out property <string> home-albums-error;
+    in-out property <string> home-charts-error;
+    in-out property <[DailySongItem]> daily-songs: DemoHome.daily-songs;
+}

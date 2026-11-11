@@ -1,0 +1,39 @@
+import { VolumeRow } from "common.slint";
+
+export component VolumePopup inherits Rectangle {
+    in property <bool> opened: false;
+    in property <bool> enabled: true;
+    in-out property <float> volume: 76;
+    in property <length> base-y;
+    in property <length> content-inset: 0px;
+    in property <length> vertical-padding: 0px;
+    property <float> fade: root.opened && root.enabled ? 1 : 0;
+    property <length> offset: root.opened && root.enabled ? 0px : 6px;
+    animate fade, offset { duration: 200ms; easing: ease; }
+    width: 196px;
+    height: 42px;
+    y: root.base-y + root.offset;
+    opacity: root.fade;
+    visible: (root.opened && root.enabled) || root.fade > 0.01;
+    border-radius: 14px;
+    border-width: 1px;
+    TouchArea { }
+    Rectangle {
+        x: root.content-inset;
+        y: root.content-inset;
+        width: parent.width - 2 * root.content-inset;
+        height: parent.height - 2 * root.content-inset;
+        HorizontalLayout {
+            padding-left: 14px;
+            padding-right: 14px;
+            padding-top: root.vertical-padding;
+            padding-bottom: root.vertical-padding;
+            alignment: center;
+            VolumeRow {
+                volume <=> root.volume;
+                disabled: !root.enabled;
+                slider-width: 120px;
+            }
+        }
+    }
+}

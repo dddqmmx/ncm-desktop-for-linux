@@ -1,0 +1,13 @@
+import { Icons } from "../icons.slint";
+import { NavPlaylistItem } from "../models.slint";
+
+// Read-only sample data for demo mode and visual tests.
+export global DemoPlaylists {
+    out property <[NavPlaylistItem]> created-playlists: [
+        { id: 101, name: "深夜编码 · 赛博合成器浪潮", track-count: 28, play-count: "36.4万", cover: Icons.cover-indigo, already-added: true },
+        { id: 102, name: "冬日暖阳 · 独立民谣与原声", track-count: 45, play-count: "12.1万", cover: Icons.cover-sunset, already-added: false },
+        { id: 103, name: "Tokyo City Pop 1984", track-count: 32, play-count: "89.2万", cover: Icons.cover-rose, already-added: false },
+        { id: 104, name: "Post-Rock 器乐后摇精选", track-count: 19, play-count: "5.4万", cover: Icons.cover-cyan, already-added: false },
+        { id: 105, name: "雨夜爵士咖啡馆 Lo-Fi", track-count: 64, play-count: "23.0万", cover: Icons.cover-mint, already-added: false },
+    ];
+}

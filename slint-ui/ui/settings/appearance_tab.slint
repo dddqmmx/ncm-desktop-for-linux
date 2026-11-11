@@ -1,0 +1,181 @@
+import { SettingsState } from "../state/settings.slint";
+import { AuxVisibilityButton } from "aux_visibility_button.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+
+import { AppIcon, ModernSwitch, SegmentedSlider3 } from "../components/common.slint";
+
+import { SettingsText, SettingGroupCard, SettingRowItem } from "controls.slint";
+
+component FullscreenControlsPreview inherits Rectangle {
+
+    height: 76px;
+    border-radius: 18px;
+    background: Theme.sys-bg-muted;
+    border-width: 1px;
+    border-color: Theme.sys-border;
+
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 20px;
+
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            alignment: end;
+            spacing: 14px;
+
+            for item[idx] in SettingsState.fullscreen-aux-left : AuxVisibilityButton {
+                y: (parent.height - self.height) / 2;
+                shown: item.visible;
+                icon: item.id == "favorite" ? Icons.heart : Icons.comment;
+                toggled => { SettingsState.fullscreen-aux-left[idx].visible = !item.visible; }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 18px;
+            alignment: center;
+
+            AppIcon {
+                y: (parent.height - self.height) / 2;
+                source: Icons.prev;
+                icon-size: 20px;
+                tint: Theme.sys-text;
+                opacity: 0.55;
+            }
+
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 20px;
+                background: Theme.sys-text;
+
+                AppIcon {
+                    x: 11px;
+                    y: 11px;
+                    source: Icons.play;
+                    icon-size: 18px;
+                    tint: Theme.sys-bg;
+                }
+            }
+
+            AppIcon {
+                y: (parent.height - self.height) / 2;
+                source: Icons.next;
+                icon-size: 20px;
+                tint: Theme.sys-text;
+                opacity: 0.55;
+            }
+        }
+
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            alignment: start;
+            spacing: 14px;
+
+            for item[idx] in SettingsState.fullscreen-aux-right : AuxVisibilityButton {
+                y: (parent.height - self.height) / 2;
+                shown: item.visible;
+                icon: item.id == "playMode" ? Icons.loop : Icons.volume;
+                toggled => { SettingsState.fullscreen-aux-right[idx].visible = !item.visible; }
+            }
+        }
+    }
+}
+
+component AccentColorPicker inherits Rectangle {
+
+    width: 40px;
+    height: 24px;
+    y: 0px;
+    border-radius: 6px;
+    background: Theme.theme-color;
+    border-width: 2px;
+    border-color: Theme.sys-border-strong;
+
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            if (Theme.theme-color == #6366f1) {
+                Theme.theme-color = #0e7490;
+                Theme.theme-color-strong = #0e7490;
+            } else if (Theme.theme-color == #0e7490) {
+                Theme.theme-color = #d9480f;
+                Theme.theme-color-strong = #d9480f;
+            } else {
+                Theme.theme-color = #6366f1;
+                Theme.theme-color-strong = #5154c5;
+            }
+        }
+    }
+}
+
+export component AppearanceSettingsTab inherits VerticalLayout {
+    SettingGroupCard {
+        title: "色彩模式";
+        no-card: true;
+
+        SegmentedSlider3 {
+            label-0: "浅色模式";
+            value-0: "light";
+            label-1: "深色模式";
+            value-1: "dark";
+            label-2: "跟随系统";
+            value-2: "adaptive";
+            current-value <=> Theme.theme-mode;
+            selected(mode) => {
+                Theme.is-dark = (mode == "dark");
+            }
+        }
+    }
+
+    SettingGroupCard {
+        title: "视觉效果";
+
+        SettingRowItem {
+            title: "亚克力 / 云母效果";
+            description: "启用窗口半透明磨砂背景";
+            show-divider: true;
+
+            ModernSwitch {
+                y: 0px;
+                checked <=> SettingsState.setting-acrylic;
+            }
+        }
+
+        SettingRowItem {
+            title: "强调色";
+            action-width: 40px;
+            action-height: 24px;
+            description: "用于后续主题扩展和重点控件着色";
+            show-divider: false;
+
+            accent-picker := AccentColorPicker {
+
+            }
+        }
+    }
+
+    SettingGroupCard {
+        title: "全屏播放页";
+
+        VerticalLayout {
+            padding-top: 18px;
+            padding-bottom: 6px;
+            spacing: 12px;
+
+            player-preview := FullscreenControlsPreview {
+
+            }
+
+            SettingsText {
+                text: "拖动按钮可跨左右两侧移动并调整顺序，点击按钮切换显示 / 隐藏；虚线圈表示当前已隐藏。音量按钮仅在开启软件音量后出现。";
+                font-size: 11px;
+                color: Theme.sys-text-tertiary;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

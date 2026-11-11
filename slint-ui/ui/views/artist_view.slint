@@ -1,6 +1,12 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { NavigationState } from "../state/navigation.slint";
+import { PlayerState } from "../state/player.slint";
+import { DetailState } from "../state/detail.slint";
+import { ArtistState } from "../state/artist.slint";
+import { ClampedText } from "../components/typography.slint";
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
-import { AppState, ArtistReleaseItem, ArtistSongItem } from "../state.slint";
+import { ArtistReleaseItem, ArtistSongItem } from "../models.slint";
 import { AppIcon, RoundedCover, CoverRequest, PlaybackSpinner } from "../components/common.slint";
 
 // Match ArtistView.vue's CSS line boxes, including wrapped descriptions/titles.
@@ -14,20 +20,199 @@ component ArtistText inherits Text {
     vertical-alignment: center;
 }
 
+component ArtistButton inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <bool> primary;
+    in property <bool> enabled: true;
+    callback clicked();
+    width: button-label.preferred-width + 74px + (root.primary ? 0px : 2px);
+    height: 44px; border-radius: 22px; opacity: root.enabled ? 1 : 0.5;
+    background: root.primary ? (ta.has-hover ? Theme.theme-color-strong : Theme.theme-color)
+        : (ta.has-hover ? Theme.sys-control-hover : Theme.sys-surface);
+    border-width: root.primary ? 0px : 1px; border-color: Theme.sys-border;
+    animate background { duration: 200ms; easing: ease; }
+    HorizontalLayout {
+        alignment: center; spacing: 8px;
+        AppIcon { y: (parent.height - self.height) / 2; source: root.icon; icon-size: 18px; tint: root.primary ? #fff : Theme.sys-text; }
+        button-label := Text { text: root.label; font-size: 15px; font-weight: 600; color: root.primary ? #fff : Theme.sys-text; vertical-alignment: center; }
+    }
+    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component ArtistLoadState inherits Rectangle {
+    in property <bool> loading;
+    height: 280px;
+    VerticalLayout {
+        alignment: center; spacing: 12px; padding: 32px;
+        if root.loading : Rectangle {
+            height: 36px;
+            artist-loading-spinner := PlaybackSpinner {
+                x: (parent.width - self.width) / 2; y: 0px;
+                width: 36px; tint: Theme.theme-color; track-color: Theme.sys-control-hover;
+            }
+        }
+        Text {
+            text: root.loading ? "正在加载歌手信息" : "页面加载失败";
+            font-size: 20px; font-weight: 700; color: Theme.sys-text;
+            horizontal-alignment: center;
+        }
+        ArtistText {
+            text: root.loading ? "正在获取热门歌曲、专辑和 MV 数据。" : ArtistState.artist-load-error;
+            font-size: 15px; color: Theme.sys-text-secondary; horizontal-alignment: center; wrap: word-wrap;
+        }
+        if !root.loading : Rectangle {
+            height: 44px;
+            ArtistButton {
+                x: (parent.width - self.width) / 2; y: 0px;
+                label: "重试"; primary: true; icon: Icons.loop;
+                clicked => { RuntimeState.runtime-action("artist-retry", -1, ""); }
+            }
+        }
+    }
+}
+
 component ArtistPill inherits Rectangle {
     in property <string> label;
     in property <length> padding-x: 16px;
     width: label-text.preferred-width + root.padding-x * 2 + 2px;
-    height: 34.8px;
+    height: label-text.height + 14px;
     border-radius: self.height / 2;
     background: Theme.sys-surface;
     border-width: 1px;
     border-color: Theme.sys-border;
-    label-text := Text {
+    label-text := ArtistText {
+        width: parent.width; y: 7px;
         text: root.label;
         font-size: 13px; font-weight: 600;
         color: Theme.sys-text-secondary;
         horizontal-alignment: center; vertical-alignment: center;
+    }
+}
+
+component ArtistReleaseInfo inherits Rectangle {
+    in property <bool> latest: false;
+    in property <ArtistReleaseItem> item;
+    height: release-year.y + release-year.height;
+    kind-label := ArtistText {
+        width: 100%; text: root.item.kind == "Album" ? "ALBUM" : root.item.kind == "Music Video" ? "MUSIC VIDEO" : root.item.kind == "Single / EP" ? "SINGLE / EP" : "EP / SINGLE";
+        font-size: 11px; font-weight: 600; letter-spacing: self.font-size * 0.08;
+        color: Theme.sys-text-tertiary;
+    }
+    release-title := ClampedText {
+        x: 0px; y: kind-label.height + (root.latest ? 8px : 4px); width: 100%;
+        text: root.item.title; font-size: 15px; font-weight: 600;
+        line-height: 1.3; text-color: Theme.sys-text;
+    }
+    release-year := ArtistText {
+        y: release-title.y + release-title.height + (root.latest ? 8px : 4px);
+        width: 100%; text: root.item.year; font-size: 13px;
+        color: Theme.sys-text-secondary;
+    }
+}
+
+component ArtistSongRow inherits Rectangle {
+    in property <ArtistSongItem> song;
+    height: 76px; border-radius: 14px;
+    background: ta.has-hover ? Theme.sys-control-hover : transparent;
+    animate background { duration: 200ms; easing: ease; }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { PlayerState.play-song(root.song.id, root.song.title, ArtistState.artist-name, root.song.cover, false, true); }
+    }
+    Text {
+        x: 16px; width: 40px; height: 100%; text: root.song.index-str;
+        font-size: 14px; font-weight: 600; color: Theme.sys-text-tertiary;
+        horizontal-alignment: right; vertical-alignment: center;
+    }
+    RoundedCover {
+        x: 72px; y: 10px; width: 56px; height: 56px; radius: 10px;
+        source: root.song.cover; cover-id: root.song.id;
+        border-width: 1px; border-color: Theme.sys-border;
+    }
+    song-info := Rectangle {
+        x: 144px; y: (parent.height - self.height) / 2;
+        width: duration.x - 16px - self.x; height: song-name.height + album-name.height;
+        song-name := ArtistText {
+            width: Math.min(self.preferred-width, parent.width - (root.song.badge == "" ? 0px : 45px));
+            text: root.song.title; font-size: 15px; font-weight: 600; overflow: elide;
+        }
+        if root.song.badge != "" : Rectangle {
+            x: song-name.width + 8px; y: 1px; width: 37px; height: 22px;
+            border-radius: 6px; background: root.song.badge == "hot" ? Theme.theme-color : Theme.sys-control;
+            Text {
+                text: root.song.badge == "hot" ? "最热" : "推荐";
+                font-size: 10px; font-weight: 700;
+                color: root.song.badge == "hot" ? #fff : Theme.sys-text-secondary;
+                horizontal-alignment: center; vertical-alignment: center;
+            }
+        }
+        album-name := ArtistText {
+            y: song-name.height; width: 100%; text: root.song.album; font-size: 13px;
+            color: Theme.sys-text-secondary; overflow: elide;
+        }
+    }
+    duration := Text {
+        x: parent.width - 16px - self.width; width: self.preferred-width; height: 100%;
+        text: root.song.duration; font-size: 14px; font-weight: 500;
+        color: Theme.sys-text-tertiary; vertical-alignment: center;
+    }
+}
+
+component ArtistHeader inherits Rectangle {
+    function play-top-songs() {
+        if RuntimeState.runtime-enabled { RuntimeState.runtime-action("play-all", -1, ""); }
+        else { PlayerState.play-song(ArtistState.artist-top-songs[0].id, ArtistState.artist-top-songs[0].title, ArtistState.artist-name, ArtistState.artist-top-songs[0].cover, false, true); }
+    }
+
+    in property <bool> compact;
+    in property <length> base-font-size;
+    height: root.compact ? artist-avatar-col.height + 32px + artist-body.height : Math.max(artist-avatar-col.height, artist-body.height);
+    artist-avatar-col := Rectangle {
+        x: 0px; y: 0px; width: 200px; height: 200px;
+        RoundedCover {
+            width: 200px; height: 200px; radius: 100px;
+            source: ArtistState.artist-avatar.width > 0 ? ArtistState.artist-avatar : Icons.artist-fallback;
+        }
+        Rectangle {
+            x: -20px; y: -20px; width: 240px; height: 240px; border-radius: 120px;
+            background: @radial-gradient(circle, Theme.theme-color-soft 0%, transparent 72%);
+        }
+    }
+    artist-body := Rectangle {
+        x: root.compact ? 0px : artist-avatar-col.width + 48px;
+        y: root.compact ? artist-avatar-col.height + 32px : 0px; width: parent.width - self.x;
+        height: Math.max(200px, artist-actions.y + artist-actions.height);
+        artist-name-box := ArtistText {
+            width: 100%; text: ArtistState.artist-name;
+            font-size: Math.max(40px, Math.min(NavigationState.window-width * 0.045, root.base-font-size * 4.2));
+            line-height: self.font-size * 1.05; font-weight: 800; wrap: word-wrap;
+        }
+        artist-pills := HorizontalLayout {
+            y: artist-name-box.height + 16px; width: 100%; height: self.preferred-height; spacing: 8px; alignment: start;
+            artist-pill-0 := ArtistPill { label: ArtistState.artist-pills[0]; }
+            for pill in [ArtistState.artist-pills[1], ArtistState.artist-pills[2]] : ArtistPill { label: pill; }
+        }
+        artist-summary := ArtistText {
+            y: artist-pills.y + artist-pills.height + 16px;
+            width: Math.min(parent.width, 680px); text: ArtistState.artist-summary;
+            font-size: 15px; line-height: 24px; color: Theme.sys-text-secondary; wrap: word-wrap;
+        }
+        artist-actions := HorizontalLayout {
+            y: artist-summary.y + artist-summary.height + 20px; width: 100%; height: 44px;
+            spacing: 12px; alignment: start;
+            artist-btn-play := ArtistButton {
+                label: "播放"; primary: true; icon: Icons.play-alt; enabled: ArtistState.artist-top-songs.length > 0;
+                clicked => { root.play-top-songs(); }
+            }
+            artist-btn-shuffle := ArtistButton {
+                label: "随机播放"; icon: Icons.shuffle; enabled: ArtistState.artist-top-songs.length > 0;
+                clicked => {
+                    PlayerState.play-mode = "random";
+                    root.play-top-songs();
+                }
+            }
+        }
     }
 }
 
@@ -36,46 +221,18 @@ component ArtistSectionHeader inherits Rectangle {
     in property <string> eyebrow;
     in property <string> title;
     in property <string> count;
-    height: root.eyebrow == "" ? 44.4px : 60.4px;
-    if root.eyebrow != "" : ArtistText {
-        text: root.eyebrow; font-size: 10px; font-weight: 700;
-        letter-spacing: 1.6px; color: Theme.sys-text-secondary;
-    }
-    ArtistText {
-        y: root.eyebrow == "" ? 6px : 22px;
-        text: root.title; font-size: 24px; font-weight: 700;
-    }
-    if root.count != "" : ArtistPill {
-        x: parent.width - self.width; y: parent.height - self.height;
-        label: root.count; padding-x: 14px;
-    }
-}
-
-component ArtistReleaseInfo inherits Rectangle {
-    in property <bool> latest: false;
-    in property <ArtistReleaseItem> item;
-    height: release-year.y + release-year.height;
-    ArtistText {
-        width: 100%; text: root.item.kind == "Album" ? "ALBUM" : root.item.kind == "Music Video" ? "MUSIC VIDEO" : root.item.kind == "Single / EP" ? "SINGLE / EP" : "EP / SINGLE";
-        font-size: 11px; font-weight: 600; letter-spacing: 0.88px;
-        color: Theme.sys-text-tertiary;
-    }
-    release-title := Rectangle {
-        x: 0px; y: root.latest ? 25.6px : 21.6px; width: 100%;
-        height: Math.min(2, Math.max(1, Math.round(title-text.preferred-height / 19.5px))) * 19.5px;
-        title-text := ArtistText {
-            width: 100%; text: root.item.title;
-            font-size: 15px; font-weight: 600; line-height: 19.5px;
-            // Tight CSS line boxes can give CJK glyphs negative leading. Pad the drawing box so
-            // Slint's elision does not discard the first line, keeping the grid's line boxes intact.
-            y: -4px; height: self.preferred-height + 8px; vertical-alignment: center;
-            wrap: word-wrap; max-lines: 2; overflow: elide;
+    height: heading.preferred-height;
+    heading := VerticalLayout {
+        width: parent.width; spacing: 6px; padding-top: root.eyebrow == "" ? 6px : 0px;
+        if root.eyebrow != "" : ArtistText {
+            text: root.eyebrow; font-size: 10px; font-weight: 700;
+            letter-spacing: self.font-size * 0.16; color: Theme.sys-text-secondary;
         }
-    }
-    release-year := ArtistText {
-        y: release-title.y + release-title.height + (root.latest ? 8px : 4px);
-        width: 100%; text: root.item.year; font-size: 13px;
-        color: Theme.sys-text-secondary;
+        HorizontalLayout {
+            cross-axis-alignment: center; spacing: 12px;
+            ArtistText { text: root.title; font-size: 24px; font-weight: 700; horizontal-stretch: 1; }
+            if root.count != "" : ArtistPill { label: root.count; padding-x: 14px; }
+        }
     }
 }
 
@@ -122,6 +279,44 @@ component ArtistMediaTile inherits Rectangle {
 }
 
 // CSS grid auto-fill: each row takes the tallest title, with a 24px row/column gap.
+component ArtistSongsSection inherits Rectangle {
+
+    height: songs-heading.height + 24px + artist-songs-card.height;
+    songs-heading := ArtistSectionHeader { width: 100%; eyebrow: "TOP TRACKS"; title: "热门歌曲"; count: ArtistState.artist-top-songs.length + " 首"; }
+    artist-songs-card := Rectangle {
+        y: songs-heading.height + 24px; width: 100%; height: 24px + ArtistState.artist-top-songs.length * 78px;
+        border-radius: 24px; background: Theme.sys-surface;
+        border-width: 1px; border-color: Theme.sys-border;
+        drop-shadow-blur: 32px; drop-shadow-offset-y: 10px; drop-shadow-color: Theme.sys-shadow-soft;
+        for song[i] in ArtistState.artist-top-songs : ArtistSongRow {
+            x: 13px; y: 13px + i * 78px; width: parent.width - 26px; song: song;
+        }
+    }
+}
+
+component ArtistLatestSection inherits Rectangle {
+    function open-release(item: ArtistReleaseItem) {
+        DetailState.album-title = item.title; DetailState.album-cover = item.cover;
+        if RuntimeState.runtime-enabled { RuntimeState.runtime-action("album", item.id, ""); } else { NavigationState.current-route = "album"; }
+    }
+
+    height: latest-heading.height + 24px + latest-row.preferred-height;
+    latest-heading := ArtistSectionHeader { width: 100%; eyebrow: "LATEST"; title: "最新发布"; }
+    latest-row := HorizontalLayout {
+        y: latest-heading.height + 24px; width: 100%; spacing: 24px;
+        for item in ArtistState.artist-latest : latest-item := Rectangle {
+            width: (parent.width - 24px) / 2; height: Math.max(80px, latest-info.height);
+            latest-cover := RoundedCover { x: 0px; width: 80px; height: 80px; radius: 12px; source: item.cover; cover-id: item.id; }
+            latest-info := ArtistReleaseInfo { x: 96px; y: (parent.height - self.height) / 2; width: parent.width - 96px; item: item; latest: true; }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.open-release(item); }
+            }
+        }
+        if ArtistState.artist-latest.length == 1 : Rectangle { horizontal-stretch: 1; }
+    }
+}
+
 component ArtistMediaGrid inherits Rectangle {
     in property <[ArtistReleaseItem]> items;
     in property <bool> is-mv: false;
@@ -142,79 +337,49 @@ component ArtistMediaGrid inherits Rectangle {
     }
 }
 
-component ArtistSongRow inherits Rectangle {
-    in property <ArtistSongItem> song;
-    height: 76px; border-radius: 14px;
-    background: ta.has-hover ? Theme.sys-control-hover : transparent;
-    animate background { duration: 200ms; easing: ease; }
-    ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { AppState.play-song(root.song.id, root.song.title, AppState.artist-name, root.song.cover, false, true); }
-    }
-    Text {
-        x: 16px; width: 40px; height: 100%; text: root.song.index-str;
-        font-size: 14px; font-weight: 600; color: Theme.sys-text-tertiary;
-        horizontal-alignment: right; vertical-alignment: center;
-    }
-    RoundedCover {
-        x: 72px; y: 10px; width: 56px; height: 56px; radius: 10px;
-        source: root.song.cover; cover-id: root.song.id;
-        border-width: 1px; border-color: Theme.sys-border;
-    }
-    song-info := Rectangle {
-        x: 144px; y: (parent.height - self.height) / 2;
-        width: duration.x - 16px - self.x; height: 44.8px;
-        song-name := ArtistText {
-            width: Math.min(self.preferred-width, parent.width - (root.song.badge == "" ? 0px : 45px));
-            text: root.song.title; font-size: 15px; font-weight: 600; overflow: elide;
-        }
-        if root.song.badge != "" : Rectangle {
-            x: song-name.width + 8px; y: 1px; width: 37px; height: 22px;
-            border-radius: 6px; background: root.song.badge == "hot" ? Theme.theme-color : Theme.sys-control;
-            Text {
-                text: root.song.badge == "hot" ? "最热" : "推荐";
-                font-size: 10px; font-weight: 700;
-                color: root.song.badge == "hot" ? #fff : Theme.sys-text-secondary;
-                horizontal-alignment: center; vertical-alignment: center;
-            }
-        }
-        ArtistText {
-            y: 24px; width: 100%; text: root.song.album; font-size: 13px;
-            color: Theme.sys-text-secondary; overflow: elide;
-        }
-    }
-    duration := Text {
-        x: parent.width - 16px - self.width; width: self.preferred-width; height: 100%;
-        text: root.song.duration; font-size: 14px; font-weight: 500;
-        color: Theme.sys-text-tertiary; vertical-alignment: center;
+component ArtistVideosSection inherits Rectangle {
+
+    height: mvs-heading.height + 24px + mv-grid.height + 24px;
+    mvs-heading := ArtistSectionHeader { width: 100%; title: "MV"; count: ArtistState.artist-mvs.length + " 部"; }
+    mv-grid := ArtistMediaGrid {
+        y: mvs-heading.height + 24px; width: 100%; items: ArtistState.artist-mvs; is-mv: true;
+        selected(item) => { if RuntimeState.runtime-enabled { RuntimeState.runtime-action("mv", item.id, ""); } }
     }
 }
 
-component ArtistButton inherits Rectangle {
-    in property <string> label;
-    in property <image> icon;
-    in property <bool> primary;
-    in property <bool> enabled: true;
-    callback clicked();
-    width: button-label.preferred-width + 74px + (root.primary ? 0px : 2px);
-    height: 44px; border-radius: 22px; opacity: root.enabled ? 1 : 0.5;
-    background: root.primary ? (ta.has-hover ? Theme.theme-color-strong : Theme.theme-color)
-        : (ta.has-hover ? Theme.sys-control-hover : Theme.sys-surface);
-    border-width: root.primary ? 0px : 1px; border-color: Theme.sys-border;
-    animate background { duration: 200ms; easing: ease; }
-    HorizontalLayout {
-        alignment: center; spacing: 8px;
-        AppIcon { y: (parent.height - self.height) / 2; source: root.icon; icon-size: 18px; tint: root.primary ? #fff : Theme.sys-text; }
-        button-label := Text { text: root.label; font-size: 15px; font-weight: 600; color: root.primary ? #fff : Theme.sys-text; vertical-alignment: center; }
+component ArtistSinglesSection inherits Rectangle {
+
+    height: eps-heading.height + 24px + ep-grid.height;
+    eps-heading := ArtistSectionHeader { width: 100%; eyebrow: "SINGLES"; title: "EP 和单曲"; count: ArtistState.artist-eps.length + " 张"; }
+    ep-grid := ArtistMediaGrid {
+        y: eps-heading.height + 24px; width: 100%; items: ArtistState.artist-eps;
+        selected(item) => {
+            DetailState.album-title = item.title; DetailState.album-cover = item.cover;
+            if RuntimeState.runtime-enabled { RuntimeState.runtime-action("album", item.id, ""); } else { NavigationState.current-route = "album"; }
+        }
     }
-    ta := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component ArtistAlbumsSection inherits Rectangle {
+
+    height: albums-heading.height + 24px + album-grid.height;
+    albums-heading := ArtistSectionHeader { width: 100%; eyebrow: "DISCOGRAPHY"; title: "专辑"; count: ArtistState.artist-albums.length + " 张"; }
+    album-grid := ArtistMediaGrid {
+        y: albums-heading.height + 24px; width: 100%; items: ArtistState.artist-albums;
+        selected(item) => {
+            DetailState.album-title = item.title; DetailState.album-cover = item.cover;
+            if RuntimeState.runtime-enabled { RuntimeState.runtime-action("album", item.id, ""); } else { NavigationState.current-route = "album"; }
+        }
+    }
 }
 
 export component ArtistView inherits Rectangle {
     width: 100%; height: 100%;
+    property <length> base-font-size: 16px;
+    property <bool> compact: root.width < 700px;
     property <length> main-w: Math.min(root.width - 10px, 1100px);
-    property <bool> loading: AppState.artist-loading;
-    property <int> artist-id: AppState.active-artist-id;
+    property <bool> loading: ArtistState.artist-loading;
+    property <int> artist-id: ArtistState.active-artist-id;
     changed artist-id => { artist-scroll.content-y = 0px; }
     changed loading => { if root.loading { artist-scroll.content-y = 0px; } }
     artist-scroll := Flickable {
@@ -228,151 +393,28 @@ export component ArtistView inherits Rectangle {
             content := VerticalLayout {
                 x: 32px; y: 56px; width: parent.width - 64px;
                 spacing: 60px; alignment: start;
-                if root.loading || AppState.artist-load-error != "" : artist-state := Rectangle {
-                    height: 280px;
-                    VerticalLayout {
-                        alignment: center; spacing: 12px; padding: 32px;
-                        if root.loading : Rectangle {
-                            height: 36px;
-                            artist-loading-spinner := PlaybackSpinner {
-                                x: (parent.width - self.width) / 2; y: 0px;
-                                width: 36px; tint: Theme.theme-color; track-color: Theme.sys-control-hover;
-                            }
-                        }
-                        Text {
-                            text: root.loading ? "正在加载歌手信息" : "页面加载失败";
-                            font-size: 20px; font-weight: 700; color: Theme.sys-text;
-                            horizontal-alignment: center;
-                        }
-                        ArtistText {
-                            text: root.loading ? "正在获取热门歌曲、专辑和 MV 数据。" : AppState.artist-load-error;
-                            font-size: 15px; color: Theme.sys-text-secondary; horizontal-alignment: center; wrap: word-wrap;
-                        }
-                        if !root.loading : Rectangle {
-                            height: 44px;
-                            ArtistButton {
-                                x: (parent.width - self.width) / 2; y: 0px;
-                                label: "重试"; primary: true; icon: Icons.loop;
-                                clicked => { AppState.runtime-action("artist-retry", -1, ""); }
-                            }
-                        }
-                    }
-                }
-                if !root.loading && AppState.artist-load-error == "" : artist-header := Rectangle {
-                    height: Math.max(200px, artist-body.height);
-                    artist-avatar-col := Rectangle {
-                        x: 0px; y: 0px; width: 200px; height: 200px;
-                        RoundedCover {
-                            width: 200px; height: 200px; radius: 100px;
-                            source: AppState.artist-avatar.width > 0 ? AppState.artist-avatar : Icons.artist-fallback;
-                        }
-                        Rectangle {
-                            x: -20px; y: -20px; width: 240px; height: 240px; border-radius: 120px;
-                            background: @radial-gradient(circle, Theme.theme-color-soft 0%, transparent 72%);
-                        }
-                    }
-                    artist-body := Rectangle {
-                        x: 248px; y: 0px; width: parent.width - 248px;
-                        height: Math.max(200px, artist-actions.y + artist-actions.height);
-                        artist-name-box := ArtistText {
-                            width: 100%; text: AppState.artist-name;
-                            font-size: Math.max(40px, Math.min(AppState.window-width * 0.045, 67.2px));
-                            line-height: self.font-size * 1.05; font-weight: 800; wrap: word-wrap;
-                        }
-                        artist-pills := HorizontalLayout {
-                            y: artist-name-box.height + 16px; width: 100%; height: 34.8px; spacing: 8px; alignment: start;
-                            artist-pill-0 := ArtistPill { label: AppState.artist-pills[0]; }
-                            for pill in [AppState.artist-pills[1], AppState.artist-pills[2]] : ArtistPill { label: pill; }
-                        }
-                        artist-summary := ArtistText {
-                            y: artist-pills.y + artist-pills.height + 16px;
-                            width: Math.min(parent.width, 680px); text: AppState.artist-summary;
-                            font-size: 15px; line-height: 24px; color: Theme.sys-text-secondary; wrap: word-wrap;
-                        }
-                        artist-actions := HorizontalLayout {
-                            y: artist-summary.y + artist-summary.height + 20px; width: 100%; height: 44px;
-                            spacing: 12px; alignment: start;
-                            artist-btn-play := ArtistButton {
-                                label: "播放"; primary: true; icon: Icons.play-alt; enabled: AppState.artist-top-songs.length > 0;
-                                clicked => {
-                                    if AppState.runtime-enabled { AppState.runtime-action("play-all", -1, ""); }
-                                    else { AppState.play-song(AppState.artist-top-songs[0].id, AppState.artist-top-songs[0].title, AppState.artist-name, AppState.artist-top-songs[0].cover, false, true); }
-                                }
-                            }
-                            artist-btn-shuffle := ArtistButton {
-                                label: "随机播放"; icon: Icons.shuffle; enabled: AppState.artist-top-songs.length > 0;
-                                clicked => {
-                                    AppState.play-mode = "random";
-                                    if AppState.runtime-enabled { AppState.runtime-action("play-all", -1, ""); }
-                                    else { AppState.play-song(AppState.artist-top-songs[0].id, AppState.artist-top-songs[0].title, AppState.artist-name, AppState.artist-top-songs[0].cover, false, true); }
-                                }
-                            }
-                        }
-                    }
-                }
-                if !root.loading && AppState.artist-load-error == "" && AppState.artist-latest.length > 0 : artist-latest-section := Rectangle {
-                    height: 84.4px + latest-row.preferred-height;
-                    ArtistSectionHeader { width: 100%; eyebrow: "LATEST"; title: "最新发布"; }
-                    latest-row := HorizontalLayout {
-                        y: 84.4px; width: 100%; spacing: 24px;
-                        for item in AppState.artist-latest : latest-item := Rectangle {
-                            width: (parent.width - 24px) / 2; height: Math.max(80px, latest-info.height);
-                            latest-cover := RoundedCover { x: 0px; width: 80px; height: 80px; radius: 12px; source: item.cover; cover-id: item.id; }
-                            latest-info := ArtistReleaseInfo { x: 96px; y: (parent.height - self.height) / 2; width: parent.width - 96px; item: item; latest: true; }
-                            TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => {
-                                    AppState.album-title = item.title; AppState.album-cover = item.cover;
-                                    if AppState.runtime-enabled { AppState.runtime-action("album", item.id, ""); } else { AppState.current-route = "album"; }
-                                }
-                            }
-                        }
-                        if AppState.artist-latest.length == 1 : Rectangle { horizontal-stretch: 1; }
-                    }
-                }
-                if !root.loading && AppState.artist-load-error == "" && AppState.artist-top-songs.length > 0 : artist-songs-section := Rectangle {
-                    height: 84.4px + artist-songs-card.height;
-                    ArtistSectionHeader { width: 100%; eyebrow: "TOP TRACKS"; title: "热门歌曲"; count: AppState.artist-top-songs.length + " 首"; }
-                    artist-songs-card := Rectangle {
-                        y: 84.4px; width: 100%; height: 24px + AppState.artist-top-songs.length * 78px;
-                        border-radius: 24px; background: Theme.sys-surface;
-                        border-width: 1px; border-color: Theme.sys-border;
-                        drop-shadow-blur: 32px; drop-shadow-offset-y: 10px; drop-shadow-color: Theme.sys-shadow-soft;
-                        for song[i] in AppState.artist-top-songs : ArtistSongRow {
-                            x: 13px; y: 13px + i * 78px; width: parent.width - 26px; song: song;
-                        }
-                    }
-                }
-                if !root.loading && AppState.artist-load-error == "" && AppState.artist-albums.length > 0 : artist-albums-section := Rectangle {
-                    height: 84.4px + album-grid.height;
-                    ArtistSectionHeader { width: 100%; eyebrow: "DISCOGRAPHY"; title: "专辑"; count: AppState.artist-albums.length + " 张"; }
-                    album-grid := ArtistMediaGrid {
-                        y: 84.4px; width: 100%; items: AppState.artist-albums;
-                        selected(item) => {
-                            AppState.album-title = item.title; AppState.album-cover = item.cover;
-                            if AppState.runtime-enabled { AppState.runtime-action("album", item.id, ""); } else { AppState.current-route = "album"; }
-                        }
-                    }
-                }
-                if !root.loading && AppState.artist-load-error == "" && AppState.artist-eps.length > 0 : artist-eps-section := Rectangle {
-                    height: 84.4px + ep-grid.height;
-                    ArtistSectionHeader { width: 100%; eyebrow: "SINGLES"; title: "EP 和单曲"; count: AppState.artist-eps.length + " 张"; }
-                    ep-grid := ArtistMediaGrid {
-                        y: 84.4px; width: 100%; items: AppState.artist-eps;
-                        selected(item) => {
-                            AppState.album-title = item.title; AppState.album-cover = item.cover;
-                            if AppState.runtime-enabled { AppState.runtime-action("album", item.id, ""); } else { AppState.current-route = "album"; }
-                        }
-                    }
-                }
-                if !root.loading && AppState.artist-load-error == "" && AppState.artist-mvs.length > 0 : artist-mvs-section := Rectangle {
-                    height: 68.4px + mv-grid.height + 24px;
-                    ArtistSectionHeader { width: 100%; title: "MV"; count: AppState.artist-mvs.length + " 部"; }
-                    mv-grid := ArtistMediaGrid {
-                        y: 68.4px; width: 100%; items: AppState.artist-mvs; is-mv: true;
-                        selected(item) => { if AppState.runtime-enabled { AppState.runtime-action("mv", item.id, ""); } }
-                    }
-                }
+                if root.loading || ArtistState.artist-load-error != "" : artist-state := ArtistLoadState {
+                                                                          loading: root.loading;
+                                                                      }
+                if !root.loading && ArtistState.artist-load-error == "" : artist-header := ArtistHeader {
+                                                                           compact: root.compact;
+                                                                           base-font-size: root.base-font-size;
+                                                                       }
+                if !root.loading && ArtistState.artist-load-error == "" && ArtistState.artist-latest.length > 0 : artist-latest-section := ArtistLatestSection {
+
+                                                                                                            }
+                if !root.loading && ArtistState.artist-load-error == "" && ArtistState.artist-top-songs.length > 0 : artist-songs-section := ArtistSongsSection {
+
+                                                                                                               }
+                if !root.loading && ArtistState.artist-load-error == "" && ArtistState.artist-albums.length > 0 : artist-albums-section := ArtistAlbumsSection {
+
+                                                                                                            }
+                if !root.loading && ArtistState.artist-load-error == "" && ArtistState.artist-eps.length > 0 : artist-eps-section := ArtistSinglesSection {
+
+                                                                                                         }
+                if !root.loading && ArtistState.artist-load-error == "" && ArtistState.artist-mvs.length > 0 : artist-mvs-section := ArtistVideosSection {
+
+                                                                                                         }
             }
         }
     }

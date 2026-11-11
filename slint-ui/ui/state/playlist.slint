@@ -1,0 +1,69 @@
+import { Icons } from "../icons.slint";
+import { NavPlaylistItem, TrackItem } from "../models.slint";
+import { NavigationState } from "navigation.slint";
+import { AccountState } from "account.slint";
+import { DialogState } from "dialog.slint";
+import { DemoLibrary } from "../fixtures/library.slint";
+import { DemoPlaylists } from "../fixtures/playlists.slint";
+
+// Playlist details, management permissions and editor lifecycle.
+export global PlaylistState {
+    in-out property <int> active-playlist-id: 101;
+    in-out property <bool> playlist-loading: false;
+    in-out property <bool> playlist-metadata-loading: false;
+    in-out property <string> playlist-load-error;
+    in-out property <string> playlist-title: "深夜编码 · 赛博合成器浪潮";
+    in-out property <bool> playlist-owned: true;
+    in-out property <int> playlist-special-type: 0;
+    out property <bool> playlist-can-manage: AccountState.is-logged-in && playlist-owned && playlist-special-type == 0 && !playlist-loading && playlist-load-error == "";
+    in-out property <bool> playlist-is-private: false;
+    in-out property <int> playlist-track-count: 28;
+    in-out property <[TrackItem]> playlist-tracks: DemoLibrary.detail-tracks;
+    in-out property <string> playlist-editor-mode: "";
+    in-out property <string> playlist-editor-name;
+    in-out property <string> playlist-editor-description;
+    in-out property <bool> playlist-editor-private: false;
+    in-out property <bool> playlist-editor-can-submit: false;
+    in-out property <int> playlist-editor-name-length;
+    in-out property <int> playlist-editor-description-length;
+    in-out property <string> playlist-editor-error;
+    in-out property <bool> is-playlist-actions-open: false;
+    in-out property <length> playlist-actions-x;
+    in-out property <length> playlist-actions-y;
+    in-out property <int> playlist-restore-focus: 0;
+    in-out property <string> playlist-creator: "云村漫游者";
+    in-out property <image> playlist-creator-avatar: Icons.avatar-user;
+    in-out property <image> playlist-cover: Icons.cover-indigo;
+    in-out property <string> playlist-description: "精选 Synthwave、Dream Pop 与电子器乐，伴你在霓虹夜色与终端微光中保持专注。";
+    in-out property <string> playlist-subscribed-count: "12.8万";
+    in-out property <[string]> playlist-meta: ["2026-05-18 创建", "28 首歌曲", "36.4万 次播放"];
+    in-out property <[NavPlaylistItem]> created-playlists: DemoPlaylists.created-playlists;
+    private property <bool> logged-in: AccountState.is-logged-in;
+    private property <string> route: NavigationState.current-route;
+
+    callback open-create-playlist();
+    callback open-edit-playlist();
+    callback close-playlist-editor();
+    callback playlist-input-changed();
+    callback submit-playlist();
+    callback open-playlist(int) -> bool;
+    callback request-delete-playlist();
+    callback confirm-playlist-delete();
+
+    changed playlist-can-manage => {
+        if !self.playlist-can-manage {
+            self.is-playlist-actions-open = false;
+            if self.playlist-editor-mode == "edit" { self.playlist-editor-mode = ""; }
+        }
+    }
+    changed logged-in => {
+        if !self.logged-in {
+            self.is-playlist-actions-open = false;
+            self.playlist-editor-mode = "";
+            self.playlist-editor-can-submit = false;
+            if DialogState.playlist-delete-id >= 0 { DialogState.is-dialog-open = false; }
+            DialogState.playlist-delete-id = -1;
+        }
+    }
+    changed route => { self.is-playlist-actions-open = false; }
+}

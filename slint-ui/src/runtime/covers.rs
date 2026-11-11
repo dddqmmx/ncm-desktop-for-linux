@@ -306,7 +306,8 @@ mod tests {
         i_slint_backend_testing::init_no_event_loop();
         let app = AppWindow::new().unwrap();
         app.show().unwrap();
-        let state = app.global::<AppState>();
+        let playlist_state = app.global::<crate::PlaylistState>();
+        let navigation_state = app.global::<crate::NavigationState>();
         let model = cover_model(
             (0..1_000)
                 .map(|id| TrackItem {
@@ -323,8 +324,8 @@ mod tests {
             model: model.clone(),
             rows: RefCell::default(),
         });
-        state.set_playlist_tracks(reads.clone().into());
-        state.set_current_route("playlist".into());
+        playlist_state.set_playlist_tracks(reads.clone().into());
+        navigation_state.set_current_route("playlist".into());
         let settle = || {
             let _ = app.root_element().size();
             mock_elapsed_time(std::time::Duration::from_millis(600));
@@ -393,8 +394,9 @@ mod tests {
         use slint::ComponentHandle;
         i_slint_backend_testing::init_no_event_loop();
         let app = AppWindow::new().unwrap();
-        let state = app.global::<AppState>();
-        state.set_is_logged_in(true);
+        let account_state = app.global::<crate::AccountState>();
+        let home_state = app.global::<crate::HomeState>();
+        account_state.set_is_logged_in(true);
         let playlists = cover_model(
             (0..40)
                 .map(|id| RecommendPlaylistItem {
@@ -421,8 +423,8 @@ mod tests {
             model: songs.clone(),
             rows: RefCell::default(),
         });
-        state.set_recommend_playlists(pl_reads.clone().into());
-        state.set_daily_songs(song_reads.clone().into());
+        home_state.set_recommend_playlists(pl_reads.clone().into());
+        home_state.set_daily_songs(song_reads.clone().into());
         app.show().unwrap();
         let settle = || {
             for _ in 0..40 {

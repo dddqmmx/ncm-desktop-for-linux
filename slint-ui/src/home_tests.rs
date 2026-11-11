@@ -1,4 +1,4 @@
-use crate::{AppState, AppWindow, DailySongItem, RecommendPlaylistItem, Theme};
+use crate::{AppWindow, DailySongItem, RecommendPlaylistItem, Theme};
 use i_slint_backend_testing::{mock_elapsed_time, ElementHandle, ElementRoot};
 use slint::{
     platform::{PointerEventButton, WindowEvent},
@@ -96,11 +96,15 @@ fn init() {
 }
 
 fn seed_discovery(app: &AppWindow) {
-    let state = app.global::<AppState>();
+    let home_state = app.global::<crate::HomeState>();
     let fixture = std::env::var("NCM_HOME_FIXTURE").ok().map(|path| {
         serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(path).unwrap()).unwrap()
     });
-    let covers: Vec<_> = state.get_daily_songs().iter().map(|s| s.cover).collect();
+    let covers: Vec<_> = home_state
+        .get_daily_songs()
+        .iter()
+        .map(|s| s.cover)
+        .collect();
     let albums = (0..12)
         .map(|i| {
             let a = fixture.as_ref().map(|v| &v["albums"][i]);
@@ -160,8 +164,8 @@ fn seed_discovery(app: &AppWindow) {
             }
         })
         .collect::<Vec<_>>();
-    state.set_home_new_albums(Rc::new(VecModel::from(albums)).into());
-    state.set_home_charts(
+    home_state.set_home_new_albums(Rc::new(VecModel::from(albums)).into());
+    home_state.set_home_charts(
         Rc::new(VecModel::from(
             charts
                 .into_iter()
@@ -170,8 +174,8 @@ fn seed_discovery(app: &AppWindow) {
         ))
         .into(),
     );
-    state.set_home_albums_loaded(true);
-    state.set_home_charts_loaded(true);
+    home_state.set_home_albums_loaded(true);
+    home_state.set_home_charts_loaded(true);
 }
 
 #[test]
@@ -179,8 +183,13 @@ fn home_shelves_drag_without_clicking_and_wheel_scrolls_the_page() {
     init();
     let app = AppWindow::new().unwrap();
     seed_discovery(&app);
+    crate::playlists::attach(&app);
     app.show().unwrap();
-    let state = app.global::<AppState>();
+    let navigation_state = app.global::<crate::NavigationState>();
+    let player_state = app.global::<crate::PlayerState>();
+    let playlist_state = app.global::<crate::PlaylistState>();
+    let detail_state = app.global::<crate::DetailState>();
+    let home_state = app.global::<crate::HomeState>();
     settle(&app);
     snapshot(&app, "home-light");
     let title = element(&app, "HomeView::home-page-title");
@@ -193,7 +202,7 @@ fn home_shelves_drag_without_clicking_and_wheel_scrolls_the_page() {
             (title.absolute_position().y - title_y).abs() < 0.5,
             "vertical mouse drag moved the home page at x={x}"
         );
-        assert_eq!(state.get_current_route(), "home");
+        assert_eq!(navigation_state.get_current_route(), "home");
     }
     let first = element(&app, "MediaCard::card-surface");
     let first_x = first.absolute_position().x;
@@ -203,13 +212,17 @@ fn home_shelves_drag_without_clicking_and_wheel_scrolls_the_page() {
         "mouse drag did not browse the shelf"
     );
     assert!((title.absolute_position().y - title_y).abs() < 0.5);
-    assert_eq!(state.get_current_route(), "home", "drag opened a card");
-    let current_song = state.get_current_song_id();
+    assert_eq!(
+        navigation_state.get_current_route(),
+        "home",
+        "drag opened a card"
+    );
+    let current_song = player_state.get_current_song_id();
     let song_shelf = element(&app, "HomeView::song-shelf");
     let song_y = song_shelf.absolute_position().y + 80.0;
     drag(&app, LogicalPosition::new(700.0, song_y), -120.0);
     assert_eq!(
-        state.get_current_song_id(),
+        player_state.get_current_song_id(),
         current_song,
         "drag played a recommended song"
     );
@@ -253,9 +266,9 @@ fn home_shelves_drag_without_clicking_and_wheel_scrolls_the_page() {
     settle(&app);
     snapshot(&app, "home-scrolled-dark");
     click(&app, "HomeChartCard::root");
-    assert_eq!(state.get_current_route(), "playlist");
-    assert_eq!(state.get_playlist_title(), "飙升榜");
-    state.set_current_route("home".into());
+    assert_eq!(navigation_state.get_current_route(), "playlist");
+    assert_eq!(playlist_state.get_playlist_title(), "飙升榜");
+    navigation_state.set_current_route("home".into());
     settle(&app);
     wheel(&app, 288.0, 500.0, 0.0, -600.0);
     settle(&app);
@@ -269,7 +282,11 @@ fn home_shelves_drag_without_clicking_and_wheel_scrolls_the_page() {
         albums[0].absolute_position().y + 80.0,
     );
     drag(&app, LogicalPosition::new(700.0, position.y), -80.0);
-    assert_eq!(state.get_current_route(), "home", "drag opened a new album");
+    assert_eq!(
+        navigation_state.get_current_route(),
+        "home",
+        "drag opened a new album"
+    );
     drag(&app, LogicalPosition::new(620.0, position.y), 80.0);
     app.window()
         .dispatch_event(WindowEvent::PointerMoved { position });
@@ -281,12 +298,12 @@ fn home_shelves_drag_without_clicking_and_wheel_scrolls_the_page() {
         position,
         button: PointerEventButton::Left,
     });
-    assert_eq!(state.get_current_route(), "album");
+    assert_eq!(navigation_state.get_current_route(), "album");
     assert_eq!(
-        state.get_album_title(),
-        state.get_home_new_albums().row_data(0).unwrap().title
+        detail_state.get_album_title(),
+        home_state.get_home_new_albums().row_data(0).unwrap().title
     );
-    state.set_current_route("home".into());
+    navigation_state.set_current_route("home".into());
     settle(&app);
     snapshot(&app, "home-dark");
 }
@@ -295,9 +312,10 @@ fn home_shelves_drag_without_clicking_and_wheel_scrolls_the_page() {
 fn home_shelves_virtualize_both_axes_and_clamp_after_data_changes() {
     init();
     let app = AppWindow::new().unwrap();
-    let state = app.global::<AppState>();
-    state.set_home_albums_loaded(true);
-    state.set_home_charts_loaded(true);
+    let home_state = app.global::<crate::HomeState>();
+    let runtime_state = app.global::<crate::RuntimeState>();
+    home_state.set_home_albums_loaded(true);
+    home_state.set_home_charts_loaded(true);
     let lists = Rc::new(VecModel::from(
         (0..10000)
             .map(|i| RecommendPlaylistItem {
@@ -307,8 +325,8 @@ fn home_shelves_virtualize_both_axes_and_clamp_after_data_changes() {
             })
             .collect::<Vec<_>>(),
     ));
-    state.set_recommend_playlists(lists.clone().into());
-    state.set_daily_songs(
+    home_state.set_recommend_playlists(lists.clone().into());
+    home_state.set_daily_songs(
         Rc::new(VecModel::from(
             (0..10000)
                 .map(|i| DailySongItem {
@@ -322,7 +340,7 @@ fn home_shelves_virtualize_both_axes_and_clamp_after_data_changes() {
     );
     let requests = Rc::new(RefCell::new(HashSet::new()));
     let sink = requests.clone();
-    state.on_request_cover(move |id, _| {
+    runtime_state.on_request_cover(move |id, _| {
         if id >= 20000 {
             sink.borrow_mut().insert(id);
         }
@@ -334,7 +352,7 @@ fn home_shelves_virtualize_both_axes_and_clamp_after_data_changes() {
     assert!(requests.borrow().len() <= 12);
     let initially_visible = requests.borrow().clone();
     requests.borrow_mut().clear();
-    click(&app, "HomeView::playlist-next");
+    click(&app, "RecommendedPlaylistsSection::playlist-next");
     settle(&app);
     assert!(requests
         .borrow()
@@ -368,10 +386,10 @@ fn home_shelves_virtualize_both_axes_and_clamp_after_data_changes() {
     wheel(&app, 700.0, 250.0, 0.0, -200.0);
     settle(&app);
     assert!(title.absolute_position().y < title_y - 100.0);
-    state.set_recommend_playlists(
+    home_state.set_recommend_playlists(
         Rc::new(VecModel::from(Vec::<RecommendPlaylistItem>::new())).into(),
     );
-    state.set_daily_songs(Rc::new(VecModel::from(Vec::<DailySongItem>::new())).into());
+    home_state.set_daily_songs(Rc::new(VecModel::from(Vec::<DailySongItem>::new())).into());
     settle(&app);
     assert_eq!(
         ElementHandle::find_by_element_id(&app, "MediaCard::root").count(),

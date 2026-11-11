@@ -1,0 +1,42 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { DownloadState } from "../state/download.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+
+import { AppIcon } from "../components/common.slint";
+
+component DownloadQualityOptions inherits VerticalLayout {
+
+       spacing: 4px;
+    for option in DownloadState.download-qualities : Rectangle {
+        height: 44px; border-radius: 10px;
+        background: quality-ta.has-hover && option.available ? Theme.sys-control-hover : transparent;
+        quality-ta := TouchArea { enabled: option.available; mouse-cursor: option.available ? pointer : not-allowed; clicked => { RuntimeState.runtime-action("save-download", DownloadState.download-song-id, option.quality); } }
+        Text { x: 12px; height: parent.height; width: 130px; text: option.label; font-size: 14px; color: option.available ? Theme.sys-text : Theme.sys-text-disabled; vertical-alignment: center; }
+        Text { x: 145px; height: parent.height; width: parent.width - 157px; text: option.available ? "下载" : option.reason; font-size: 12px; color: option.available ? Theme.theme-color : Theme.sys-text-tertiary; vertical-alignment: center; horizontal-alignment: right; overflow: elide; }
+    }
+}
+
+export component DownloadModal inherits Rectangle {
+    background: rgba(0, 0, 0, 0.22);
+    TouchArea { clicked => { DownloadState.is-download-open = false; } }
+    Rectangle {
+        width: 460px; height: 440px;
+        x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+        background: Theme.glass-fill-strong; border-radius: 20px;
+        border-width: 1px; border-color: Theme.glass-border;
+        TouchArea {}
+        Text { x: 24px; y: 22px; width: 375px; text: "下载 · " + DownloadState.download-song-name; font-size: 18px; font-weight: 700; color: Theme.sys-text; overflow: elide; }
+        Rectangle {
+            x: parent.width - 50px; y: 18px; width: 32px; height: 32px;
+            AppIcon { x: 8px; y: 8px; source: Icons.close; icon-size: 16px; tint: Theme.sys-text-secondary; }
+            TouchArea { mouse-cursor: pointer; clicked => { DownloadState.is-download-open = false; } }
+        }
+        if DownloadState.download-qualities.length == 0 : Text { x: 24px; y: 90px; text: "正在获取当前账号可下载音质…"; font-size: 13px; color: Theme.sys-text-secondary; }
+        download-options := DownloadQualityOptions {
+            x: 20px;
+            y: 70px;
+            width: parent.width - 40px;
+        }
+    }
+}

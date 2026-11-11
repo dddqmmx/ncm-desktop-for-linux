@@ -1,0 +1,341 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { SettingsState } from "../state/settings.slint";
+import { Theme } from "../theme.slint";
+
+import { RangeSlider } from "../components/common.slint";
+
+import { SettingsText, SettingGroupCard } from "controls.slint";
+
+component CacheBreakdown inherits VerticalLayout {
+
+    spacing: 12px;
+
+    HorizontalLayout {
+        spacing: 12px;
+
+        Rectangle {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            preferred-width: 0px;
+            height: 100px;
+            border-radius: 14px;
+            background: Theme.sys-surface-muted;
+
+            VerticalLayout {
+                padding-top: 14px;
+                padding-bottom: 14px;
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 4px;
+
+                SettingsText { text: "歌曲"; font-size: 12px; font-weight: 700; color: Theme.sys-text-secondary; }
+                SettingsText { text: SettingsState.setting-cache-details[0]; font-size: 16px; font-weight: 700; color: Theme.sys-text; }
+                SettingsText { text: SettingsState.setting-cache-details[1]; font-size: 12px; color: Theme.sys-text-tertiary; }
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            preferred-width: 0px;
+            height: 100px;
+            border-radius: 14px;
+            background: Theme.sys-surface-muted;
+
+            VerticalLayout {
+                padding-top: 14px;
+                padding-bottom: 14px;
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 4px;
+
+                SettingsText { text: "歌手 / 用户头像"; font-size: 12px; font-weight: 700; color: Theme.sys-text-secondary; }
+                SettingsText { text: SettingsState.setting-cache-details[2]; font-size: 16px; font-weight: 700; color: Theme.sys-text; }
+                SettingsText { text: SettingsState.setting-cache-details[3]; font-size: 12px; color: Theme.sys-text-tertiary; }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+
+        Rectangle {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            preferred-width: 0px;
+            height: 100px;
+            border-radius: 14px;
+            background: Theme.sys-surface-muted;
+
+            VerticalLayout {
+                padding-top: 14px;
+                padding-bottom: 14px;
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 4px;
+
+                SettingsText { text: "封面"; font-size: 12px; font-weight: 700; color: Theme.sys-text-secondary; }
+                SettingsText { text: SettingsState.setting-cache-details[4]; font-size: 16px; font-weight: 700; color: Theme.sys-text; }
+                SettingsText { text: SettingsState.setting-cache-details[5]; font-size: 12px; color: Theme.sys-text-tertiary; }
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            preferred-width: 0px;
+            height: 100px;
+            border-radius: 14px;
+            background: Theme.sys-surface-muted;
+
+            VerticalLayout {
+                padding-top: 14px;
+                padding-bottom: 14px;
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 4px;
+
+                SettingsText { text: "歌词"; font-size: 12px; font-weight: 700; color: Theme.sys-text-secondary; }
+                SettingsText { text: SettingsState.setting-cache-details[6]; font-size: 16px; font-weight: 700; color: Theme.sys-text; }
+                SettingsText { text: SettingsState.setting-cache-details[7]; font-size: 12px; color: Theme.sys-text-tertiary; }
+            }
+        }
+    }
+}
+
+component CachePreloadLimit inherits VerticalLayout {
+
+    spacing: 10px;
+    SettingsText {
+        text: "最大预下载大小";
+        font-size: 13px;
+        font-weight: 700;
+        color: Theme.sys-text-secondary;
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+
+        RangeSlider {
+            horizontal-stretch: 1;
+            y: (parent.height - self.height) / 2;
+            value <=> SettingsState.setting-cache-ahead-mb;
+            minimum: 1.0;
+            maximum: 128.0;
+        }
+
+        Rectangle {
+            width: 96px;
+            height: 36px;
+            border-radius: 10px;
+            background: Theme.sys-surface-strong;
+            border-width: 1px;
+            border-color: Theme.sys-border-strong;
+
+            SettingsText {
+                text: Math.round(SettingsState.setting-cache-ahead-mb);
+                font-size: 13px;
+                font-weight: 600;
+                color: Theme.sys-text;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        SettingsText {
+            text: "MB";
+            font-size: 12px;
+            font-weight: 700;
+            color: Theme.sys-text-tertiary;
+            vertical-alignment: center;
+        }
+
+        Rectangle {
+            width: 60px;
+            height: 36px;
+            border-radius: 10px;
+            background: Theme.theme-color;
+
+            TouchArea { mouse-cursor: pointer; clicked => { RuntimeState.runtime-action("apply-cache", -1, ""); } }
+
+            SettingsText {
+                text: "应用";
+                font-size: 13px;
+                font-weight: 700;
+                color: #ffffff;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+component CacheSizeLimit inherits VerticalLayout {
+
+    spacing: 10px;
+    SettingsText {
+        text: "最大缓存占用";
+        font-size: 13px;
+        font-weight: 700;
+        color: Theme.sys-text-secondary;
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+
+        RangeSlider {
+            horizontal-stretch: 1;
+            y: (parent.height - self.height) / 2;
+            value <=> SettingsState.setting-cache-limit-mb;
+            minimum: 128.0;
+            maximum: 8192.0;
+        }
+
+        Rectangle {
+            width: 96px;
+            height: 36px;
+            border-radius: 10px;
+            background: Theme.sys-surface-strong;
+            border-width: 1px;
+            border-color: Theme.sys-border-strong;
+
+            SettingsText {
+                text: Math.round(SettingsState.setting-cache-limit-mb);
+                font-size: 13px;
+                font-weight: 600;
+                color: Theme.sys-text;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        SettingsText {
+            text: "MB";
+            font-size: 12px;
+            font-weight: 700;
+            color: Theme.sys-text-tertiary;
+            vertical-alignment: center;
+        }
+
+        Rectangle {
+            width: 60px;
+            height: 36px;
+            border-radius: 10px;
+            background: Theme.theme-color;
+
+            TouchArea { mouse-cursor: pointer; clicked => { RuntimeState.runtime-action("apply-cache", -1, ""); } }
+
+            SettingsText {
+                text: "应用";
+                font-size: 13px;
+                font-weight: 700;
+                color: #ffffff;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+component CacheUsageProgress inherits Rectangle {
+
+    height: 10px;
+    border-radius: 5px;
+    background: Theme.sys-control;
+    clip: true;
+
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: parent.width * (SettingsState.setting-cache-usage-percent / 100.0);
+        height: 100%;
+        border-radius: 5px;
+        background: @linear-gradient(90deg, Theme.theme-color 0%, Theme.theme-color-strong 100%);
+        animate width { duration: 250ms; easing: ease; }
+    }
+}
+
+component CacheUsageSummary inherits HorizontalLayout {
+
+    alignment: space-between;
+
+    VerticalLayout {
+        spacing: 6px;
+        SettingsText {
+            text: "当前占用";
+            font-size: 12px;
+            color: Theme.sys-text-tertiary;
+        }
+        SettingsText {
+            text: SettingsState.setting-cache-usage-text;
+            font-size: 24px;
+            font-weight: 800;
+            color: Theme.sys-text;
+        }
+    }
+
+    Rectangle {
+        width: 84px;
+        height: 36px;
+        border-radius: 10px;
+        background: clr-cache-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
+
+        clr-cache-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                if RuntimeState.runtime-enabled { RuntimeState.runtime-action("clear-cache", -1, ""); } else {
+                    SettingsState.setting-cache-usage-percent = 0.0;
+                    SettingsState.setting-cache-usage-text = "0 B / 2.00 GB";
+                }
+            }
+        }
+
+        SettingsText {
+            text: "清理缓存";
+            font-size: 13px;
+            font-weight: 600;
+            color: Theme.sys-text;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component CacheSettingsTab inherits VerticalLayout {
+    SettingGroupCard {
+        title: "本地缓存";
+        no-card: true;
+        tip: "native 缓存会维护歌曲、歌手/用户信息、封面和歌词并在超限时自动回收冷数据。";
+
+        cache-card := Rectangle {
+            border-radius: 18px;
+            background: Theme.sys-surface-muted;
+
+            VerticalLayout {
+                padding: 20px;
+                spacing: 18px;
+
+                CacheUsageSummary {
+
+                }
+
+                // .cache-progress (height 10px, fill transition width 0.25s ease)
+                cache-progress := CacheUsageProgress {
+
+                }
+
+                cache-limit := CacheSizeLimit {
+
+                }
+
+                cache-ahead := CachePreloadLimit {
+
+                }
+
+                cache-breakdown := CacheBreakdown {
+
+                }
+            }
+        }
+    }
+}

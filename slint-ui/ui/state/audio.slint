@@ -1,0 +1,54 @@
+import { OutputDeviceItem, SettingChoice } from "../models.slint";
+
+// Audio preferences, device capabilities and effective volume availability.
+export global AudioState {
+    in-out property <[OutputDeviceItem]> output-devices: [
+        { id: "hw:demo", name: "USB Hi-Fi DAC Audio (当前)", current: true },
+        { id: "", name: "系统默认输出", current: false },
+    ];
+    in-out property <int> setting-output-device-index: 0;
+    in-out property <float> volume-percent: 76.0;
+    out property <bool> can-adjust-volume: self.setting-software-volume
+        && !self.setting-strict-bitperfect && !self.session-volume-locked;
+    in-out property <bool> session-volume-locked: false;
+    in-out property <string> setting-sound-quality: "lossless";
+    out property <[SettingChoice]> sound-quality-options: [
+        { value: "standard", label: "标准 (128kbps)" },
+        { value: "exhigh", label: "极高 (320kbps)" },
+        { value: "lossless", label: "无损 (最高48khz, 16bit)" },
+        { value: "hires", label: "Hi-Res (最高192khz, 24bit)" },
+        { value: "jyeffect", label: "高清臻音 (96khz, 24bit)" },
+        { value: "sky", label: "沉浸环绕声 (最高5.1声道)" },
+        { value: "jymaster", label: "超清母带 (192khz, 24bit)" },
+    ];
+    out property <int> setting-sound-quality-index:
+        self.setting-sound-quality == "standard" ? 0 :
+        self.setting-sound-quality == "exhigh" ? 1 :
+        self.setting-sound-quality == "lossless" ? 2 :
+        self.setting-sound-quality == "hires" ? 3 :
+        self.setting-sound-quality == "jyeffect" ? 4 :
+        self.setting-sound-quality == "sky" ? 5 :
+        self.setting-sound-quality == "jymaster" ? 6 : -1;
+    out property <string> setting-sound-quality-label: self.setting-sound-quality-index >= 0
+        ? self.sound-quality-options[self.setting-sound-quality-index].label : "请选择音质";
+    in-out property <string> setting-audio-engine: "native";
+    in-out property <bool> setting-software-volume: true;
+    in-out property <string> setting-output-device-label: "USB Hi-Fi DAC Audio (当前)";
+    in-out property <bool> setting-supports-exclusive: true;
+    in-out property <bool> setting-exclusive-mode: true;
+    in-out property <bool> setting-strict-bitperfect: false;
+
+    callback audio-changed(string);
+
+    changed output-devices => { self.audio-changed("output-devices"); }
+    changed setting-output-device-index => { self.audio-changed("setting-output-device-index"); }
+    changed setting-sound-quality => { self.audio-changed("setting-sound-quality"); }
+    changed setting-audio-engine => { self.audio-changed("setting-audio-engine"); }
+    changed setting-software-volume => { self.audio-changed("setting-software-volume"); }
+    changed setting-output-device-label => { self.audio-changed("setting-output-device-label"); }
+    changed setting-supports-exclusive => { self.audio-changed("setting-supports-exclusive"); }
+    changed setting-exclusive-mode => { self.audio-changed("setting-exclusive-mode"); }
+    changed setting-strict-bitperfect => { self.audio-changed("setting-strict-bitperfect"); }
+    changed volume-percent => { self.audio-changed("volume-percent"); }
+    changed session-volume-locked => { self.audio-changed("session-volume-locked"); }
+}

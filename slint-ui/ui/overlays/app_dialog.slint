@@ -1,0 +1,164 @@
+import { DialogState } from "../state/dialog.slint";
+import { PlaylistState } from "../state/playlist.slint";
+import { LibraryState } from "../state/library.slint";
+import { Theme } from "../theme.slint";
+
+
+component DialogContent inherits Rectangle {
+    in property <bool> confirm-focused;
+    in property <bool> keyboard-focus;
+    callback confirm();
+    callback cancel();
+
+    VerticalLayout {
+        x: 0px;
+        y: 0px;
+        width: 100%;
+        spacing: 8px;
+
+        Text {
+            text: DialogState.dialog-title;
+            font-size: 18px;
+            font-weight: 700;
+            color: Theme.sys-text;
+        }
+
+        Text {
+            text: DialogState.dialog-message;
+            font-size: 14px;
+            color: Theme.sys-text-secondary;
+            wrap: word-wrap;
+        }
+    }
+
+    // .dialog-actions (y = 142 - 40 = 102px -> window y = 406 + 23 + 102 = 531px, gap 8px, btn width 76px, height 40px)
+    if DialogState.dialog-mode == "confirm-cancel" : dialog-secondary-btn := Rectangle {
+        x: parent.width - 76px - 8px - 76px;
+        y: 102px;
+        width: 76px;
+        height: 40px;
+        border-radius: 20px;
+        background: cancel-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
+        border-width: root.keyboard-focus && !root.confirm-focused ? 1px : 0px;
+        border-color: Theme.theme-color;
+        accessible-role: button;
+        accessible-label: DialogState.dialog-cancel-text;
+        accessible-action-default => { root.cancel(); }
+
+        cancel-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.cancel(); }
+        }
+
+        Text {
+            text: DialogState.dialog-cancel-text;
+            font-size: 14px;
+            font-weight: 700;
+            color: Theme.sys-text;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    dialog-primary-btn := Rectangle {
+        x: parent.width - 76px;
+        y: 102px;
+        width: 76px;
+        height: 40px;
+        border-radius: 20px;
+        background: ok-ta.has-hover ? Theme.theme-color-strong : Theme.theme-color;
+        border-width: root.keyboard-focus && root.confirm-focused ? 2px : 0px;
+        border-color: Theme.theme-color-strong;
+        accessible-role: button;
+        accessible-label: DialogState.dialog-confirm-text;
+        accessible-action-default => { root.confirm(); }
+
+        ok-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                root.confirm();
+            }
+        }
+
+        Text {
+            text: DialogState.dialog-confirm-text;
+            font-size: 14px;
+            font-weight: 700;
+            color: Theme.sys-on-accent;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component AppDialogModal inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.18);
+    property <bool> active: DialogState.is-dialog-open;
+    property <bool> confirm-focused: false;
+    changed active => {
+        if root.active { root.confirm-focused = DialogState.dialog-mode != "confirm-cancel"; dialog-focus.focus(); }
+    }
+    public function cancel() {
+        if DialogState.playlist-delete-id >= 0 { PlaylistState.playlist-restore-focus = 2; }
+        DialogState.is-dialog-open = false;
+    }
+    public function confirm() {
+        if DialogState.playlist-delete-id >= 0 {
+            PlaylistState.confirm-playlist-delete();
+        } else if DialogState.local-dialog-action == "remove" && DialogState.local-remove-id >= 0 {
+            LibraryState.remove-local-track(DialogState.local-remove-id);
+        } else if DialogState.local-dialog-action == "clear" {
+            LibraryState.clear-local-library();
+        }
+        DialogState.is-dialog-open = false;
+    }
+    dialog-focus := FocusScope {
+        enabled: root.active;
+        key-pressed(event) => {
+            if event.text == Key.Escape { root.cancel(); return accept; }
+            if event.text == Key.Tab || event.text == Key.Backtab {
+                if DialogState.dialog-mode == "confirm-cancel" { root.confirm-focused = !root.confirm-focused; }
+                return accept;
+            }
+            if event.text == "\n" || event.text == " " {
+                if root.confirm-focused { root.confirm(); } else { root.cancel(); }
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    TouchArea {
+        clicked => { root.cancel(); }
+    }
+
+    app-dialog := Rectangle {
+        width: Math.min(520px, parent.width - 40px);
+        height: 188px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 20px;
+        background: Theme.glass-fill-strong;
+        border-width: 1px;
+        border-color: Theme.glass-border;
+        drop-shadow-blur: 48px;
+        drop-shadow-offset-y: 22px;
+        drop-shadow-color: Theme.glass-shadow-elevated;
+
+        TouchArea {}
+
+        // 1px border + 22px padding -> inner x=+23px, y=+23px, width=474px, height=142px
+        dialog-content := DialogContent {
+            x: 23px;
+            y: 23px;
+            width: parent.width - 46px;
+            height: parent.height - 46px;
+            confirm-focused: root.confirm-focused;
+            keyboard-focus: dialog-focus.has-focus;
+            confirm => { root.confirm(); }
+            cancel => { root.cancel(); }
+        }
+    }
+}

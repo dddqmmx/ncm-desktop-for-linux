@@ -1,0 +1,12 @@
+import { RuntimeState } from "runtime.slint";
+
+// Per-window route and viewport; no page data or preferences.
+export global NavigationState {
+    in-out property <length> window-width: 1435px;
+    in-out property <length> window-height: 1000px;
+    in-out property <string> current-route: "home";
+
+    changed current-route => {
+        if RuntimeState.runtime-enabled { RuntimeState.runtime-action("route", -1, self.current-route); }
+    }
+}

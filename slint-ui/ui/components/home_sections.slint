@@ -1,5 +1,7 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { FlowText } from "typography.slint";
 import { Theme } from "../theme.slint";
-import { AppState, RecommendPlaylistItem, DailySongItem, HomeChartItem } from "../state.slint";
+import { RecommendPlaylistItem, DailySongItem, HomeChartItem } from "../models.slint";
 import { RoundedCover } from "common.slint";
 import { MediaCard, AlbumItem } from "media.slint";
 import { PlaylistButton } from "../overlays/playlist_editor.slint";
@@ -7,82 +9,35 @@ import { SkeletonSweepOverlay } from "skeleton.slint";
 import { DragShelf } from "drag_shelf.slint";
 
 // Keep a viewport-sized rotating pool, including for large recommendation models.
-export component HomeCardShelf inherits Rectangle {
+component HomeShelfItem inherits Rectangle {
+    in property <bool> loading;
+    in property <bool> song-mode;
+    in property <int> cover-size;
+    in property <int> index;
     in property <[RecommendPlaylistItem]> playlists;
     in property <[DailySongItem]> songs;
-    in property <bool> song-mode: false;
-    in property <bool> loading: false;
-    in property <length> page-top;
-    in property <length> page-height;
     callback playlist-clicked(RecommendPlaylistItem);
     callback playlist-play-clicked(RecommendPlaylistItem);
     callback song-clicked(DailySongItem);
-    callback page-scrolled(length);
-    out property <bool> at-start: shelf.content-x >= -1px;
-    out property <bool> at-end: shelf.content-x <= shelf.width - shelf.content-width + 1px;
-    property <length> card-width: root.song-mode ? 176px : 200px;
-    // Request physical pixels, including AlbumItem's 1.06x hover zoom. This
-    // follows display scaling without retaining 800px artwork for every card.
-    property <int> cover-size: Math.ceil((root.song-mode ? 176px * 1.06 : 250px) / 1phx);
-    property <length> step: root.card-width + 20px;
-    property <int> item-count: root.loading ? 8 : root.song-mode ? root.songs.length : root.playlists.length;
-    property <bool> target-on-screen: root.page-height > 0px && root.absolute-position.y < root.page-top + root.page-height
-        && root.absolute-position.y + root.height > root.page-top;
-    property <bool> on-screen;
-    init => { root.on-screen = root.target-on-screen; }
-    changed target-on-screen => { root.on-screen = root.target-on-screen; }
-    property <int> first: Math.max(0, Math.floor(-shelf.content-x / root.step));
-    property <int> slots: root.on-screen ? Math.min(root.item-count, Math.ceil(root.width / root.step) + 1) : 0;
-    height: root.song-mode ? 235.09px : 250px;
-    public function move-page(direction: int) {
-        shelf.content-x = Math.clamp(shelf.content-x - direction * Math.max(1, Math.floor(shelf.width / root.step)) * root.step,
-            Math.min(0px, shelf.width - shelf.content-width), 0px);
+    width: 100%; height: 100%;
+    if root.loading : Rectangle {
+        width: 100%; height: root.song-mode ? 176px : 250px;
+        border-radius: root.song-mode ? 28px : 18px;
+        background: Theme.sys-control; clip: true;
+        SkeletonSweepOverlay {}
     }
-    changed item-count => { shelf.content-x = Math.clamp(shelf.content-x, Math.min(0px, shelf.width - shelf.content-width), 0px); }
-    changed width => { shelf.content-x = Math.clamp(shelf.content-x, Math.min(0px, shelf.width - shelf.content-width), 0px); }
-    shelf := DragShelf {
-        x: -24px; y: -12px; width: root.width + 48px; height: root.height + 24px;
-        extent: root.item-count * root.step - 20px + 48px;
-        page-scrolled(delta) => { root.page-scrolled(delta); }
-        for slot in root.slots : card-slot := Rectangle {
-            property <int> target-index: root.first + Math.mod(slot - Math.mod(root.first, Math.max(1, root.slots)) + root.slots, Math.max(1, root.slots));
-            property <int> index;
-            init => { self.index = self.target-index; }
-            changed target-index => { self.index = self.target-index; }
-            x: 24px + self.index * root.step; y: 12px; width: root.card-width; height: root.height;
-            visible: self.index < root.item-count && self.x + self.width + shelf.content-x > 0px && self.x + shelf.content-x < shelf.width;
-            if self.index < root.item-count : Rectangle {
-                width: 100%; height: 100%;
-                if root.loading : Rectangle {
-                    width: 100%; height: root.song-mode ? 176px : 250px;
-                    border-radius: root.song-mode ? 28px : 18px;
-                    background: Theme.sys-control; clip: true;
-                    SkeletonSweepOverlay {}
-                }
-                if !root.loading && !root.song-mode : MediaCard {
-                    item: root.playlists[card-slot.index];
-                    cover-size: root.cover-size;
-                    clicked => { root.playlist-clicked(self.item); }
-                    play-clicked => { root.playlist-play-clicked(self.item); }
-                }
-                if !root.loading && root.song-mode : AlbumItem {
-                    item: root.songs[card-slot.index];
-                    cover-size: root.cover-size;
-                    clicked => { root.song-clicked(self.item); }
-                }
-            }
-        }
+    if !root.loading && !root.song-mode : MediaCard {
+        item: root.playlists[root.index];
+        cover-size: root.cover-size;
+        clicked => { root.playlist-clicked(self.item); }
+        play-clicked => { root.playlist-play-clicked(self.item); }
     }
-    if !root.loading && root.item-count == 0 : Rectangle {
-        width: 100%; height: 100%; border-radius: 18px; background: Theme.sys-surface-muted;
-        Text {
-            width: 100%; height: 100%; text: "暂时没有推荐，先去发现喜欢的音乐吧";
-            color: Theme.sys-text-secondary; font-size: 14px;
-            horizontal-alignment: center; vertical-alignment: center;
-        }
+    if !root.loading && root.song-mode : AlbumItem {
+        item: root.songs[root.index];
+        cover-size: root.cover-size;
+        clicked => { root.song-clicked(self.item); }
     }
 }
-
 
 component HomeChartCard inherits Rectangle {
     in property <HomeChartItem> item;
@@ -120,6 +75,85 @@ component HomeChartCard inherits Rectangle {
     touch := TouchArea { mouse-cursor: pointer; clicked => { focus.focus(); root.clicked(); } }
 }
 
+component HomeChartSlot inherits Rectangle {
+    in property <bool> loading;
+    in property <int> index;
+    in property <int> chart-count;
+    in property <[HomeChartItem]> chart-items;
+    callback chart-clicked(HomeChartItem);
+    width: 100%; height: 100%;
+    if root.loading : Rectangle { width: 100%; height: 100%; border-radius: 18px; background: Theme.sys-control; clip: true; SkeletonSweepOverlay {} }
+    if !root.loading && index < root.chart-count : HomeChartCard { width: 100%; item: root.chart-items[index]; clicked => { root.chart-clicked(self.item); } }
+}
+
+export component HomeCardShelf inherits Rectangle {
+    in property <[RecommendPlaylistItem]> playlists;
+    in property <[DailySongItem]> songs;
+    in property <bool> song-mode: false;
+    in property <bool> loading: false;
+    in property <length> page-top;
+    in property <length> page-height;
+    callback playlist-clicked(RecommendPlaylistItem);
+    callback playlist-play-clicked(RecommendPlaylistItem);
+    callback song-clicked(DailySongItem);
+    callback page-scrolled(length);
+    out property <bool> at-start: shelf.content-x >= -1px;
+    out property <bool> at-end: shelf.content-x <= shelf.width - shelf.content-width + 1px;
+    property <length> card-width: root.song-mode ? 176px : 200px;
+    // Request physical pixels, including AlbumItem's 1.06x hover zoom. This
+    // follows display scaling without retaining 800px artwork for every card.
+    property <int> cover-size: Math.ceil((root.song-mode ? 176px * 1.06 : 250px) / 1phx);
+    property <length> step: root.card-width + 20px;
+    property <int> item-count: root.loading ? 8 : root.song-mode ? root.songs.length : root.playlists.length;
+    property <bool> target-on-screen: root.page-height > 0px && root.absolute-position.y < root.page-top + root.page-height
+        && root.absolute-position.y + root.height > root.page-top;
+    property <bool> on-screen;
+    init => { root.on-screen = root.target-on-screen; }
+    changed target-on-screen => { root.on-screen = root.target-on-screen; }
+    property <int> first: Math.max(0, Math.floor(-shelf.content-x / root.step));
+    property <int> slots: root.on-screen ? Math.min(root.item-count, Math.ceil(root.width / root.step) + 1) : 0;
+    height: root.song-mode ? album-measure.height : 250px;
+    album-measure := AlbumItem { visible: false; width: root.card-width; item: {id: -1, title: "Ag", artist: "Ag"}; }
+    public function move-page(direction: int) {
+        shelf.content-x = Math.clamp(shelf.content-x - direction * Math.max(1, Math.floor(shelf.width / root.step)) * root.step,
+            Math.min(0px, shelf.width - shelf.content-width), 0px);
+    }
+    changed item-count => { shelf.content-x = Math.clamp(shelf.content-x, Math.min(0px, shelf.width - shelf.content-width), 0px); }
+    changed width => { shelf.content-x = Math.clamp(shelf.content-x, Math.min(0px, shelf.width - shelf.content-width), 0px); }
+    shelf := DragShelf {
+        x: -24px; y: -12px; width: root.width + 48px; height: root.height + 24px;
+        extent: root.item-count * root.step - 20px + 48px;
+        page-scrolled(delta) => { root.page-scrolled(delta); }
+        for slot in root.slots : card-slot := Rectangle {
+            property <int> target-index: root.first + Math.mod(slot - Math.mod(root.first, Math.max(1, root.slots)) + root.slots, Math.max(1, root.slots));
+            property <int> index;
+            init => { self.index = self.target-index; }
+            changed target-index => { self.index = self.target-index; }
+            x: 24px + self.index * root.step; y: 12px; width: root.card-width; height: root.height;
+            visible: self.index < root.item-count && self.x + self.width + shelf.content-x > 0px && self.x + shelf.content-x < shelf.width;
+            if self.index < root.item-count : HomeShelfItem {
+                loading: root.loading;
+                song-mode: root.song-mode;
+                cover-size: root.cover-size;
+                index: card-slot.index;
+                playlists: root.playlists;
+                songs: root.songs;
+                playlist-clicked(item) => { root.playlist-clicked(item); }
+                playlist-play-clicked(item) => { root.playlist-play-clicked(item); }
+                song-clicked(item) => { root.song-clicked(item); }
+            }
+        }
+    }
+    if !root.loading && root.item-count == 0 : Rectangle {
+        width: 100%; height: 100%; border-radius: 18px; background: Theme.sys-surface-muted;
+        Text {
+            width: 100%; height: 100%; text: "暂时没有推荐，先去发现喜欢的音乐吧";
+            color: Theme.sys-text-secondary; font-size: 14px;
+            horizontal-alignment: center; vertical-alignment: center;
+        }
+    }
+}
+
 export component HomeDiscoverySection inherits Rectangle {
     in property <string> title;
     in property <string> request-name;
@@ -136,17 +170,17 @@ export component HomeDiscoverySection inherits Rectangle {
     callback page-scrolled(length);
     property <int> columns: self.width < 750px || (root.chart-count > 0 && root.chart-count <= 4) ? 2 : 3;
     property <int> chart-count: Math.min(6, root.chart-items.length);
-    property <bool> empty: (root.loaded || !AppState.runtime-enabled) && !root.loading && (root.chart-mode ? root.chart-count == 0 : root.songs.length == 0);
+    property <bool> empty: (root.loaded || !RuntimeState.runtime-enabled) && !root.loading && (root.chart-mode ? root.chart-count == 0 : root.songs.length == 0);
     property <bool> on-screen: self.absolute-position.y < root.page-top + root.page-height
         && self.absolute-position.y + self.height > root.page-top;
-    height: 51.19px + (root.empty || root.error != "" ? 72px : root.chart-mode ? Math.ceil((root.loading || !root.loaded ? 6 : root.chart-count) / root.columns) * 226px - 20px : 235.09px);
+    height: (section-heading.height + 16px) + (root.empty || root.error != "" ? 72px : root.chart-mode ? Math.ceil((root.loading || !root.loaded ? 6 : root.chart-count) / root.columns) * 226px - 20px : albums.height);
     Timer {
         interval: 1ms;
-        running: AppState.runtime-enabled && root.on-screen && !root.loaded && !root.loading;
-        triggered => { AppState.runtime-action(root.request-name, -1, ""); }
+        running: RuntimeState.runtime-enabled && root.on-screen && !root.loaded && !root.loading;
+        triggered => { RuntimeState.runtime-action(root.request-name, -1, ""); }
     }
-    section-heading := Text {
-        x: 0px; y: 0px; height: 35.19px; text: root.title;
+    section-heading := FlowText {
+        x: 0px; y: 0px;  text: root.title;
         font-size: 22px; font-weight: 700; color: Theme.sys-text; vertical-alignment: center;
     }
     if !root.chart-mode && !root.empty && root.error == "" : HorizontalLayout {
@@ -155,30 +189,32 @@ export component HomeDiscoverySection inherits Rectangle {
         albums-next := PlaylistButton { width: 34px; border-radius: 17px; label: "›"; filled: true; accessible-label: "下一组新碟"; enabled: !albums.at-end; clicked => { albums.move-page(1); } }
     }
     if root.empty || root.error != "" : Rectangle {
-        x: 0px; y: 51.19px; width: 100%; height: 72px;
+        x: 0px; y: (section-heading.height + 16px); width: 100%; height: 72px;
         Text { x: 0px; y: 10px; width: parent.width - 110px; height: 36px; text: root.error != "" ? root.error : "暂时没有内容，稍后再来看看"; font-size: 13px; color: Theme.sys-text-secondary; overflow: elide; }
         retry := PlaylistButton {
             x: parent.width - 88px; y: 12px; width: 88px; height: 32px; border-radius: 16px; label: "重新加载"; filled: true;
-            clicked => { AppState.runtime-action(root.request-name, -1, "retry"); }
+            clicked => { RuntimeState.runtime-action(root.request-name, -1, "retry"); }
         }
     }
     albums := HomeCardShelf {
         visible: !root.chart-mode && !root.empty && root.error == "";
-        x: 0px; y: 51.19px; width: 100%;
+        x: 0px; y: (section-heading.height + 16px); width: 100%;
         song-mode: true; songs: root.songs; loading: root.loading;
         page-top: root.page-top; page-height: root.chart-mode || root.empty || root.error != "" ? 0px : root.page-height;
         song-clicked(item) => { root.album-clicked(item); }
         page-scrolled(delta) => { root.page-scrolled(delta); }
     }
     if root.chart-mode && !root.empty && root.error == "" : Rectangle {
-        x: 0px; y: 51.19px; width: 100%; height: root.height - 51.19px;
+        x: 0px; y: (section-heading.height + 16px); width: 100%; height: root.height - (section-heading.height + 16px);
         for index in (root.loading || !root.loaded ? 6 : root.chart-count) : Rectangle {
             width: (parent.width - (root.columns - 1) * 20px) / root.columns;
             height: 206px; x: Math.mod(index, root.columns) * (self.width + 20px); y: Math.floor(index / root.columns) * 226px;
-            if self.absolute-position.y < root.page-top + root.page-height && self.absolute-position.y + self.height > root.page-top : Rectangle {
-                width: 100%; height: 100%;
-                if root.loading : Rectangle { width: 100%; height: 100%; border-radius: 18px; background: Theme.sys-control; clip: true; SkeletonSweepOverlay {} }
-                if !root.loading && index < root.chart-count : HomeChartCard { width: 100%; item: root.chart-items[index]; clicked => { root.chart-clicked(self.item); } }
+            if self.absolute-position.y < root.page-top + root.page-height && self.absolute-position.y + self.height > root.page-top : HomeChartSlot {
+                loading: root.loading;
+                index: index;
+                chart-count: root.chart-count;
+                chart-items: root.chart-items;
+                chart-clicked(item) => { root.chart-clicked(item); }
             }
         }
     }

@@ -1,0 +1,110 @@
+export struct NavPlaylistItem {
+    id: int,
+    name: string,
+    track-count: int,
+    play-count: string,
+    cover: image,
+    already-added: bool,
+}
+
+export struct RecommendPlaylistItem {
+    id: int,
+    title: string,
+    desc: string,
+    cover: image,
+}
+
+export struct DailySongItem {
+    id: int,
+    title: string,
+    artist: string,
+    cover: image,
+}
+
+export struct HomeChartItem {
+    id: int,
+    title: string,
+    update: string,
+    cover: image,
+    tracks: [string],
+}
+
+export struct TrackItem {
+    id: int,
+    index-str: string,
+    name: string,
+    artist: string,
+    album: string,
+    duration: string,
+    cover: image,
+    is-favorite: bool,
+    is-local: bool,
+    has-cover: bool,
+}
+
+export struct CategoryItem {
+    name: string,
+    color-type: string,
+}
+
+export struct QueueSongItem {
+    id: int,
+    index: int,
+    name: string,
+    artist: string,
+    cover: image,
+    is-local: bool,
+    has-cover: bool,
+}
+
+export struct LyricLineItem {
+    time-str: string,
+    text: string,
+    pronunciation: string,
+    translation: string,
+    // Measured once per layout; scrolling only reads adjacent line centers.
+    layout-center: length,
+}
+
+export struct CommentItem {
+    id: int,
+    nickname: string,
+    avatar: image,
+    is-vip: bool,
+    time: string,
+    content: string,
+    has-reply: bool,
+    reply-nickname: string,
+    reply-content: string,
+    liked: string,
+    is-hot-header: bool,
+    is-recent-header: bool,
+}
+
+export struct ArtistReleaseItem {
+    id: int,
+    kind: string,
+    title: string,
+    year: string,
+    cover: image,
+}
+
+export struct ArtistSongItem {
+    id: int,
+    index-str: string,
+    title: string,
+    album: string,
+    duration: string,
+    cover: image,
+    badge: string, // "" | "hot" | "rec"
+}
+
+export struct DownloadQualityItem { quality: string, label: string, available: bool, reason: string }
+
+export struct OutputDeviceItem { id: string, name: string, current: bool }
+export struct SettingChoice { value: string, label: string }
+
+export struct AuxButtonItem {
+    id: string, // "favorite" | "comment" | "playMode" | "volume"
+    visible: bool,
+}

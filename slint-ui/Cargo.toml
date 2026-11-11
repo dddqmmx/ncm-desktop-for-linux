@@ -7,17 +7,20 @@ description = "Slint frontend with a replaceable music API and native Rust audio
 [features]
 default = ["vulkan"]
 vulkan = ["slint/renderer-skia-vulkan"]
+hot-reload = ["slint/live-preview", "dep:notify"]
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 slint = { version = "~1.18.1", features = ["unstable-winit-030"] }
+notify = { version = "8.2", default-features = false, features = ["macos_kqueue"], optional = true }
 
 native = { path = "../native", default-features = false }
+ncm-api-rs = { git = "https://github.com/dddqmmx/ncm-api-rs.git", rev = "133b65bfe482e41ebccf018870d3fce07bf58eb3", default-features = false }
+qrcode = { version = "0.14", default-features = false, features = ["image"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "io-util", "sync", "time", "fs"] }
-tokio-util = { version = "0.7", features = ["codec"] }
-futures-util = { version = "0.3", features = ["sink"] }
+futures-util = "0.3"
 reqwest = { version = "0.13.1", features = ["json", "stream"] }
 rfd = "0.17.2"
 base64 = "0.22"

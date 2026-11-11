@@ -1,0 +1,70 @@
+import { Theme } from "../theme.slint";
+import { AppIcon } from "common.slint";
+import { MeasuredText } from "typography.slint";
+
+// A menu row owns one layout for its leading icon, label and optional arrow.
+export component MenuItem inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <image> trailing-icon;
+    in property <length> icon-size: 14px;
+    in property <bool> enabled: true;
+    in property <bool> selected: false;
+    in property <bool> danger: false;
+    out property <bool> has-focus: focus.has-focus;
+    callback clicked();
+    forward-focus: focus;
+    property <bool> highlighted: root.enabled && (touch.has-hover || focus.has-focus);
+    preferred-height: content.preferred-height;
+    border-radius: 10px;
+    opacity: root.enabled ? 1 : 0.45;
+    background: root.selected ? Theme.sys-control-active
+        : root.highlighted ? (root.danger ? Theme.sys-danger-soft : Theme.sys-control) : transparent;
+    animate background { duration: 150ms; easing: ease; }
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+
+    focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" { root.clicked(); return accept; }
+            return reject;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { focus.focus(); root.clicked(); }
+    }
+
+    content := HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 8px;
+        cross-axis-alignment: center;
+
+        leading-icon := AppIcon {
+            source: root.icon;
+            icon-size: root.icon-size;
+            tint: root.danger && root.highlighted ? Theme.sys-danger : Theme.sys-text-tertiary;
+        }
+        menu-label := MeasuredText {
+            min-width: 0px;
+            horizontal-stretch: 1;
+            text: root.label;
+            font-size: 13px;
+            color: root.danger && root.highlighted ? Theme.sys-danger : Theme.sys-text;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        if root.trailing-icon.width > 0 : arrow := AppIcon {
+            source: root.trailing-icon;
+            icon-size: 12px;
+            tint: Theme.sys-text-disabled;
+        }
+    }
+}

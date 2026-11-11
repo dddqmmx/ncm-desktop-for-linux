@@ -1,4 +1,4 @@
-use crate::{playlists, AppState, AppWindow, Theme};
+use crate::{playlists, AppWindow, Theme};
 use i_slint_backend_testing::{mock_elapsed_time, ElementHandle, ElementRoot};
 use serde_json::Value;
 use slint::{
@@ -30,6 +30,29 @@ fn key(app: &AppWindow, key: Key) {
 
 fn check_rect(app: &AppWindow, gt: &Value, view: &str, name: &str, id: &str) {
     let item = element(app, id);
+    if view.starts_with("detail") {
+        let owner = element(
+            app,
+            if name == "header" {
+                "MediaDetailView::detail-container"
+            } else if ["play", "search", "subscribers", "more"].contains(&name) {
+                "MediaDetailHeader::detail-action-bar"
+            } else {
+                "MediaDetailView::detail-header"
+            },
+        );
+        crate::responsive_tests::assert_inside(&owner, &item, &format!("{view}.{name}"));
+        return;
+    }
+    if view == "menu" {
+        let owner = if name == "card" {
+            app.root_element()
+        } else {
+            element(app, "PlaylistActionsOverlay::action-menu")
+        };
+        crate::responsive_tests::assert_inside(&owner, &item, name);
+        return;
+    }
     let p = item.absolute_position();
     let s = item.size();
     let actual = [p.x, p.y, s.width, s.height];
@@ -44,29 +67,51 @@ fn check_rect(app: &AppWindow, gt: &Value, view: &str, name: &str, id: &str) {
     }
 }
 
-fn check_editor(app: &AppWindow, gt: &Value, view: &str, editing: bool) {
-    for (name, id) in [
-        ("card", "editor-card"),
-        ("header", "editor-header"),
-        ("close", "close-button"),
-        ("name", "name-box"),
-        ("cancel", "cancel-button"),
-        ("submit", "submit-button"),
+fn check_editor(app: &AppWindow, _gt: &Value, view: &str, editing: bool) {
+    use crate::responsive_tests::{assert_disjoint, assert_inside};
+    let card = element(app, "PlaylistEditor::editor-card");
+    assert_inside(&app.root_element(), &card, view);
+    let header = element(app, "PlaylistEditorContent::editor-header");
+    let footer = element(app, "PlaylistEditorContent::editor-footer");
+    let name = element(app, "PlaylistEditorForm::name-box");
+    for id in [
+        "PlaylistEditorContent::editor-header",
+        "PlaylistEditorContent::editor-footer",
+        "PlaylistEditorHeader::close-button",
+        "PlaylistEditorForm::name-box",
+        "PlaylistEditorFooter::cancel-button",
+        "PlaylistEditorFooter::submit-button",
     ] {
-        check_rect(app, gt, view, name, &format!("PlaylistEditor::{id}"));
+        assert_inside(&card, &element(app, id), view);
     }
-    let extra = if editing {
-        [
-            ("cover", "preview-cover"),
-            ("description", "description-box"),
-            ("footer", "editor-footer"),
-        ]
-        .as_slice()
+    assert_disjoint(&header, &name, view);
+    assert_disjoint(&name, &footer, view);
+    assert_disjoint(
+        &element(app, "PlaylistEditorFooter::cancel-button"),
+        &element(app, "PlaylistEditorFooter::submit-button"),
+        view,
+    );
+    let last_field = element(
+        app,
+        if editing {
+            "PlaylistDescriptionField::description-box"
+        } else {
+            "PlaylistEditorForm::privacy-row"
+        },
+    );
+    assert_inside(&card, &last_field, view);
+    assert_disjoint(&name, &last_field, view);
+    assert_disjoint(&last_field, &footer, view);
+    if editing {
+        let cover = element(app, "PlaylistEditorForm::preview-cover");
+        assert_inside(&card, &cover, view);
+        assert_disjoint(&cover, &name, view);
     } else {
-        [("privacy", "privacy-row"), ("toggle", "privacy-toggle")].as_slice()
-    };
-    for (name, id) in extra {
-        check_rect(app, gt, view, name, &format!("PlaylistEditor::{id}"));
+        assert_inside(
+            &last_field,
+            &element(app, "PlaylistEditorForm::privacy-toggle"),
+            view,
+        );
     }
 }
 
@@ -85,7 +130,7 @@ fn snapshot(app: &AppWindow, name: &str) {
 }
 
 #[test]
-fn playlist_management_matches_electron_and_handles_user_actions() {
+fn playlist_management_flows_with_content_and_handles_user_actions() {
     slint::platform::set_platform(Box::new(i_slint_backend_testing::TestingBackend::new(
         i_slint_backend_testing::TestingBackendOptions {
             mock_time: true,
@@ -98,11 +143,17 @@ fn playlist_management_matches_electron_and_handles_user_actions() {
     playlists::attach(&app);
     app.window().set_size(PhysicalSize::new(1435, 1000));
     app.show().unwrap();
-    let state = app.global::<AppState>();
-    let original_title = state.get_playlist_title();
-    let original_description = state.get_playlist_description();
-    state.set_window_width(1435.0);
-    state.set_window_height(1000.0);
+    let playlist_state = app.global::<crate::PlaylistState>();
+    let navigation_state = app.global::<crate::NavigationState>();
+    let detail_state = app.global::<crate::DetailState>();
+    let queue_state = app.global::<crate::QueueState>();
+    let dialog_state = app.global::<crate::DialogState>();
+    let account_state = app.global::<crate::AccountState>();
+    let login_state = app.global::<crate::LoginState>();
+    let original_title = playlist_state.get_playlist_title();
+    let original_description = playlist_state.get_playlist_description();
+    navigation_state.set_window_width(1435.0);
+    navigation_state.set_window_height(1000.0);
     let _ = app.root_element().size();
     mock_elapsed_time(Duration::from_millis(1000));
     let gt: Value = serde_json::from_str(include_str!(
@@ -114,52 +165,58 @@ fn playlist_management_matches_electron_and_handles_user_actions() {
         &gt,
         "sidebar",
         "header",
-        "SideNavBar::nav-group-header",
+        "SidebarNavigation::nav-group-header",
     );
     check_rect(
         &app,
         &gt,
         "sidebar",
         "create",
-        "SideNavBar::create-playlist-btn",
+        "SidebarNavigation::create-playlist-btn",
     );
-    let initial_count = state.get_created_playlists().row_count();
-    click(&app, "SideNavBar::create-playlist-btn");
-    assert_eq!(state.get_playlist_editor_mode(), "create");
-    assert!(!state.get_playlist_editor_can_submit());
+    let initial_count = playlist_state.get_created_playlists().row_count();
+    click(&app, "SidebarNavigation::create-playlist-btn");
+    assert_eq!(playlist_state.get_playlist_editor_mode(), "create");
+    assert!(!playlist_state.get_playlist_editor_can_submit());
     check_editor(&app, &gt, "create", false);
     snapshot(&app, "create-light");
-    state.set_playlist_editor_name(" \t\n　 ".into());
-    state.invoke_playlist_input_changed();
-    state.invoke_submit_playlist();
-    assert_eq!(state.get_created_playlists().row_count(), initial_count);
+    playlist_state.set_playlist_editor_name(" \t\n　 ".into());
+    playlist_state.invoke_playlist_input_changed();
+    playlist_state.invoke_submit_playlist();
+    assert_eq!(
+        playlist_state.get_created_playlists().row_count(),
+        initial_count
+    );
     // Escape and outside clicks discard drafts.
     key(&app, Key::Escape);
-    assert_eq!(state.get_playlist_editor_mode(), "");
-    click(&app, "SideNavBar::create-playlist-btn");
-    state.set_playlist_editor_name("  夜晚　  🎵  ".into());
-    state.invoke_playlist_input_changed();
-    click(&app, "PlaylistEditor::privacy-toggle");
-    click(&app, "PlaylistEditor::submit-button");
-    assert_eq!(state.get_playlist_editor_mode(), "");
-    assert_eq!(state.get_created_playlists().row_count(), initial_count + 1);
-    assert_eq!(state.get_playlist_title(), "夜晚 🎵");
-    assert!(state.get_playlist_is_private());
-    assert_eq!(state.get_playlist_tracks().row_count(), 0);
+    assert_eq!(playlist_state.get_playlist_editor_mode(), "");
+    click(&app, "SidebarNavigation::create-playlist-btn");
+    playlist_state.set_playlist_editor_name("  夜晚　  🎵  ".into());
+    playlist_state.invoke_playlist_input_changed();
+    click(&app, "PlaylistEditorForm::privacy-toggle");
+    click(&app, "PlaylistEditorFooter::submit-button");
+    assert_eq!(playlist_state.get_playlist_editor_mode(), "");
     assert_eq!(
-        state.get_detail_tracks().row_count(),
+        playlist_state.get_created_playlists().row_count(),
+        initial_count + 1
+    );
+    assert_eq!(playlist_state.get_playlist_title(), "夜晚 🎵");
+    assert!(playlist_state.get_playlist_is_private());
+    assert_eq!(playlist_state.get_playlist_tracks().row_count(), 0);
+    assert_eq!(
+        detail_state.get_detail_tracks().row_count(),
         8,
         "playlist navigation must not empty albums/favorites"
     );
-    let created_id = state.get_active_playlist_id();
-    state.invoke_submit_playlist();
+    let created_id = playlist_state.get_active_playlist_id();
+    playlist_state.invoke_submit_playlist();
     assert_eq!(
-        state.get_created_playlists().row_count(),
+        playlist_state.get_created_playlists().row_count(),
         initial_count + 1,
         "duplicate submissions must not create another list"
     );
 
-    state.invoke_open_playlist(101);
+    playlist_state.invoke_open_playlist(101);
     mock_elapsed_time(Duration::from_millis(350));
     for (name, id) in [
         ("play", "detail-play-main-btn"),
@@ -167,9 +224,15 @@ fn playlist_management_matches_electron_and_handles_user_actions() {
         ("subscribers", "detail-secondary-btn"),
         ("more", "playlist-actions-trigger"),
     ] {
-        check_rect(&app, &gt, "detail", name, &format!("MediaDetailView::{id}"));
+        check_rect(
+            &app,
+            &gt,
+            "detail",
+            name,
+            &format!("MediaDetailActions::{id}"),
+        );
     }
-    click(&app, "MediaDetailView::playlist-actions-trigger");
+    click(&app, "MediaDetailActions::playlist-actions-trigger");
     for (name, id) in [
         ("card", "action-menu"),
         ("edit", "edit-button"),
@@ -186,12 +249,12 @@ fn playlist_management_matches_electron_and_handles_user_actions() {
     }
     snapshot(&app, "actions-light");
     key(&app, Key::Escape);
-    assert!(!state.get_is_playlist_actions_open());
-    click(&app, "MediaDetailView::playlist-actions-trigger");
+    assert!(!playlist_state.get_is_playlist_actions_open());
+    click(&app, "MediaDetailActions::playlist-actions-trigger");
     click(&app, "PlaylistActionsOverlay::edit-button");
-    assert_eq!(state.get_playlist_editor_mode(), "edit");
+    assert_eq!(playlist_state.get_playlist_editor_mode(), "edit");
     assert!(
-        !state.get_playlist_editor_can_submit(),
+        !playlist_state.get_playlist_editor_can_submit(),
         "unchanged metadata cannot be saved"
     );
     check_editor(&app, &gt, "edit", true);
@@ -203,8 +266,8 @@ fn playlist_management_matches_electron_and_handles_user_actions() {
     app.window().dispatch_event(WindowEvent::KeyReleased {
         text: "改名".into(),
     });
-    assert_eq!(state.get_playlist_editor_name(), "改名");
-    assert!(state.get_playlist_editor_can_submit());
+    assert_eq!(playlist_state.get_playlist_editor_name(), "改名");
+    assert!(playlist_state.get_playlist_editor_can_submit());
     key(&app, Key::Tab);
     app.window().dispatch_event(WindowEvent::KeyPressed {
         text: "键盘简介".into(),
@@ -213,81 +276,96 @@ fn playlist_management_matches_electron_and_handles_user_actions() {
         text: "键盘简介".into(),
     });
     assert!(
-        state.get_playlist_editor_description().contains("键盘简介"),
+        playlist_state
+            .get_playlist_editor_description()
+            .contains("键盘简介"),
         "Tab must move focus to the description"
     );
-    state.set_playlist_editor_description(" 草稿 ".into());
-    state.invoke_playlist_input_changed();
-    click(&app, "PlaylistEditor::cancel-button");
-    assert_ne!(state.get_playlist_title(), "改名");
-    state.invoke_open_edit_playlist();
+    playlist_state.set_playlist_editor_description(" 草稿 ".into());
+    playlist_state.invoke_playlist_input_changed();
+    click(&app, "PlaylistEditorFooter::cancel-button");
+    assert_ne!(playlist_state.get_playlist_title(), "改名");
+    playlist_state.invoke_open_edit_playlist();
     let _ = app.root_element().size();
     mock_elapsed_time(Duration::from_millis(50));
-    state.set_playlist_editor_name("  深夜   循环  ".into());
-    state.set_playlist_editor_description(" 新的简介 \n".into());
-    state.invoke_playlist_input_changed();
-    click(&app, "PlaylistEditor::submit-button");
-    assert_eq!(state.get_playlist_title(), "深夜 循环");
-    assert_eq!(state.get_playlist_description(), "新的简介");
+    playlist_state.set_playlist_editor_name("  深夜   循环  ".into());
+    playlist_state.set_playlist_editor_description(" 新的简介 \n".into());
+    playlist_state.invoke_playlist_input_changed();
+    click(&app, "PlaylistEditorFooter::submit-button");
+    assert_eq!(playlist_state.get_playlist_title(), "深夜 循环");
+    assert_eq!(playlist_state.get_playlist_description(), "新的简介");
     assert_eq!(
-        state.get_created_playlists().row_data(0).unwrap().name,
+        playlist_state
+            .get_created_playlists()
+            .row_data(0)
+            .unwrap()
+            .name,
         "深夜 循环"
     );
-    state.invoke_open_playlist(created_id);
-    state.invoke_open_playlist(101);
-    assert_eq!(state.get_playlist_description(), "新的简介");
+    playlist_state.invoke_open_playlist(created_id);
+    playlist_state.invoke_open_playlist(101);
+    assert_eq!(playlist_state.get_playlist_description(), "新的简介");
 
     // Deletion requires confirmation and is tied to the original route/id.
-    let queue_count = state.get_queue_songs().row_count();
-    state.invoke_request_delete_playlist();
+    let queue_count = queue_state.get_queue_songs().row_count();
+    playlist_state.invoke_request_delete_playlist();
     mock_elapsed_time(Duration::from_millis(250));
     key(&app, Key::Escape);
-    assert!(!state.get_is_dialog_open());
-    state.invoke_confirm_playlist_delete();
-    assert_eq!(state.get_created_playlists().row_count(), initial_count + 1);
-    state.invoke_request_delete_playlist();
-    state.invoke_open_playlist(created_id);
-    state.invoke_confirm_playlist_delete();
-    assert_eq!(state.get_created_playlists().row_count(), initial_count + 1);
-    state.set_is_dialog_open(false);
-    state.invoke_request_delete_playlist();
+    assert!(!dialog_state.get_is_dialog_open());
+    playlist_state.invoke_confirm_playlist_delete();
+    assert_eq!(
+        playlist_state.get_created_playlists().row_count(),
+        initial_count + 1
+    );
+    playlist_state.invoke_request_delete_playlist();
+    playlist_state.invoke_open_playlist(created_id);
+    playlist_state.invoke_confirm_playlist_delete();
+    assert_eq!(
+        playlist_state.get_created_playlists().row_count(),
+        initial_count + 1
+    );
+    dialog_state.set_is_dialog_open(false);
+    playlist_state.invoke_request_delete_playlist();
     mock_elapsed_time(Duration::from_millis(250));
-    click(&app, "AppDialogModal::dialog-primary-btn");
-    assert_eq!(state.get_current_route(), "home");
-    assert_eq!(state.get_created_playlists().row_count(), initial_count);
-    assert_eq!(state.get_queue_songs().row_count(), queue_count);
-    assert!(!state
+    click(&app, "DialogContent::dialog-primary-btn");
+    assert_eq!(navigation_state.get_current_route(), "home");
+    assert_eq!(
+        playlist_state.get_created_playlists().row_count(),
+        initial_count
+    );
+    assert_eq!(queue_state.get_queue_songs().row_count(), queue_count);
+    assert!(!playlist_state
         .get_created_playlists()
         .iter()
         .any(|p| p.id == created_id));
 
     // Permission changes and logout cannot mutate a hidden editor's target.
-    state.invoke_open_playlist(101);
-    state.set_playlist_owned(false);
-    state.invoke_open_edit_playlist();
-    assert_eq!(state.get_playlist_editor_mode(), "");
-    state.set_playlist_owned(true);
-    state.set_playlist_special_type(5);
-    state.invoke_request_delete_playlist();
-    assert!(!state.get_is_dialog_open());
-    state.set_playlist_special_type(0);
-    state.invoke_open_edit_playlist();
-    state.set_playlist_editor_name("不能保存".into());
-    state.set_is_logged_in(false);
-    state.invoke_submit_playlist();
-    assert_eq!(state.get_playlist_title(), "深夜 循环");
-    state.invoke_open_create_playlist();
-    assert!(state.get_is_login_open());
-    state.set_is_login_open(false);
-    state.set_is_logged_in(true);
-    state.invoke_close_playlist_editor();
+    playlist_state.invoke_open_playlist(101);
+    playlist_state.set_playlist_owned(false);
+    playlist_state.invoke_open_edit_playlist();
+    assert_eq!(playlist_state.get_playlist_editor_mode(), "");
+    playlist_state.set_playlist_owned(true);
+    playlist_state.set_playlist_special_type(5);
+    playlist_state.invoke_request_delete_playlist();
+    assert!(!dialog_state.get_is_dialog_open());
+    playlist_state.set_playlist_special_type(0);
+    playlist_state.invoke_open_edit_playlist();
+    playlist_state.set_playlist_editor_name("不能保存".into());
+    account_state.set_is_logged_in(false);
+    playlist_state.invoke_submit_playlist();
+    assert_eq!(playlist_state.get_playlist_title(), "深夜 循环");
+    playlist_state.invoke_open_create_playlist();
+    assert!(login_state.get_is_login_open());
+    login_state.set_is_login_open(false);
+    account_state.set_is_logged_in(true);
+    playlist_state.invoke_close_playlist_editor();
 
     // Compact windows and dark theme retain the same measured dialog geometry.
     app.window().set_size(PhysicalSize::new(620, 720));
-    state.set_window_width(620.0);
-    state.set_window_height(720.0);
-    state.set_playlist_title(original_title);
-    state.set_playlist_description(original_description);
+    navigation_state.set_window_width(620.0);
+    navigation_state.set_window_height(720.0);
+    playlist_state.set_playlist_title(original_title);
+    playlist_state.set_playlist_description(original_description);
     let _ = app.root_element().size();
     mock_elapsed_time(Duration::from_millis(1000));
     for (name, id) in [
@@ -300,12 +378,17 @@ fn playlist_management_matches_electron_and_handles_user_actions() {
         ("subscribers", "detail-secondary-btn"),
         ("more", "playlist-actions-trigger"),
     ] {
+        let component = match name {
+            "play" | "search" | "subscribers" | "more" => "MediaDetailActions",
+            "header" => "MediaDetailView",
+            _ => "MediaDetailHeader",
+        };
         check_rect(
             &app,
             &gt,
             "detailCompact",
             name,
-            &format!("MediaDetailView::{id}"),
+            &format!("{component}::{id}"),
         );
     }
     snapshot(&app, "detail-compact");
@@ -317,26 +400,116 @@ fn playlist_management_matches_electron_and_handles_user_actions() {
         delta_y: -160.0,
     });
     mock_elapsed_time(Duration::from_millis(250));
-    click(&app, "MediaDetailView::playlist-actions-trigger");
-    assert!(state.get_is_playlist_actions_open());
+    click(&app, "MediaDetailActions::playlist-actions-trigger");
+    assert!(playlist_state.get_is_playlist_actions_open());
     key(&app, Key::Escape);
-    state.invoke_open_playlist(101);
+    playlist_state.invoke_open_playlist(101);
     app.global::<Theme>().set_is_dark(true);
-    state.invoke_open_edit_playlist();
+    playlist_state.invoke_open_edit_playlist();
     let _ = app.root_element().size();
     mock_elapsed_time(Duration::from_millis(1000));
     check_editor(&app, &gt, "editCompact", true);
     snapshot(&app, "edit-compact-dark");
-    state.invoke_close_playlist_editor();
-    state.invoke_open_create_playlist();
+    playlist_state.invoke_close_playlist_editor();
+    playlist_state.invoke_open_create_playlist();
     let _ = app.root_element().size();
     mock_elapsed_time(Duration::from_millis(1000));
     check_editor(&app, &gt, "createCompact", false);
     snapshot(&app, "create-compact-dark");
-    state.set_playlist_editor_name("🎵".repeat(25).into());
-    state.set_playlist_editor_description("文".repeat(1001).into());
-    state.invoke_playlist_input_changed();
-    assert_eq!(state.get_playlist_editor_name_length(), 40);
-    assert_eq!(state.get_playlist_editor_description_length(), 1000);
+    playlist_state.set_playlist_editor_name("🎵".repeat(25).into());
+    playlist_state.set_playlist_editor_description("文".repeat(1001).into());
+    playlist_state.invoke_playlist_input_changed();
+    assert_eq!(playlist_state.get_playlist_editor_name_length(), 40);
+    assert_eq!(
+        playlist_state.get_playlist_editor_description_length(),
+        1000
+    );
     app.hide().unwrap();
+}
+
+#[test]
+fn demo_queue_actions_share_ordering_and_reset_behavior_with_runtime() {
+    i_slint_backend_testing::init_no_event_loop();
+    let app = AppWindow::new().unwrap();
+    playlists::attach(&app);
+    let queue_state = app.global::<crate::QueueState>();
+    let player_state = app.global::<crate::PlayerState>();
+    let playlist_state = app.global::<crate::PlaylistState>();
+    queue_state.set_queue_songs(
+        std::rc::Rc::new(slint::VecModel::from(
+            [11, 22, 33]
+                .map(|id| crate::QueueSongItem {
+                    id,
+                    name: format!("song-{id}").into(),
+                    ..Default::default()
+                })
+                .to_vec(),
+        ))
+        .into(),
+    );
+    player_state.set_current_song_id(22);
+    player_state.set_progress_percent(42.0);
+    player_state.set_current_time_str("1:15".into());
+    queue_state.invoke_queue_action("queue-next".into(), 11);
+    queue_state.invoke_queue_action("queue-next".into(), 11);
+    assert_eq!(
+        queue_state
+            .get_queue_songs()
+            .iter()
+            .map(|song| song.id)
+            .collect::<Vec<_>>(),
+        [22, 11, 33]
+    );
+    assert_eq!(player_state.get_current_song_id(), 22);
+    assert_eq!(player_state.get_progress_percent(), 42.0);
+    assert_eq!(player_state.get_current_time_str(), "1:15");
+    queue_state.invoke_queue_action("remove-queue".into(), 22);
+    assert_eq!(player_state.get_current_song_id(), 11);
+    assert_eq!(player_state.get_progress_percent(), 0.0);
+    queue_state.invoke_queue_action("clear-queue".into(), -1);
+    assert_eq!(queue_state.get_queue_songs().row_count(), 0);
+    assert_eq!(player_state.get_current_song_id(), -1);
+    assert_eq!(player_state.get_current_time_str(), "0:00");
+    assert!(!player_state.get_is_playing());
+    assert!(!player_state.get_is_loading());
+    let target = playlist_state.get_playlist_tracks().row_data(0).unwrap().id;
+    queue_state.invoke_queue_action("queue-next".into(), target);
+    assert_eq!(queue_state.get_queue_songs().row_count(), 1);
+    assert_eq!(
+        queue_state.get_queue_songs().row_data(0).unwrap().id,
+        target
+    );
+    assert_eq!(player_state.get_current_song_id(), -1);
+    queue_state.invoke_queue_action("queue-play".into(), target);
+    assert_eq!(player_state.get_current_song_id(), target);
+    assert!(player_state.get_is_playing());
+}
+
+#[test]
+fn demo_recommendations_open_through_the_playlist_controller() {
+    i_slint_backend_testing::init_no_event_loop();
+    let app = AppWindow::new().unwrap();
+    playlists::attach(&app);
+    let home_state = app.global::<crate::HomeState>();
+    let playlist_state = app.global::<crate::PlaylistState>();
+    let navigation_state = app.global::<crate::NavigationState>();
+    let detail_state = app.global::<crate::DetailState>();
+    let recommendation = crate::RecommendPlaylistItem {
+        id: 1_000_000,
+        title: "推荐歌单".into(),
+        desc: "介绍".into(),
+        ..Default::default()
+    };
+    home_state.set_recommend_playlists(
+        std::rc::Rc::new(slint::VecModel::from(vec![recommendation])).into(),
+    );
+    assert!(playlist_state.invoke_open_playlist(1_000_000));
+    assert_eq!(navigation_state.get_current_route(), "playlist");
+    assert_eq!(playlist_state.get_playlist_title(), "推荐歌单");
+    assert!(!playlist_state.get_playlist_owned());
+    assert_eq!(
+        playlist_state.get_playlist_tracks().row_count(),
+        detail_state.get_detail_tracks().row_count()
+    );
+    assert!(!playlist_state.invoke_open_playlist(-1));
 }

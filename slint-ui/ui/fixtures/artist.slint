@@ -1,0 +1,39 @@
+import { Icons } from "../icons.slint";
+import { ArtistReleaseItem, ArtistSongItem } from "../models.slint";
+
+// Read-only sample data for demo mode and visual tests.
+export global DemoArtist {
+    out property <[ArtistReleaseItem]> artist-latest: [
+        { id: 301, kind: "Album", title: "Fantasy (Deluxe Edition)", year: "2023", cover: Icons.cover-indigo },
+        { id: 302, kind: "Single / EP", title: "Oceans Niagara", year: "2023", cover: Icons.cover-cyan },
+    ];
+
+    out property <[ArtistSongItem]> artist-top-songs: [
+        { id: 1, index-str: "01", title: "Midnight City Lights", album: "Hurry Up, We're Dreaming", duration: "4:03", cover: Icons.cover-indigo, badge: "hot" },
+        { id: 2, index-str: "02", title: "Wait", album: "Hurry Up, We're Dreaming", duration: "5:43", cover: Icons.cover-cyan, badge: "rec" },
+        { id: 3, index-str: "03", title: "Outro", album: "Hurry Up, We're Dreaming", duration: "4:07", cover: Icons.cover-night, badge: "" },
+        { id: 4, index-str: "04", title: "Solitude (Felsmann + Tiley Reinterpretation)", album: "DSVII", duration: "3:58", cover: Icons.cover-rose, badge: "" },
+        { id: 5, index-str: "05", title: "My Tears Are Becoming a Sea", album: "Hurry Up, We're Dreaming", duration: "2:31", cover: Icons.cover-sunset, badge: "" },
+    ];
+
+    out property <[ArtistReleaseItem]> artist-albums: [
+        { id: 401, kind: "Album", title: "Fantasy", year: "2023", cover: Icons.cover-indigo },
+        { id: 402, kind: "Album", title: "DSVII", year: "2019", cover: Icons.cover-mint },
+        { id: 403, kind: "Album", title: "Junk", year: "2016", cover: Icons.cover-sunset },
+        { id: 404, kind: "Album", title: "Hurry Up, We're Dreaming", year: "2011", cover: Icons.cover-cyan },
+        { id: 405, kind: "Album", title: "Saturdays = Youth", year: "2008", cover: Icons.cover-rose },
+    ];
+
+    out property <[ArtistReleaseItem]> artist-eps: [
+        { id: 411, kind: "EP / Single", title: "Oceans Niagara", year: "2023", cover: Icons.cover-cyan },
+        { id: 412, kind: "EP / Single", title: "Mirror", year: "2023", cover: Icons.cover-night },
+        { id: 413, kind: "EP / Single", title: "Temple of Sorrow", year: "2019", cover: Icons.cover-mint },
+        { id: 414, kind: "EP / Single", title: "Reunion", year: "2012", cover: Icons.cover-rose },
+    ];
+
+    out property <[ArtistReleaseItem]> artist-mvs: [
+        { id: 421, kind: "Music Video", title: "Midnight City (Official Video)", year: "2011", cover: Icons.cover-indigo },
+        { id: 422, kind: "Music Video", title: "Oceans Niagara (Directed by Yann Gonzalez)", year: "2023", cover: Icons.cover-cyan },
+        { id: 423, kind: "Music Video", title: "Wait (Official Trilogy Part 3)", year: "2012", cover: Icons.cover-sunset },
+    ];
+}

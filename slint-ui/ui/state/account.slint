@@ -1,0 +1,8 @@
+import { Icons } from "../icons.slint";
+
+// Authenticated account identity shared by account-aware features.
+export global AccountState {
+    in-out property <bool> is-logged-in: true;
+    in-out property <string> user-nickname: "云村漫游者";
+    in-out property <image> user-avatar: Icons.avatar-user;
+}

@@ -4,7 +4,7 @@ use super::{
     images::{DecodedImage, ImageTarget},
     view::{self, View},
 };
-use crate::{AppState, AppWindow};
+use crate::AppWindow;
 use i_slint_backend_testing::{mock_elapsed_time, ElementHandle, ElementRoot};
 use serde_json::{json, Value};
 use slint::{
@@ -76,12 +76,14 @@ fn playlist_switches_immediately_and_isolates_delayed_metadata_tracks_and_errors
     .unwrap();
     let app = AppWindow::new().unwrap();
     view::initialize(&app, &Preferences::default());
-    let state = app.global::<AppState>();
+    let playlist_state = app.global::<crate::PlaylistState>();
+    let runtime_state = app.global::<crate::RuntimeState>();
+    let navigation_state = app.global::<crate::NavigationState>();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let view = Rc::new(RefCell::new(View::new(tx, Preferences::default())));
     let weak = app.as_weak();
     let controller = view.clone();
-    state.on_open_playlist(move |id| {
+    playlist_state.on_open_playlist(move |id| {
         controller
             .borrow_mut()
             .action(&weak.unwrap(), "playlist", id, "");
@@ -89,7 +91,7 @@ fn playlist_switches_immediately_and_isolates_delayed_metadata_tracks_and_errors
     });
     let weak = app.as_weak();
     let controller = view.clone();
-    state.on_runtime_action(move |name, id, arg| {
+    runtime_state.on_runtime_action(move |name, id, arg| {
         controller
             .borrow_mut()
             .action(&weak.unwrap(), &name, id, &arg)
@@ -99,7 +101,11 @@ fn playlist_switches_immediately_and_isolates_delayed_metadata_tracks_and_errors
             "id":id,"name":format!("Preview {id}"),"coverImgUrl":format!("https://example.test/{id}.jpg"),"creator":{"userId":42}
         })).collect::<Vec<_>>()
     }})));
-    let ids: Vec<_> = state.get_created_playlists().iter().map(|p| p.id).collect();
+    let ids: Vec<_> = playlist_state
+        .get_created_playlists()
+        .iter()
+        .map(|p| p.id)
+        .collect();
     app.show().unwrap();
     advance(&app);
     let click = |index| {
@@ -110,11 +116,11 @@ fn playlist_switches_immediately_and_isolates_delayed_metadata_tracks_and_errors
     };
     click(0);
     let first = next_page(&mut rx);
-    assert_eq!(state.get_current_route(), "playlist");
-    assert_eq!(state.get_active_playlist_id(), ids[0]);
-    assert_eq!(state.get_playlist_title(), "Preview 1");
-    assert!(state.get_playlist_loading());
-    assert!(state.get_playlist_metadata_loading());
+    assert_eq!(navigation_state.get_current_route(), "playlist");
+    assert_eq!(playlist_state.get_active_playlist_id(), ids[0]);
+    assert_eq!(playlist_state.get_playlist_title(), "Preview 1");
+    assert!(playlist_state.get_playlist_loading());
+    assert!(playlist_state.get_playlist_metadata_loading());
     advance(&app);
     element(&app, "SongList::loading-rows");
     assert!(
@@ -133,20 +139,20 @@ fn playlist_switches_immediately_and_isolates_delayed_metadata_tracks_and_errors
             json!({"id":"1","playlist":first_page["body"]["playlist"]}),
         ),
     );
-    assert_eq!(state.get_playlist_title(), "Playlist 1");
-    assert!(!state.get_playlist_metadata_loading());
-    assert!(state.get_playlist_loading());
-    assert!(!state.get_playlist_can_manage());
-    assert_eq!(state.get_playlist_tracks().row_count(), 0);
+    assert_eq!(playlist_state.get_playlist_title(), "Playlist 1");
+    assert!(!playlist_state.get_playlist_metadata_loading());
+    assert!(playlist_state.get_playlist_loading());
+    assert!(!playlist_state.get_playlist_can_manage());
+    assert_eq!(playlist_state.get_playlist_tracks().row_count(), 0);
     advance(&app);
     snapshot(&app, "playlist-loading-tracks");
     view.borrow_mut()
         .apply(&app, response("page", first.token, first_page));
-    assert!(!state.get_playlist_loading());
-    assert!(state.get_playlist_can_manage());
-    assert_eq!(state.get_playlist_tracks().row_count(), 80);
+    assert!(!playlist_state.get_playlist_loading());
+    assert!(playlist_state.get_playlist_can_manage());
+    assert_eq!(playlist_state.get_playlist_tracks().row_count(), 80);
     advance(&app);
-    let header_cover = element(&app, "MediaDetailView::detail-cover-wrapper");
+    let header_cover = element(&app, "MediaDetailHeader::detail-cover-wrapper");
     app.window().dispatch_event(WindowEvent::PointerScrolled {
         position: LogicalPosition::new(1000.0, 600.0),
         delta_x: 0.0,
@@ -157,14 +163,14 @@ fn playlist_switches_immediately_and_isolates_delayed_metadata_tracks_and_errors
 
     click(1);
     let second = next_page(&mut rx);
-    assert_eq!(state.get_active_playlist_id(), ids[1]);
-    assert_eq!(state.get_playlist_title(), "Preview 2");
-    assert!(state.get_playlist_creator().is_empty());
-    assert!(state.get_playlist_description().is_empty());
-    assert_eq!(state.get_playlist_tracks().row_count(), 0);
+    assert_eq!(playlist_state.get_active_playlist_id(), ids[1]);
+    assert_eq!(playlist_state.get_playlist_title(), "Preview 2");
+    assert!(playlist_state.get_playlist_creator().is_empty());
+    assert!(playlist_state.get_playlist_description().is_empty());
+    assert_eq!(playlist_state.get_playlist_tracks().row_count(), 0);
     advance(&app);
     assert!(
-        (element(&app, "MediaDetailView::detail-cover-wrapper")
+        (element(&app, "MediaDetailHeader::detail-cover-wrapper")
             .absolute_position()
             .y
             - 40.0)
@@ -183,7 +189,7 @@ fn playlist_switches_immediately_and_isolates_delayed_metadata_tracks_and_errors
         .into_iter(),
     );
     assert_eq!(
-        state.get_playlist_cover().size().width,
+        playlist_state.get_playlist_cover().size().width,
         0,
         "old cover reached new header"
     );
@@ -204,10 +210,10 @@ fn playlist_switches_immediately_and_isolates_delayed_metadata_tracks_and_errors
             ..response("page", second.token, Value::Null)
         },
     );
-    assert_eq!(state.get_active_playlist_id(), ids[2]);
-    assert_eq!(state.get_playlist_title(), "Preview 3");
-    assert!(state.get_playlist_loading());
-    assert!(state.get_playlist_load_error().is_empty());
+    assert_eq!(playlist_state.get_active_playlist_id(), ids[2]);
+    assert_eq!(playlist_state.get_playlist_title(), "Preview 3");
+    assert!(playlist_state.get_playlist_loading());
+    assert!(playlist_state.get_playlist_load_error().is_empty());
 
     view.borrow_mut().apply(
         &app,
@@ -216,20 +222,20 @@ fn playlist_switches_immediately_and_isolates_delayed_metadata_tracks_and_errors
             ..response("page", third.token, Value::Null)
         },
     );
-    assert!(!state.get_playlist_loading());
-    assert!(!state.get_playlist_metadata_loading());
+    assert!(!playlist_state.get_playlist_loading());
+    assert!(!playlist_state.get_playlist_metadata_loading());
     advance(&app);
     element(&app, "SongList::load-error-panel");
     snapshot(&app, "playlist-loading-error");
     element(&app, "SongList::retry-button").mock_single_click(PointerEventButton::Left);
     let retry = next_page(&mut rx);
     assert_eq!(retry.data["id"], "3");
-    assert!(state.get_playlist_loading());
-    assert!(state.get_playlist_load_error().is_empty());
+    assert!(playlist_state.get_playlist_loading());
+    assert!(playlist_state.get_playlist_load_error().is_empty());
     view.borrow_mut()
         .apply(&app, response("page", retry.token, playlist("3", 0)));
     advance(&app);
-    assert!(!state.get_playlist_loading());
+    assert!(!playlist_state.get_playlist_loading());
     element(&app, "SongList::empty-state");
     assert!(
         ElementHandle::find_by_element_id(&app, "SongList::loading-rows")
@@ -239,7 +245,7 @@ fn playlist_switches_immediately_and_isolates_delayed_metadata_tracks_and_errors
 
     click(0);
     let leaving = next_page(&mut rx);
-    state.set_current_route("home".into());
+    navigation_state.set_current_route("home".into());
     advance(&app);
     view.borrow_mut().apply(
         &app,
@@ -251,8 +257,8 @@ fn playlist_switches_immediately_and_isolates_delayed_metadata_tracks_and_errors
     );
     view.borrow_mut()
         .apply(&app, response("page", leaving.token, playlist("1", 2)));
-    assert_eq!(state.get_current_route(), "home");
-    assert!(!state.get_playlist_loading());
-    assert_eq!(state.get_playlist_tracks().row_count(), 0);
-    assert_eq!(state.get_playlist_title(), "Preview 1");
+    assert_eq!(navigation_state.get_current_route(), "home");
+    assert!(!playlist_state.get_playlist_loading());
+    assert_eq!(playlist_state.get_playlist_tracks().row_count(), 0);
+    assert_eq!(playlist_state.get_playlist_title(), "Preview 1");
 }

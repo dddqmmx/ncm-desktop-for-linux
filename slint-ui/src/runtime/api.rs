@@ -1,17 +1,11 @@
-//! A provider implements this contract; neither the UI nor the native player knows Node.
+//! Native Rust and optional HTTP providers share the same application contract.
 //! HTTP providers implement the same version 1 envelope at NCM_API_URL.
-use futures_util::{SinkExt, StreamExt};
+mod native;
+
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{
-    collections::HashMap, future::Future, path::PathBuf, pin::Pin, process::Stdio, sync::Arc,
-    time::Duration,
-};
-use tokio::{
-    process::Command,
-    sync::{mpsc, oneshot},
-};
-use tokio_util::codec::{FramedRead, FramedWrite, LinesCodec};
+use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
 pub type ApiFuture<'a> = Pin<Box<dyn Future<Output = Result<ApiResponse, String>> + Send + 'a>>;
 pub trait MusicApi: Send + Sync {
@@ -48,112 +42,6 @@ impl ApiResponse {
             .filter_map(|v| v.split(';').next())
             .collect::<Vec<_>>()
             .join("; ")
-    }
-}
-type Pending = (Value, oneshot::Sender<Result<ApiResponse, String>>);
-struct NodeApi {
-    sender: mpsc::Sender<Pending>,
-}
-impl NodeApi {
-    fn start() -> Self {
-        let packaged = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.join("sidecar/music-api.cjs")));
-        let script = std::env::var_os("NCM_API_SIDECAR")
-            .map(PathBuf::from)
-            .or_else(|| packaged.filter(|p| p.is_file()))
-            .unwrap_or_else(|| {
-                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("sidecar/music-api.cjs")
-            });
-        Self::launch(script, Duration::from_secs(40))
-    }
-    fn launch(script: PathBuf, timeout: Duration) -> Self {
-        let (sender, mut requests) = mpsc::channel::<Pending>(32);
-        tokio::spawn(async move {
-            let result =
-                Command::new(std::env::var_os("NCM_NODE").unwrap_or_else(|| "node".into()))
-                    .arg(script)
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::null())
-                    .kill_on_drop(true)
-                    .spawn();
-            let Ok(mut child) = result else {
-                while let Some((_, reply)) = requests.recv().await {
-                    let _ = reply.send(Err(
-                        "无法启动网易云 API，请安装 Node.js 和 npm 依赖，或设置 NCM_API_URL".into(),
-                    ));
-                }
-                return;
-            };
-            let mut input = FramedWrite::new(
-                child.stdin.take().unwrap(),
-                LinesCodec::new_with_max_length(1024 * 1024),
-            );
-            let mut output = FramedRead::new(
-                child.stdout.take().unwrap(),
-                LinesCodec::new_with_max_length(16 * 1024 * 1024),
-            );
-            let mut pending: HashMap<
-                u64,
-                (
-                    tokio::time::Instant,
-                    oneshot::Sender<Result<ApiResponse, String>>,
-                ),
-            > = HashMap::new();
-            let mut id = 0u64;
-            let mut tick = tokio::time::interval(timeout.min(Duration::from_secs(1)));
-            loop {
-                tokio::select! {
-                    request = requests.recv() => {
-                        let Some((mut body, reply)) = request else { break };
-                        if pending.len() >= 64 { let _ = reply.send(Err("API 请求过多，请稍后重试".into())); continue; }
-                        id += 1; body["id"] = id.into();
-                        pending.insert(id, (tokio::time::Instant::now(), reply));
-                        let frame=body.to_string();
-                        if frame.len()>1024*1024 { if let Some((_,reply))=pending.remove(&id){let _=reply.send(Err("API 请求过大".into()));}continue; }
-                        if !matches!(tokio::time::timeout(timeout,input.send(frame)).await,Ok(Ok(()))) { break }
-                    }
-                    line = output.next() => {
-                        let Some(Ok(line)) = line else { break };
-                        let Ok(value) = serde_json::from_str::<Value>(&line) else { break };
-                        if value["version"] != 1 { break }
-                        if let Some(id) = value["id"].as_u64() {
-                            if let Some((_, reply)) = pending.remove(&id) {
-                                let _ = reply.send(serde_json::from_value(value).map_err(|_| "API 响应格式错误".into()));
-                            }
-                        }
-                    }
-                    _ = tick.tick() => {
-                        let expired: Vec<_> = pending.iter().filter(|(_, (t, _))| t.elapsed() > timeout).map(|(id,_)| *id).collect();
-                        for id in expired { if let Some((_, reply)) = pending.remove(&id) { let _ = reply.send(Err("API 请求超时；操作可能已执行，请刷新确认".into())); } }
-                    }
-                }
-            }
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            for (_, (_, reply)) in pending {
-                let _ = reply.send(Err(
-                    "网易云 API 进程已退出，请检查依赖后重启；未自动重试操作".into(),
-                ));
-            }
-            // Closing the receiver causes all subsequent requests to fail promptly.
-        });
-        Self { sender }
-    }
-}
-impl MusicApi for NodeApi {
-    fn call(&self, operation: &str, params: Value, cookie: &str) -> ApiFuture<'_> {
-        let request =
-            serde_json::json!({"version":1,"operation":operation,"params":params,"cookie":cookie});
-        Box::pin(async move {
-            let (tx, rx) = oneshot::channel();
-            self.sender
-                .send((request, tx))
-                .await
-                .map_err(|_| "网易云 API 未运行，请重启应用".to_owned())?;
-            rx.await.map_err(|_| "网易云 API 连接已关闭".to_owned())?
-        })
     }
 }
 struct HttpApi {
@@ -207,55 +95,6 @@ pub fn configured_provider() -> Result<Arc<dyn MusicApi>, String> {
             .map_err(|e| e.to_string())?;
         Ok(Arc::new(HttpApi { endpoint, client }))
     } else {
-        Ok(Arc::new(NodeApi::start()))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[tokio::test]
-    async fn node_transport_correlates_out_of_order_responses_and_does_not_retry_timeouts() {
-        let dir = std::env::temp_dir().join(format!("ncm-api-transport-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let script = dir.join("mock.cjs");
-        std::fs::write(
-            &script,
-            r#"
-const readline = require('node:readline');
-let count = 0;
-readline.createInterface({input:process.stdin}).on('line', line => {
-  const r=JSON.parse(line); count++;
-  if(r.operation==='exit') process.exit(0);
-  if(r.operation==='timeout') return;
-  const body={version:1,id:r.id,status:200,body:{code:200,operation:r.operation, count},cookie:[]};
-  setTimeout(()=>process.stdout.write(JSON.stringify(body)+'\n'),r.operation==='slow'?30:0);
-});
-"#,
-        )
-        .unwrap();
-        let api = NodeApi::launch(script, Duration::from_millis(150));
-        let (a, b) = tokio::join!(
-            api.call("slow", Value::Null, ""),
-            api.call("fast", Value::Null, "")
-        );
-        assert_eq!(a.unwrap().body["operation"], "slow");
-        assert_eq!(b.unwrap().body["operation"], "fast");
-        assert!(api
-            .call("timeout", Value::Null, "")
-            .await
-            .unwrap_err()
-            .contains("超时"));
-        assert_eq!(
-            api.call("after-timeout", Value::Null, "")
-                .await
-                .unwrap()
-                .body["count"],
-            4
-        );
-        assert!(api.call("exit", Value::Null, "").await.is_err());
-        assert!(api.call("after-exit", Value::Null, "").await.is_err());
-        drop(api);
-        std::fs::remove_dir_all(dir).unwrap();
+        Ok(Arc::new(native::NativeApi::new()))
     }
 }

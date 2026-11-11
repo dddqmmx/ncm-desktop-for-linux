@@ -20,7 +20,7 @@ pub fn items(v: &Value) -> &[Value] {
 pub fn time(ms: u64) -> String {
     format!("{}:{:02}", ms / 60000, ms / 1000 % 60)
 }
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Song {
     pub id: String,
     pub name: String,
@@ -88,6 +88,13 @@ impl Default for Preferences {
     }
 }
 impl Preferences {
+    pub fn effective_volume(&self) -> f64 {
+        if self.software_volume && !self.strict {
+            self.volume
+        } else {
+            1.0
+        }
+    }
     pub fn output_options(&self, device: Option<&str>) -> (bool, bool) {
         let hardware = device.is_some_and(|d| {
             d.starts_with("hw:") || d.starts_with("plughw:") || d.starts_with("alsa:hw:")

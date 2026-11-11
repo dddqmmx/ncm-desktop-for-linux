@@ -1,0 +1,26 @@
+import { Theme } from "../theme.slint";
+
+import { SettingsText, SettingGroupCard } from "controls.slint";
+
+export component ShortcutsSettingsTab inherits VerticalLayout {
+    SettingGroupCard {
+        title: "快捷键";
+        no-card: true;
+
+        Rectangle {
+            border-radius: 16px;
+            background: Theme.sys-surface-muted;
+            height: sc-txt.preferred-height + 36px;
+
+            sc-txt := SettingsText {
+                x: 20px;
+                y: 18px;
+                width: parent.width - 40px;
+                text: "快捷键配置还没有接入实际绑定逻辑。现在先把这个分区单独拆出来，后续可以在这里统一管理播放/暂停、上一首、下一首等全局快捷键。";
+                font-size: 13px;
+                color: Theme.sys-text-secondary;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

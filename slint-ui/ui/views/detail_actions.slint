@@ -1,0 +1,290 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { PlayerState } from "../state/player.slint";
+import { DialogState } from "../state/dialog.slint";
+import { PlaylistState } from "../state/playlist.slint";
+import { DetailState } from "../state/detail.slint";
+import { LibraryState } from "../state/library.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { TrackItem } from "../models.slint";
+import { AppIcon } from "../components/common.slint";
+import { PlaylistButton } from "../overlays/playlist_editor.slint";
+
+component PlaylistActionsButton inherits PlaylistButton {
+
+    width: 44px; height: 44px; border-radius: 22px;
+    border-width: 1px; border-color: Theme.sys-border;
+    icon: Icons.more; icon-size: 20px; label: "歌单操作";
+    property <int> restore-focus: PlaylistState.playlist-restore-focus;
+    changed restore-focus => {
+        if self.restore-focus == 2 {
+            if PlaylistState.playlist-editor-mode == "" && !DialogState.is-dialog-open { self.focus(); }
+            PlaylistState.playlist-restore-focus = 0;
+        }
+    }
+    clicked => {
+        PlaylistState.playlist-actions-x = self.absolute-position.x + self.width - 176px;
+        PlaylistState.playlist-actions-y = self.absolute-position.y + self.height + 8px;
+        PlaylistState.is-playlist-actions-open = !PlaylistState.is-playlist-actions-open;
+    }
+}
+
+component LocalLibraryActions inherits HorizontalLayout {
+    in property <[TrackItem]> songs;
+    height: 44px;
+    width: self.preferred-width;
+    spacing: 16px;
+
+    local-import-btn := Rectangle {
+        width: import-label.preferred-width + 59px;
+        height: 44px;
+        border-radius: 22px;
+        background: imp-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
+        border-width: 1px;
+        border-color: Theme.sys-border;
+        animate background { duration: 200ms; easing: ease; }
+
+        imp-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                if RuntimeState.runtime-enabled { RuntimeState.runtime-action("local", -1, "add"); } else { LibraryState.local-description = "已导入 2 首，已跳过 0 个"; }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 7px;
+
+            AppIcon {
+                y: (parent.height - self.height) / 2;
+                source: Icons.download;
+                icon-size: 18px;
+                tint: imp-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
+            }
+
+            import-label := Text {
+                text: "导入音乐";
+                font-size: 13px;
+                font-weight: 600;
+                color: imp-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    if root.songs.length > 0 : local-clear-btn := Rectangle {
+        width: 40px;
+        height: 40px;
+        y: (parent.height - self.height) / 2;
+        border-radius: 20px;
+        background: clr-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
+        animate background { duration: 200ms; easing: ease; }
+
+        clr-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                DialogState.request-local-clear();
+            }
+        }
+
+        AppIcon {
+            x: 11px;
+            y: 11px;
+            source: Icons.trash-outline;
+            icon-size: 18px;
+            tint: clr-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
+        }
+    }
+}
+
+component DetailSearchField inherits Rectangle {
+    in property <bool> force-search-focus;
+    in property <bool> loading;
+    in property <string> load-error;
+    in property <string> search-placeholder;
+    out property <bool> is-focused: detail-search-input.has-focus || root.force-search-focus;
+
+    height: 44px;
+    border-radius: 22px;
+    background: self.is-focused ? Theme.sys-control-hover : Theme.sys-control;
+    animate width, background { duration: 300ms; easing: ease; }
+
+    AppIcon {
+        x: 16px;
+        y: 14px;
+        source: Icons.search-alt;
+        icon-size: 16px;
+        tint: Theme.sys-text-tertiary;
+    }
+
+    detail-search-input := TextInput {
+        enabled: !root.loading && root.load-error == "";
+        x: 40px;
+        width: parent.width - 72px;
+        height: 44px;
+        text <=> DetailState.detail-search-query;
+        font-size: 13px;
+        color: Theme.sys-text;
+        vertical-alignment: center;
+        single-line: true;
+    }
+
+    if DetailState.detail-search-query == "" && !root.is-focused : Text {
+        x: 40px;
+        height: 44px;
+        text: root.search-placeholder;
+        font-size: 13px;
+        color: Theme.sys-text-tertiary;
+        vertical-alignment: center;
+    }
+
+    if DetailState.detail-search-query != "" : Rectangle {
+        x: parent.width - 32px;
+        y: 11px;
+        width: 22px;
+        height: 22px;
+
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => { DetailState.detail-search-query = ""; }
+        }
+
+        AppIcon {
+            x: 4px;
+            y: 4px;
+            source: Icons.close;
+            icon-size: 14px;
+            tint: Theme.sys-text-tertiary;
+        }
+    }
+}
+
+export component MediaDetailActions inherits Rectangle {
+    function play-all() {
+        if (root.songs.length > 0) {
+            PlayerState.play-song(
+                root.songs[0].id,
+                root.songs[0].name,
+                root.songs[0].artist,
+                root.songs[0].cover,
+                root.songs[0].is-local,
+                root.songs[0].has-cover
+                );
+        }
+    }
+
+    in property <string> variant;
+    in property <[TrackItem]> songs;
+    in property <bool> force-search-focus;
+    in property <bool> loading;
+    in property <string> load-error;
+    in property <string> search-placeholder;
+    height: actions.preferred-height;
+    actions := FlexboxLayout {
+        width: root.width;
+        spacing: root.variant == "playlist" ? 10px : 16px;
+        alignment: start;
+        cross-axis-alignment: center;
+        detail-play-main-btn := Rectangle {
+            width: play-label.preferred-width + 76px;
+            height: 44px;
+            border-radius: 22px;
+            background: play-all-ta.has-hover ? Theme.theme-color-strong : Theme.theme-color;
+            opacity: root.songs.length > 0 ? 1 : 0.45;
+            animate background { duration: 200ms; easing: ease; }
+
+            play-all-ta := TouchArea {
+                enabled: root.songs.length > 0;
+                mouse-cursor: pointer;
+                clicked => { root.play-all(); }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+
+                AppIcon {
+                    y: (parent.height - self.height) / 2;
+                    source: Icons.play;
+                    icon-size: 20px;
+                    tint: #ffffff;
+                }
+
+                play-label := Text {
+                    text: "播放全部";
+                    font-size: 15px;
+                    font-weight: 700;
+                    color: #ffffff;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        detail-search-box := DetailSearchField {
+            width: root.variant == "playlist"
+                ? Math.clamp(root.width - detail-play-main-btn.width - subscriber-measure.preferred-width - 44px
+                - (PlaylistState.playlist-can-manage ? 54px : 0px), 120px, 240px)
+                : Math.min(Math.max(120px, root.width - detail-play-main-btn.width - 16px), self.is-focused ? 260px : 220px);
+            force-search-focus: root.force-search-focus;
+            loading: root.loading;
+            load-error: root.load-error;
+            search-placeholder: root.search-placeholder;
+        }
+
+        if root.variant == "playlist" : detail-secondary-btn := Rectangle {
+            width: subscriber-measure.preferred-width + 34px;
+            height: 44px;
+            border-radius: 19px;
+            background: transparent;
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: 6px;
+
+                AppIcon {
+                    y: (parent.height - self.height) / 2;
+                    source: Icons.heart;
+                    icon-size: 18px;
+                    tint: Theme.sys-text-secondary;
+                }
+
+                Text {
+                    text: PlaylistState.playlist-subscribed-count;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.sys-text-secondary;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        if root.variant == "local" : LocalLibraryActions {
+            songs: root.songs;
+        }
+
+        if root.variant != "local" && root.variant != "playlist" : detail-more-btn := Rectangle {
+            width: 44px;
+            height: 44px;
+            border-radius: 22px;
+            background: more-top-ta.has-hover ? Theme.sys-control-hover : transparent;
+            animate background { duration: 200ms; easing: ease; }
+
+            more-top-ta := TouchArea { mouse-cursor: pointer; }
+
+            AppIcon {
+                x: 12px;
+                y: 12px;
+                source: Icons.more;
+                icon-size: 20px;
+                tint: more-top-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
+            }
+        }
+        if root.variant == "playlist" && PlaylistState.playlist-can-manage : playlist-actions-trigger := PlaylistActionsButton {
+
+                                                                        }
+    }
+    subscriber-measure := Text {
+        visible: false; text: PlaylistState.playlist-subscribed-count;
+        font-size: 13px; font-weight: 600;
+    }
+}

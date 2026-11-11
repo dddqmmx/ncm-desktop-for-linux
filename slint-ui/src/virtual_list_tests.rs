@@ -1,4 +1,4 @@
-use crate::{AppState, AppWindow, NavPlaylistItem, QueueSongItem, TrackItem};
+use crate::{AppWindow, NavPlaylistItem, QueueSongItem, TrackItem};
 use i_slint_backend_testing::{mock_elapsed_time, ElementHandle, ElementRoot};
 use slint::{
     platform::{PointerEventButton, WindowEvent},
@@ -28,11 +28,20 @@ fn large_lists_only_construct_visible_rows_and_request_their_covers() {
     i_slint_backend_testing::init_no_event_loop();
     let app = AppWindow::new().unwrap();
     app.show().unwrap();
-    let state = app.global::<AppState>();
-    state.set_is_logged_in(false);
+    let account_state = app.global::<crate::AccountState>();
+    let runtime_state = app.global::<crate::RuntimeState>();
+    let playlist_state = app.global::<crate::PlaylistState>();
+    let detail_state = app.global::<crate::DetailState>();
+    let library_state = app.global::<crate::LibraryState>();
+    let queue_state = app.global::<crate::QueueState>();
+    let navigation_state = app.global::<crate::NavigationState>();
+    let search_state = app.global::<crate::SearchState>();
+    let player_state = app.global::<crate::PlayerState>();
+    let song_menu_state = app.global::<crate::SongMenuState>();
+    account_state.set_is_logged_in(false);
     let requested = Rc::new(RefCell::new(HashMap::<i32, i32>::new()));
     let sink = requested.clone();
-    state.on_request_cover(move |id, size| {
+    runtime_state.on_request_cover(move |id, size| {
         let mut requests = sink.borrow_mut();
         let previous = requests.entry(id).or_default();
         *previous = (*previous).max(size);
@@ -48,10 +57,10 @@ fn large_lists_only_construct_visible_rows_and_request_their_covers() {
             })
             .collect::<Vec<_>>(),
     ));
-    state.set_playlist_tracks(ModelRc::from(tracks.clone()));
-    state.set_detail_tracks(ModelRc::from(tracks.clone()));
-    state.set_local_tracks(ModelRc::from(tracks.clone()));
-    state.set_queue_songs(
+    playlist_state.set_playlist_tracks(ModelRc::from(tracks.clone()));
+    detail_state.set_detail_tracks(ModelRc::from(tracks.clone()));
+    library_state.set_local_tracks(ModelRc::from(tracks.clone()));
+    queue_state.set_queue_songs(
         Rc::new(VecModel::from(
             (0..10_000)
                 .map(|id| QueueSongItem {
@@ -64,8 +73,8 @@ fn large_lists_only_construct_visible_rows_and_request_their_covers() {
         .into(),
     );
     for route in ["playlist", "album", "favorites", "local-music", "search"] {
-        state.set_current_route(route.into());
-        state.set_search_show_results(true);
+        navigation_state.set_current_route(route.into());
+        search_state.set_search_show_results(true);
         settle(&app);
         let id = if route == "search" {
             "SearchResultSongRow::root"
@@ -122,7 +131,7 @@ fn large_lists_only_construct_visible_rows_and_request_their_covers() {
             position,
             button: PointerEventButton::Left,
         });
-        let played = state.get_current_song_id();
+        let played = player_state.get_current_song_id();
         assert!(
             played > 100,
             "{route}: scrolled row played stale index {played}"
@@ -149,9 +158,9 @@ fn large_lists_only_construct_visible_rows_and_request_their_covers() {
     let visible = rows(&app, "SearchResultSongRow::root");
     assert_eq!(visible.len(), 1);
     visible[0].mock_single_click(PointerEventButton::Left);
-    assert_eq!(state.get_current_song_id(), 42);
+    assert_eq!(player_state.get_current_song_id(), 42);
 
-    state.set_is_playlist_open(true);
+    queue_state.set_is_playlist_open(true);
     settle(&app);
     let visible = rows(&app, "PlaylistQueueRow::root");
     assert!(
@@ -161,11 +170,11 @@ fn large_lists_only_construct_visible_rows_and_request_their_covers() {
     );
     scroll(&app, 830.0, 600.0, -40_000.0);
     assert!(rows(&app, "PlaylistQueueRow::root").len() < 20);
-    state.set_is_playlist_open(false);
+    queue_state.set_is_playlist_open(false);
     settle(&app);
     assert!(rows(&app, "PlaylistQueueRow::root").is_empty());
 
-    state.set_created_playlists(
+    playlist_state.set_created_playlists(
         Rc::new(VecModel::from(
             (0..10_000)
                 .map(|id| NavPlaylistItem {
@@ -177,14 +186,14 @@ fn large_lists_only_construct_visible_rows_and_request_their_covers() {
         ))
         .into(),
     );
-    state.set_is_logged_in(true);
+    account_state.set_is_logged_in(true);
     settle(&app);
     assert!(rows(&app, "SidebarPlaylistRow::root").len() < 20);
     scroll(&app, 150.0, 500.0, -40_000.0);
     assert!(rows(&app, "SidebarPlaylistRow::root").len() < 22);
-    state.set_is_add_to_playlist_open(true);
+    song_menu_state.set_is_add_to_playlist_open(true);
     settle(&app);
-    let covers = rows(&app, "AddToPlaylistModal::pl-col");
+    let covers = rows(&app, "PlaylistPickerList::pl-col");
     assert_eq!(covers.len(), 1);
     assert!(
         covers[0]
@@ -219,7 +228,12 @@ fn scrolling_reuses_row_data_and_only_rebinds_newly_visible_songs() {
     i_slint_backend_testing::init_no_event_loop();
     let app = AppWindow::new().unwrap();
     app.show().unwrap();
-    let state = app.global::<AppState>();
+    let playlist_state = app.global::<crate::PlaylistState>();
+    let detail_state = app.global::<crate::DetailState>();
+    let library_state = app.global::<crate::LibraryState>();
+    let navigation_state = app.global::<crate::NavigationState>();
+    let search_state = app.global::<crate::SearchState>();
+    let player_state = app.global::<crate::PlayerState>();
     let tracks = Rc::new(CountingTracks {
         rows: VecModel::from(
             (0..10_000)
@@ -232,12 +246,12 @@ fn scrolling_reuses_row_data_and_only_rebinds_newly_visible_songs() {
         ),
         reads: RefCell::new(Vec::new()),
     });
-    state.set_playlist_tracks(tracks.clone().into());
-    state.set_detail_tracks(tracks.clone().into());
-    state.set_local_tracks(tracks.clone().into());
+    playlist_state.set_playlist_tracks(tracks.clone().into());
+    detail_state.set_detail_tracks(tracks.clone().into());
+    library_state.set_local_tracks(tracks.clone().into());
     for route in ["playlist", "album", "favorites", "local-music", "search"] {
-        state.set_current_route(route.into());
-        state.set_search_show_results(true);
+        navigation_state.set_current_route(route.into());
+        search_state.set_search_show_results(true);
         settle(&app);
         scroll(&app, 700.0, 500.0, -4_000.0);
         for delta in [-1.0, -62.0, 62.0, -62.0, 1.0] {
@@ -279,7 +293,7 @@ fn scrolling_reuses_row_data_and_only_rebinds_newly_visible_songs() {
                 }
             });
         }
-        let id = state.get_current_song_id();
+        let id = player_state.get_current_song_id();
         assert!(id > 10);
         tracks.rows.set_row_data(
             id as usize,
@@ -303,6 +317,6 @@ fn scrolling_reuses_row_data_and_only_rebinds_newly_visible_songs() {
                 }
             });
         }
-        assert_eq!(state.get_current_song_title(), "updated title");
+        assert_eq!(player_state.get_current_song_title(), "updated title");
     }
 }

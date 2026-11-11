@@ -1,0 +1,118 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { LoginState } from "../state/login.slint";
+import { FlowText } from "../components/typography.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+
+import { AppIcon } from "../components/common.slint";
+
+import { LoginSpinner, LoginControl } from "login_controls.slint";
+
+export component LoginQr inherits Rectangle {
+    in property <bool> capture: false;
+    x: 0px;
+    y: 0px;
+    width: 100%;
+    height: 100%;
+
+    login-form-btn := Rectangle {
+        x: 33px;
+        y: 33px;
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        background: pc-sw-ta.has-hover ? Theme.sys-control-hover : transparent;
+
+        pc-sw-ta := LoginControl { label: "密码登录";
+            mouse-cursor: pointer;
+            clicked => { LoginState.login-mode = "form"; }
+        }
+
+        AppIcon {
+            x: 8px;
+            y: 8px;
+            source: Icons.monitor;
+            icon-size: 20px;
+            tint: pc-sw-ta.has-hover ? Theme.sys-text : Theme.sys-text-tertiary;
+        }
+    }
+
+    login-qr-close-btn := Rectangle {
+        x: parent.width - self.width - 33px;
+        y: 33px;
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        background: cls-qr-ta.has-hover ? Theme.sys-control-hover : transparent;
+
+        cls-qr-ta := LoginControl { label: "关闭";
+            mouse-cursor: pointer;
+            clicked => { LoginState.is-login-open = false; }
+        }
+
+        AppIcon {
+            x: 8px;
+            y: 8px;
+            source: Icons.close;
+            icon-size: 20px;
+            tint: cls-qr-ta.has-hover ? Theme.sys-text : Theme.sys-text-tertiary;
+        }
+    }
+
+    qr-scroll := Flickable {
+        x: 33px; y: login-form-btn.y + login-form-btn.height + 20px;
+        width: parent.width - 66px; height: parent.height - self.y - 33px;
+        content-width: self.width;
+        content-height: Math.max(self.height, login-qr-content.preferred-height);
+        login-qr-content := VerticalLayout {
+            width: qr-scroll.width;
+            height: self.preferred-height;
+            y: Math.max(0px, (qr-scroll.height - self.height) / 2);
+            spacing: 24px;
+            cross-axis-alignment: center;
+            FlowText {
+                text: "扫码登录"; font-size: 22px; font-weight: 700;
+                color: Theme.sys-text; horizontal-alignment: center;
+            }
+            login-qr-box := Rectangle {
+
+                width: Math.min(220px, login-qr-content.width);
+                height: self.width;
+                border-radius: 20px;
+                background: Theme.sys-bg-elevated;
+                border-width: 1px;
+                border-color: Theme.sys-border;
+                drop-shadow-blur: 32px;
+                drop-shadow-offset-y: 10px;
+                drop-shadow-color: Theme.sys-shadow-soft;
+
+                if RuntimeState.runtime-enabled && !LoginState.login-qr-ready : LoginSpinner {
+                    x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                    tint: Theme.theme-color;
+                }
+                Image {
+                    visible: !RuntimeState.runtime-enabled || LoginState.login-qr-ready;
+                    x: 15px;
+                    y: 15px;
+                    width: parent.width - 30px;
+                    height: self.width;
+                    source: RuntimeState.runtime-enabled ? LoginState.login-qr-image : Icons.qr-demo;
+                    image-fit: contain;
+                }
+            }
+            VerticalLayout {
+                width: qr-scroll.width; spacing: 8px;
+                FlowText {
+                    text: RuntimeState.runtime-enabled ? LoginState.login-qr-message : "请使用 App 扫码";
+                    font-size: 15px; font-weight: 600; color: Theme.sys-text;
+                    horizontal-alignment: center; wrap: word-wrap;
+                }
+                FlowText {
+                    text: "请打开 移动端 App 扫码即可快速登录。";
+                    font-size: 13px; color: Theme.sys-text-secondary;
+                    horizontal-alignment: center; wrap: word-wrap;
+                }
+            }
+        }
+    }
+}

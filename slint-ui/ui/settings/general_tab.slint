@@ -1,0 +1,58 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { SettingsState } from "../state/settings.slint";
+import { ModernSwitch } from "../components/common.slint";
+import { Dropdown } from "../components/dropdown.slint";
+
+import { SettingGroupCard, SettingRowItem } from "controls.slint";
+
+export component GeneralSettingsTab inherits VerticalLayout {
+    SettingGroupCard {
+        title: "启动与运行";
+
+        SettingRowItem {
+            title: "开机自启动";
+            description: "在登录系统时自动启动音乐播放器";
+            show-divider: true;
+
+            modern-switch-auto-launch := ModernSwitch {
+                y: 0px;
+                checked <=> SettingsState.setting-auto-launch;
+            }
+        }
+
+        SettingRowItem {
+            title: "最小化至托盘";
+            description: RuntimeState.runtime-enabled ? "系统托盘尚未接入，关闭主窗口将退出应用" : "关闭主窗口时应用将继续在后台运行";
+            show-divider: false;
+
+            ModernSwitch {
+                y: 0px;
+                checked <=> SettingsState.setting-tray-minimize;
+                enabled: !RuntimeState.runtime-enabled;
+            }
+        }
+    }
+    SettingGroupCard {
+        title: "界面渲染";
+        tip: SettingsState.renderer-restart-required
+            ? "重启应用后将使用所选渲染方式。"
+            : "修改渲染方式后需重启应用。";
+
+        SettingRowItem {
+            title: "渲染方式";
+            description: "默认使用 Vulkan；选择软件渲染可关闭 GPU 加速。";
+            action-width: 240px;
+            action-height: 36px;
+            show-divider: false;
+
+            renderer-select := Dropdown {
+                option-count: SettingsState.renderer-options.length;
+                option-label(index) => { return SettingsState.renderer-options[index].label; }
+                current-index: SettingsState.setting-renderer-index;
+                selected(index) => {
+                    SettingsState.setting-renderer = SettingsState.renderer-options[index].value;
+                }
+            }
+        }
+    }
+}

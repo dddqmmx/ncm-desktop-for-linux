@@ -1,0 +1,24 @@
+import { AudioState } from "../state/audio.slint";
+import { AuxButtonItem } from "../models.slint";
+import { FullscreenAuxBtn } from "fullscreen_aux_button.slint";
+
+export component FullscreenAuxGroup inherits Rectangle {
+    in property <[AuxButtonItem]> items;
+    in property <bool> align-right: false;
+    in property <color> text-color: #ffffff;
+    horizontal-stretch: 1;
+    height: 72px;
+    HorizontalLayout {
+        x: 0px; y: 0px;
+        width: 100%; height: 100%;
+        alignment: root.align-right ? end : start;
+        spacing: 24px;
+        for item in root.items : Rectangle {
+            width: item.visible && (item.id != "volume" || AudioState.can-adjust-volume) ? 20px : 0px;
+            height: 20px;
+            y: (parent.height - self.height) / 2;
+            visible: item.visible && (item.id != "volume" || AudioState.can-adjust-volume);
+            FullscreenAuxBtn { btn-id: item.id; text-color: root.text-color; }
+        }
+    }
+}

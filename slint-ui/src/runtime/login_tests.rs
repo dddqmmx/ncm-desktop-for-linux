@@ -4,7 +4,7 @@ use super::{
     tests::temp,
     ApplicationRuntime,
 };
-use crate::{AppState, AppWindow};
+use crate::AppWindow;
 use i_slint_backend_testing::{mock_elapsed_time, ElementHandle, ElementRoot};
 use serde_json::{json, Value};
 use slint::{
@@ -87,9 +87,22 @@ fn settle() {
     mock_elapsed_time(Duration::from_millis(700));
 }
 fn element(app: &AppWindow, id: &str) -> ElementHandle {
-    ElementHandle::find_by_element_id(app, &format!("LoginModal::{id}"))
-        .next()
-        .unwrap_or_else(|| panic!("Missing {id}"))
+    [
+        "LoginModal",
+        "LoginForm",
+        "LoginQr",
+        "LoginPhoneField",
+        "LoginCountryCode",
+        "LoginSecretField",
+        "LoginMethodTabs",
+        "LoginRememberChoice",
+        "LoginSubmitButton",
+    ]
+    .into_iter()
+    .find_map(|component| {
+        ElementHandle::find_by_element_id(app, &format!("{component}::{id}")).next()
+    })
+    .unwrap_or_else(|| panic!("Missing {id}"))
 }
 fn click(app: &AppWindow, id: &str) {
     element(app, id).mock_single_click(PointerEventButton::Left);
@@ -112,29 +125,20 @@ fn until(condition: impl Fn() -> bool) {
     }
     assert!(condition(), "runtime did not reach expected login state");
 }
-fn geometry(app: &AppWindow, gt: &Value, variant: &str) {
-    for (name, id) in [
-        ("card", "login-card"),
-        ("phone", "login-phone-container"),
-        ("secret", "login-input-field"),
-        ("submit", "login-submit-btn"),
-    ] {
-        let item = element(app, id);
-        let pos = item.absolute_position();
-        let size = item.size();
-        for (field, value) in [
-            ("x", pos.x),
-            ("y", pos.y),
-            ("width", size.width),
-            ("height", size.height),
-        ] {
-            let expected = gt[variant][name]["rect"][field].as_f64().unwrap() as f32;
-            assert!(
-                (value - expected).abs() < 0.5,
-                "{variant}.{name}.{field}: {value} != {expected}"
-            );
-        }
+fn geometry(app: &AppWindow, _gt: &Value, variant: &str) {
+    use crate::responsive_tests::{assert_disjoint, assert_inside};
+    let card = element(app, "login-card");
+    assert_inside(&app.root_element(), &card, variant);
+    let phone = element(app, "login-phone-container");
+    let secret = element(app, "login-input-field");
+    let submit = element(app, "login-submit-btn");
+    for field in [&phone, &secret, &submit] {
+        assert_inside(&card, field, variant);
     }
+    assert_disjoint(&phone, &secret, variant);
+    assert_disjoint(&secret, &submit, variant);
+    assert!((phone.size().width - secret.size().width).abs() < 0.5);
+    assert!((phone.size().width - submit.size().width).abs() < 0.5);
 }
 
 #[test]
@@ -165,16 +169,17 @@ fn login_modal_matches_electron_forms_keyboard_countdown_and_reopen() {
     .unwrap();
     app.window().set_size(PhysicalSize::new(1435, 1000));
     app.show().unwrap();
-    let state = app.global::<AppState>();
-    state.set_is_login_open(true);
+    let login_state = app.global::<crate::LoginState>();
+    let account_state = app.global::<crate::AccountState>();
+    login_state.set_is_login_open(true);
     settle();
     let _ = app.root_element().size();
     let gt: Value =
         serde_json::from_str(include_str!("../../tests/login-modal-ground-truth.json")).unwrap();
-    assert!(!state.get_login_remember());
+    assert!(!login_state.get_login_remember());
     geometry(&app, &gt, "initial");
     click(&app, "login-submit-btn");
-    assert_eq!(state.get_login_error(), "请输入手机号和密码");
+    assert_eq!(login_state.get_login_error(), "请输入手机号和密码");
     assert!(!api
         .calls
         .lock()
@@ -185,21 +190,21 @@ fn login_modal_matches_electron_forms_keyboard_countdown_and_reopen() {
     // Edit the previously non-editable country prefix through real keyboard input.
     click(&app, "country-input");
     // Set the known starting value, then verify a typed digit updates the model.
-    state.set_login_country_code("".into());
+    login_state.set_login_country_code("".into());
     key(&app, "4".into());
     key(&app, "4".into());
-    assert_eq!(state.get_login_country_code(), "44");
-    state.set_login_phone("13000000000".into());
-    state.set_login_password("test-password".into());
+    assert_eq!(login_state.get_login_country_code(), "44");
+    login_state.set_login_phone("13000000000".into());
+    login_state.set_login_password("test-password".into());
     click(&app, "sec-input");
     key(&app, Key::Return.into());
-    assert!(state.get_login_busy());
+    assert!(login_state.get_login_busy());
     key(&app, Key::Return.into());
     click(&app, "login-submit-btn");
-    until(|| state.get_login_error() == "账号或密码错误");
+    until(|| login_state.get_login_error() == "账号或密码错误");
     assert_eq!(api.count("login"), 1, "pending login must not submit twice");
     settle();
-    assert_eq!(state.get_login_password(), "test-password");
+    assert_eq!(login_state.get_login_password(), "test-password");
     geometry(&app, &gt, "passwordError");
     assert!(api.calls.lock().unwrap().iter().any(|(op, p)| op == "login"
         && p["countrycode"] == "44"
@@ -207,18 +212,18 @@ fn login_modal_matches_electron_forms_keyboard_countdown_and_reopen() {
         && p["rememberMe"] == false));
 
     click(&app, "login-sms-tab");
-    assert!(state.get_login_error().is_empty());
-    assert!(state.get_login_sms_phone().is_empty());
-    assert_eq!(state.get_login_sms_country_code(), "86");
+    assert!(login_state.get_login_error().is_empty());
+    assert!(login_state.get_login_sms_phone().is_empty());
+    assert_eq!(login_state.get_login_sms_country_code(), "86");
     click(&app, "login-code-button");
-    assert_eq!(state.get_login_error(), "请输入手机号码");
-    state.set_login_sms_country_code("81".into());
-    state.set_login_sms_phone("09000000000".into());
-    state.set_login_code("123456".into());
+    assert_eq!(login_state.get_login_error(), "请输入手机号码");
+    login_state.set_login_sms_country_code("81".into());
+    login_state.set_login_sms_phone("09000000000".into());
+    login_state.set_login_code("123456".into());
     click(&app, "login-code-button");
-    until(|| state.get_login_captcha_seconds() > 0);
-    assert!(state.get_login_error().is_empty());
-    let countdown = state.get_login_captcha_seconds();
+    until(|| login_state.get_login_captcha_seconds() > 0);
+    assert!(login_state.get_login_error().is_empty());
+    let countdown = login_state.get_login_captcha_seconds();
     assert!((58..=60).contains(&countdown));
     click(&app, "login-code-button");
     assert_eq!(
@@ -231,7 +236,7 @@ fn login_modal_matches_electron_forms_keyboard_countdown_and_reopen() {
         1
     );
     mock_elapsed_time(Duration::from_secs(1));
-    assert!(state.get_login_captcha_seconds() < countdown);
+    assert!(login_state.get_login_captcha_seconds() < countdown);
     assert!(api
         .calls
         .lock()
@@ -241,7 +246,7 @@ fn login_modal_matches_electron_forms_keyboard_countdown_and_reopen() {
     for _ in 0..60 {
         mock_elapsed_time(Duration::from_secs(1));
     }
-    assert_eq!(state.get_login_captcha_seconds(), 0);
+    assert_eq!(login_state.get_login_captcha_seconds(), 0);
     click(&app, "login-code-button");
     until(|| {
         api.calls
@@ -254,53 +259,61 @@ fn login_modal_matches_electron_forms_keyboard_countdown_and_reopen() {
     });
 
     click(&app, "login-password-tab");
-    assert_eq!(state.get_login_phone(), "13000000000");
-    assert_eq!(state.get_login_password(), "test-password");
+    assert_eq!(login_state.get_login_phone(), "13000000000");
+    assert_eq!(login_state.get_login_password(), "test-password");
     click(&app, "login-qr-btn");
-    until(|| state.get_login_qr_ready());
-    assert_eq!(state.get_login_mode(), "qr");
+    until(|| login_state.get_login_qr_ready());
+    assert_eq!(login_state.get_login_mode(), "qr");
     assert!(
-        !state.get_login_busy(),
+        !login_state.get_login_busy(),
         "QR polling must not disable form submission"
     );
     click(&app, "login-form-btn");
-    assert_eq!(state.get_login_mode(), "form");
-    assert_eq!(state.get_login_phone(), "13000000000");
-    assert_eq!(state.get_login_password(), "test-password");
+    assert_eq!(login_state.get_login_mode(), "form");
+    assert_eq!(login_state.get_login_phone(), "13000000000");
+    assert_eq!(login_state.get_login_password(), "test-password");
     click(&app, "remember-label");
-    assert!(state.get_login_remember(), "label must toggle checkbox");
+    assert!(
+        login_state.get_login_remember(),
+        "label must toggle checkbox"
+    );
     click(&app, "login-checkmark");
-    assert!(!state.get_login_remember(), "checkbox must also toggle");
+    assert!(
+        !login_state.get_login_remember(),
+        "checkbox must also toggle"
+    );
     key(&app, " ".into());
     assert!(
-        state.get_login_remember(),
+        login_state.get_login_remember(),
         "focused checkbox must support Space"
     );
     key(&app, Key::Escape.into());
     assert!(
-        state.get_is_login_open(),
+        login_state.get_is_login_open(),
         "Electron does not close login with Escape"
     );
     click(&app, "login-close-btn");
-    assert!(!state.get_is_login_open());
-    state.set_is_login_open(true);
+    assert!(!login_state.get_is_login_open());
+    login_state.set_is_login_open(true);
     settle();
-    assert_eq!(state.get_login_mode(), "form");
-    assert_eq!(state.get_login_tab(), "password");
-    assert!(!state.get_login_remember());
-    assert!(state.get_login_phone().is_empty() && state.get_login_sms_phone().is_empty());
-    assert!(state.get_login_password().is_empty() && state.get_login_code().is_empty());
-    assert_eq!(state.get_login_captcha_seconds(), 0);
+    assert_eq!(login_state.get_login_mode(), "form");
+    assert_eq!(login_state.get_login_tab(), "password");
+    assert!(!login_state.get_login_remember());
+    assert!(
+        login_state.get_login_phone().is_empty() && login_state.get_login_sms_phone().is_empty()
+    );
+    assert!(login_state.get_login_password().is_empty() && login_state.get_login_code().is_empty());
+    assert_eq!(login_state.get_login_captcha_seconds(), 0);
     geometry(&app, &gt, "reopened");
 
     // Code authentication sends the code, never the password from the other form.
     click(&app, "login-sms-tab");
-    state.set_login_sms_phone("13000000000".into());
-    state.set_login_code("654321".into());
+    login_state.set_login_sms_phone("13000000000".into());
+    login_state.set_login_code("654321".into());
     click(&app, "code-input");
     key(&app, Key::Return.into());
-    until(|| state.get_is_logged_in() && !state.get_is_login_open());
-    until(|| state.get_user_nickname() == "测试账号");
+    until(|| account_state.get_is_logged_in() && !login_state.get_is_login_open());
+    until(|| account_state.get_user_nickname() == "测试账号");
     assert!(!path.join("session.json").exists());
     assert!(api
         .calls
@@ -325,14 +338,15 @@ fn closed_login_ignores_late_captcha_and_authentication_results() {
     use super::{backend::Event, view::View};
     i_slint_backend_testing::init_no_event_loop();
     let app = AppWindow::new().unwrap();
-    let state = app.global::<AppState>();
-    state.set_is_logged_in(false);
+    let account_state = app.global::<crate::AccountState>();
+    let login_state = app.global::<crate::LoginState>();
+    account_state.set_is_logged_in(false);
     let (sender, mut commands) = tokio::sync::mpsc::unbounded_channel();
     let mut view = View::new(sender, Preferences::default());
-    state.set_login_sms_phone("13000000000".into());
+    login_state.set_login_sms_phone("13000000000".into());
     view.action(&app, "captcha", -1, "");
     let captcha = commands.try_recv().unwrap();
-    assert!(state.get_login_captcha_busy());
+    assert!(login_state.get_login_captcha_busy());
     view.action(&app, "close-login", -1, "");
     for error in [None, Some("late captcha failure".into())] {
         view.apply(
@@ -345,12 +359,12 @@ fn closed_login_ignores_late_captcha_and_authentication_results() {
                 error,
             },
         );
-        assert_eq!(state.get_login_captcha_seconds(), 0);
-        assert!(state.get_login_error().is_empty());
-        assert!(!state.get_login_captcha_busy());
+        assert_eq!(login_state.get_login_captcha_seconds(), 0);
+        assert!(login_state.get_login_error().is_empty());
+        assert!(!login_state.get_login_captcha_busy());
     }
-    state.set_login_phone("13000000000".into());
-    state.set_login_password("test-only".into());
+    login_state.set_login_phone("13000000000".into());
+    login_state.set_login_password("test-only".into());
     view.action(&app, "login", -1, "");
     let login = commands.try_recv().unwrap();
     view.action(&app, "close-login", -1, "");
@@ -364,6 +378,6 @@ fn closed_login_ignores_late_captcha_and_authentication_results() {
             error: None,
         },
     );
-    assert!(!state.get_is_logged_in());
-    assert!(!state.get_login_busy());
+    assert!(!account_state.get_is_logged_in());
+    assert!(!login_state.get_login_busy());
 }

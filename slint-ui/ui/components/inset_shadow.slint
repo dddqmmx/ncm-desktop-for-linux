@@ -1,0 +1,44 @@
+// Preserve the curved corners while stretching only straight edges. The masks
+// already clip the blur to the interior, including on software rendering.
+component InsetShadowLayer inherits Rectangle {
+    in property <length> radius;
+    in property <image> mask;
+    in property <color> tint;
+    private property <int> source-corner: 112;
+
+    for tile in 9 : Image {
+        property <int> tile-column: Math.mod(tile, 3);
+        property <int> tile-row: Math.floor(tile / 3);
+        x: self.tile-column == 0 ? 0px : self.tile-column == 1 ? root.radius : root.width - root.radius;
+        y: self.tile-row == 0 ? 0px : self.tile-row == 1 ? root.radius : root.height - root.radius;
+        width: self.tile-column == 1 ? Math.max(0px, root.width - 2 * root.radius) : root.radius;
+        height: self.tile-row == 1 ? Math.max(0px, root.height - 2 * root.radius) : root.radius;
+        source: root.mask;
+        source-clip-x: self.tile-column == 0 ? 0 : self.tile-column == 1 ? root.source-corner : root.mask.width - root.source-corner;
+        source-clip-y: self.tile-row == 0 ? 0 : self.tile-row == 1 ? root.source-corner : root.mask.height - root.source-corner;
+        source-clip-width: self.tile-column == 1 ? root.mask.width - 2 * root.source-corner : root.source-corner;
+        source-clip-height: self.tile-row == 1 ? root.mask.height - 2 * root.source-corner : root.source-corner;
+        image-fit: fill;
+        colorize: root.tint;
+    }
+}
+
+export component InsetShadow inherits Rectangle {
+    in property <length> radius;
+    in property <color> shade;
+    in property <color> highlight;
+    private property <length> corner: Math.min(root.radius, Math.min(root.width, root.height) / 2);
+
+    InsetShadowLayer {
+        width: 100%; height: 100%;
+        radius: root.corner;
+        mask: @image-url("../../assets/effects/inset-shade.png");
+        tint: root.shade;
+    }
+    InsetShadowLayer {
+        width: 100%; height: 100%;
+        radius: root.corner;
+        mask: @image-url("../../assets/effects/inset-highlight.png");
+        tint: root.highlight;
+    }
+}

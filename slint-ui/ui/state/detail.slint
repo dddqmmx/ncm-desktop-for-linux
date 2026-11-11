@@ -1,0 +1,16 @@
+import { Icons } from "../icons.slint";
+import { TrackItem } from "../models.slint";
+import { DemoLibrary } from "../fixtures/library.slint";
+
+// Active album/favorites/search result view; independent of playlist tracks.
+export global DetailState {
+    in-out property <string> detail-search-query: "";
+    in-out property <string> album-title: "Hurry Up, We're Dreaming";
+    in-out property <string> album-artist: "M83";
+    in-out property <image> album-cover: Icons.cover-cyan;
+    in-out property <string> album-description: "法国电子乐团 M83 的第六张录音室双碟专辑，融合宏大的合成器音墙与梦幻流行叙事。";
+    in-out property <[string]> album-meta: ["2011-10-18 发行", "22 首歌曲", "Naive Records"];
+    in-out property <string> favorite-description: "通过网易云账号同步的喜欢歌曲。";
+    in-out property <image> favorite-cover: Icons.cover-rose;
+    in-out property <[TrackItem]> detail-tracks: DemoLibrary.detail-tracks;
+}

@@ -7,7 +7,7 @@ use super::{
     tests::temp,
     ApplicationRuntime,
 };
-use crate::{AppState, AppWindow};
+use crate::AppWindow;
 use i_slint_backend_testing::ElementHandle;
 use serde_json::{json, Value};
 use slint::{
@@ -89,16 +89,19 @@ fn real_saved_renderer_opens_main_and_settings() {
             let app = weak.upgrade().unwrap();
             let settings = settings.upgrade().unwrap();
             if stage == 0 {
-                app.global::<AppState>().invoke_open_settings_window();
+                app.global::<crate::SettingsState>()
+                    .invoke_open_settings_window();
             } else if stage == 2 {
-                let state = settings.global::<AppState>();
-                assert_eq!(state.get_setting_renderer(), requested.name());
-                assert_eq!(state.get_startup_renderer(), requested.name());
-                assert!(!state.get_renderer_restart_required());
-                let selector =
-                    ElementHandle::find_by_element_id(&settings, "SettingsModal::renderer-select")
-                        .next()
-                        .unwrap();
+                let settings_state = settings.global::<crate::SettingsState>();
+                assert_eq!(settings_state.get_setting_renderer(), requested.name());
+                assert_eq!(settings_state.get_startup_renderer(), requested.name());
+                assert!(!settings_state.get_renderer_restart_required());
+                let selector = ElementHandle::find_by_element_id(
+                    &settings,
+                    "GeneralSettingsTab::renderer-select",
+                )
+                .next()
+                .unwrap();
                 assert!(selector.size().width >= 230.0);
                 let pixels = settings.window().take_snapshot().unwrap();
                 image::save_buffer(
@@ -109,10 +112,10 @@ fn real_saved_renderer_opens_main_and_settings() {
                     image::ColorType::Rgba8,
                 )
                 .unwrap();
-                click(&settings, "SettingsModal::renderer-select");
+                click(&settings, "GeneralSettingsTab::renderer-select");
             } else if stage == 3 {
                 assert_eq!(
-                    ElementHandle::find_by_element_id(&settings, "Dropdown::option").count(),
+                    ElementHandle::find_by_element_id(&settings, "DropdownMenu::option").count(),
                     3
                 );
                 let pixels = settings.window().take_snapshot().unwrap();
@@ -302,40 +305,44 @@ fn real_window_stays_responsive() {
             previous = now;
             let app = weak.upgrade().unwrap();
             let settings = settings.upgrade().unwrap();
-            let state = app.global::<AppState>();
+            let settings_state = app.global::<crate::SettingsState>();
+            let navigation_state = app.global::<crate::NavigationState>();
+            let audio_state = app.global::<crate::AudioState>();
             let elapsed = now.duration_since(start);
             if elapsed >= Duration::from_secs(3 + step) {
                 match step {
                     0 | 6 => {
-                        state.invoke_open_settings_window();
+                        settings_state.invoke_open_settings_window();
                         if !settings.window().is_visible() {
                             recorded_failures.borrow_mut().push("settings did not open");
                         }
                     }
                     1 => {
-                        click(&settings, "SettingsModal::settings-nav-audio");
-                        if settings.global::<AppState>().get_settings_tab() != "audio" {
+                        click(&settings, "SettingsSidebar::settings-nav-audio");
+                        if settings.global::<crate::SettingsState>().get_settings_tab() != "audio" {
                             recorded_failures
                                 .borrow_mut()
                                 .push("settings tab did not react");
                         }
-                        settings.global::<AppState>().set_volume_percent(42.0);
+                        settings
+                            .global::<crate::AudioState>()
+                            .set_volume_percent(42.0);
                     }
                     2 => {
                         settings.invoke_close_settings();
-                        click(&app, "SideNavBar::nav-item-search");
-                        if state.get_current_route() != "search" {
+                        click(&app, "SidebarNavigation::nav-item-search");
+                        if navigation_state.get_current_route() != "search" {
                             recorded_failures
                                 .borrow_mut()
                                 .push("search click did not react");
                         }
-                        if (state.get_volume_percent() - 42.0).abs() > 0.01 {
+                        if (audio_state.get_volume_percent() - 42.0).abs() > 0.01 {
                             recorded_failures.borrow_mut().push("settings did not sync");
                         }
                     }
                     3 => {
-                        click(&app, "SideNavBar::nav-item-home");
-                        if state.get_current_route() != "home" {
+                        click(&app, "SidebarNavigation::nav-item-home");
+                        if navigation_state.get_current_route() != "home" {
                             recorded_failures
                                 .borrow_mut()
                                 .push("home click did not react");
@@ -353,8 +360,9 @@ fn real_window_stays_responsive() {
     );
     slint::run_event_loop().unwrap();
     timer.stop();
-    let state = app.global::<AppState>();
-    let loaded = state
+    let home_state = app.global::<crate::HomeState>();
+    let runtime_state = app.global::<crate::RuntimeState>();
+    let loaded = home_state
         .get_recommend_playlists()
         .iter()
         .filter(|row| row.cover.size().width > 0)
@@ -373,11 +381,14 @@ fn real_window_stays_responsive() {
     drop(runtime);
     println!("real winit test: live={live}, loaded_covers={loaded}, maximum_event_gap={:?}, artifacts={}", maximum_gap.get(), path.display());
     assert!(failures.borrow().is_empty(), "{:?}", failures.borrow());
-    assert!(!state.get_home_playlists_loading(), "home still loading");
+    assert!(
+        !home_state.get_home_playlists_loading(),
+        "home still loading"
+    );
     assert!(
         loaded >= if live { 1 } else { 5 },
         "covers did not load: {}",
-        state.get_runtime_message()
+        runtime_state.get_runtime_message()
     );
     if !live {
         assert!(loaded < 12, "offscreen home covers were loaded eagerly");
@@ -453,7 +464,8 @@ fn real_login_window_matches_electron_behavior() {
                 return;
             }
             let app = weak.upgrade().unwrap();
-            let state = app.global::<AppState>();
+            let login_state = app.global::<crate::LoginState>();
+            let account_state = app.global::<crate::AccountState>();
             let check = |condition: bool, message: &'static str| {
                 if !condition {
                     eprintln!("step {step}: {message}");
@@ -476,74 +488,77 @@ fn real_login_window_matches_electron_behavior() {
                 recorded_screenshot_time.set(recorded_screenshot_time.get() + started.elapsed());
             };
             match step {
-                0 => state.set_is_login_open(true),
+                0 => login_state.set_is_login_open(true),
                 1 => {
                     check(
-                        !state.get_login_remember(),
+                        !login_state.get_login_remember(),
                         "remember must default to unchecked",
                     );
                     snapshot("initial.png");
                     click(&app, "LoginModal::login-card");
                     check(
-                        state.get_is_login_open(),
+                        login_state.get_is_login_open(),
                         "card background must not close dialog",
                     );
-                    state.set_login_phone("13000000000".into());
-                    state.set_login_password("test-password".into());
-                    click(&app, "LoginModal::sec-input");
+                    login_state.set_login_phone("13000000000".into());
+                    login_state.set_login_password("test-password".into());
+                    click(&app, "LoginSecretField::sec-input");
                     press(Key::Return.into());
-                    check(state.get_login_busy(), "Enter must submit and show loading");
-                    click(&app, "LoginModal::login-submit-btn");
+                    check(
+                        login_state.get_login_busy(),
+                        "Enter must submit and show loading",
+                    );
+                    click(&app, "LoginForm::login-submit-btn");
                 }
                 2 => {
                     check(
-                        state.get_login_error() == "账号或密码错误",
+                        login_state.get_login_error() == "账号或密码错误",
                         "password error missing",
                     );
                     check(
-                        state.get_login_password() == "test-password",
+                        login_state.get_login_password() == "test-password",
                         "failure cleared password",
                     );
                     check(api.count("login") == 1, "loading button submitted twice");
                     snapshot("password-error.png");
-                    click(&app, "LoginModal::login-sms-tab");
+                    click(&app, "LoginMethodTabs::login-sms-tab");
                 }
                 3 => {
                     check(
-                        state.get_login_error().is_empty(),
+                        login_state.get_login_error().is_empty(),
                         "tab change must clear errors",
                     );
                     check(
-                        state.get_login_sms_phone().is_empty(),
+                        login_state.get_login_sms_phone().is_empty(),
                         "forms must keep separate phones",
                     );
-                    state.set_login_sms_country_code("81".into());
-                    state.set_login_sms_phone("09000000000".into());
-                    click(&app, "LoginModal::login-code-button");
+                    login_state.set_login_sms_country_code("81".into());
+                    login_state.set_login_sms_phone("09000000000".into());
+                    click(&app, "LoginSecretField::login-code-button");
                     check(
-                        state.get_login_captcha_busy(),
+                        login_state.get_login_captcha_busy(),
                         "captcha request did not start",
                     );
                 }
                 4 => {
                     check(
-                        state.get_login_captcha_seconds() > 0,
+                        login_state.get_login_captcha_seconds() > 0,
                         "SMS countdown missing",
                     );
                     snapshot("sms-countdown.png");
-                    click(&app, "LoginModal::login-code-button");
+                    click(&app, "LoginSecretField::login-code-button");
                     check(
                         api.count("captcha_sent") == 1,
                         "countdown allowed another SMS",
                     );
-                    click(&app, "LoginModal::login-qr-btn");
+                    click(&app, "LoginForm::login-qr-btn");
                     let weak = app.as_weak();
                     let snapshots = recorded_snapshots.clone();
                     let path = artifacts.join("flip-middle.png");
                     let screenshot_time = recorded_screenshot_time.clone();
                     slint::Timer::single_shot(Duration::from_millis(160), move || {
                         let app = weak.upgrade().unwrap();
-                        assert!(app.global::<AppState>().get_login_flip_ready());
+                        assert!(app.global::<crate::LoginState>().get_login_flip_ready());
                         assert_eq!(
                             ElementHandle::find_by_element_id(&app, "LoginModal::flip-strip")
                                 .count(),
@@ -557,11 +572,14 @@ fn real_login_window_matches_electron_behavior() {
                     });
                 }
                 5 => {
-                    check(state.get_login_qr_ready(), "QR pixels did not arrive");
-                    check(!state.get_login_busy(), "QR polling disabled form login");
+                    check(login_state.get_login_qr_ready(), "QR pixels did not arrive");
+                    check(
+                        !login_state.get_login_busy(),
+                        "QR polling disabled form login",
+                    );
                     snapshot("qr.png");
-                    click(&app, "LoginModal::login-qr-box");
-                    click(&app, "LoginModal::login-form-btn");
+                    click(&app, "LoginQr::login-qr-box");
+                    click(&app, "LoginQr::login-form-btn");
                 }
                 6 => {
                     check(
@@ -569,52 +587,53 @@ fn real_login_window_matches_electron_behavior() {
                         "QR box click unexpectedly refreshed",
                     );
                     check(
-                        state.get_login_sms_phone() == "09000000000",
+                        login_state.get_login_sms_phone() == "09000000000",
                         "QR transition cleared form",
                     );
-                    click(&app, "LoginModal::remember-label");
+                    click(&app, "LoginRememberChoice::remember-label");
                     check(
-                        state.get_login_remember(),
+                        login_state.get_login_remember(),
                         "remember label is not clickable",
                     );
                     press(Key::Escape.into());
                     check(
-                        state.get_is_login_open(),
+                        login_state.get_is_login_open(),
                         "Escape unexpectedly closed login",
                     );
-                    click(&app, "LoginModal::login-close-btn");
+                    click(&app, "LoginForm::login-close-btn");
                 }
                 7 => {
-                    check(!state.get_is_login_open(), "form close failed");
-                    state.set_is_login_open(true);
+                    check(!login_state.get_is_login_open(), "form close failed");
+                    login_state.set_is_login_open(true);
                 }
                 8 => {
                     check(
-                        state.get_login_tab() == "password" && !state.get_login_remember(),
+                        login_state.get_login_tab() == "password"
+                            && !login_state.get_login_remember(),
                         "reopen defaults differ",
                     );
                     check(
-                        state.get_login_phone().is_empty()
-                            && state.get_login_sms_phone().is_empty(),
+                        login_state.get_login_phone().is_empty()
+                            && login_state.get_login_sms_phone().is_empty(),
                         "reopen retained form input",
                     );
                     check(
-                        state.get_login_captcha_seconds() == 0,
+                        login_state.get_login_captcha_seconds() == 0,
                         "reopen retained countdown",
                     );
-                    click(&app, "LoginModal::login-qr-btn");
+                    click(&app, "LoginForm::login-qr-btn");
                 }
                 9 => {
-                    check(state.get_login_qr_ready(), "second QR did not load");
-                    click(&app, "LoginModal::login-qr-close-btn");
+                    check(login_state.get_login_qr_ready(), "second QR did not load");
+                    click(&app, "LoginQr::login-qr-close-btn");
                 }
                 10 => {
-                    check(!state.get_is_login_open(), "QR close failed");
-                    state.set_is_login_open(true);
+                    check(!login_state.get_is_login_open(), "QR close failed");
+                    login_state.set_is_login_open(true);
                 }
                 11 => {
                     check(
-                        state.get_login_mode() == "form",
+                        login_state.get_login_mode() == "form",
                         "reopen from QR must show form",
                     );
                     let position = LogicalPosition::new(25.0, 200.0);
@@ -625,26 +644,26 @@ fn real_login_window_matches_electron_behavior() {
                         .dispatch_event(WindowEvent::PointerPressed { position, button });
                     app.window()
                         .dispatch_event(WindowEvent::PointerReleased { position, button });
-                    check(!state.get_is_login_open(), "backdrop click failed");
+                    check(!login_state.get_is_login_open(), "backdrop click failed");
                 }
-                12 => state.set_is_login_open(true),
+                12 => login_state.set_is_login_open(true),
                 13 => {
-                    state.set_login_phone("13000000000".into());
-                    state.set_login_password("accepted-test-password".into());
-                    click(&app, "LoginModal::remember-label");
+                    login_state.set_login_phone("13000000000".into());
+                    login_state.set_login_password("accepted-test-password".into());
+                    click(&app, "LoginRememberChoice::remember-label");
                     check(
-                        state.get_login_remember(),
+                        login_state.get_login_remember(),
                         "remembered login was not selected",
                     );
-                    click(&app, "LoginModal::login-submit-btn");
+                    click(&app, "LoginForm::login-submit-btn");
                 }
                 14 => {
                     check(
-                        state.get_is_logged_in() && !state.get_is_login_open(),
+                        account_state.get_is_logged_in() && !login_state.get_is_login_open(),
                         "successful login did not close dialog",
                     );
                     check(
-                        state.get_user_nickname() == "测试账号",
+                        account_state.get_user_nickname() == "测试账号",
                         "account did not load after login",
                     );
                     check(

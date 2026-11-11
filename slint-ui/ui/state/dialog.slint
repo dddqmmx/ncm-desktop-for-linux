@@ -1,0 +1,45 @@
+// Confirmation content and pending action targets, cleared on dismissal.
+export global DialogState {
+    in-out property <bool> is-dialog-open: false;
+    in-out property <string> dialog-title: "清空本地音乐";
+    in-out property <string> dialog-message: "将所有歌曲移出应用曲库，但不会删除磁盘上的音乐文件。";
+    in-out property <string> dialog-mode: "confirm-cancel";
+    in-out property <string> dialog-confirm-text: "清空";
+    in-out property <string> dialog-cancel-text: "取消";
+    in-out property <string> local-dialog-action: "";
+    in-out property <int> local-remove-id: -1;
+    in-out property <int> playlist-delete-id: -1;
+
+    changed is-dialog-open => {
+        if !self.is-dialog-open {
+            self.playlist-delete-id = -1;
+            self.local-dialog-action = "";
+            self.local-remove-id = -1;
+        }
+    }
+
+    public function request-local-remove(id: int, name: string) {
+        if id < 0 { return; }
+        self.playlist-delete-id = -1;
+        self.local-dialog-action = "remove";
+        self.local-remove-id = id;
+        self.dialog-title = "移除本地歌曲";
+        self.dialog-message = "将「" + name + "」移出本地曲库，不会删除磁盘上的音乐文件。";
+        self.dialog-mode = "confirm-cancel";
+        self.dialog-confirm-text = "移除";
+        self.dialog-cancel-text = "取消";
+        self.is-dialog-open = true;
+    }
+
+    public function request-local-clear() {
+        self.playlist-delete-id = -1;
+        self.local-dialog-action = "clear";
+        self.local-remove-id = -1;
+        self.dialog-title = "清空本地音乐";
+        self.dialog-message = "将所有歌曲移出应用曲库，但不会删除磁盘上的音乐文件。";
+        self.dialog-mode = "confirm-cancel";
+        self.dialog-confirm-text = "清空";
+        self.dialog-cancel-text = "取消";
+        self.is-dialog-open = true;
+    }
+}

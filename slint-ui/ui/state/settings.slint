@@ -1,0 +1,57 @@
+import { SettingChoice, AuxButtonItem } from "../models.slint";
+
+// General/appearance/cache preferences and settings-window navigation.
+export global SettingsState {
+    in-out property <[string]> setting-cache-details: ["642.8 MB", "38 首", "14.2 MB", "64 个", "48.6 MB", "126 个", "820.0 KB", "92 首"];
+    in-out property <string> settings-tab: "general";
+    in-out property <bool> setting-auto-launch: false;
+    in-out property <bool> setting-tray-minimize: true;
+    in-out property <string> setting-renderer: "vulkan";
+    in-out property <string> startup-renderer: "vulkan";
+    out property <[SettingChoice]> renderer-options: [
+        { value: "vulkan", label: "Vulkan（默认）" },
+        { value: "opengl", label: "OpenGL" },
+        { value: "software", label: "软件渲染（关闭 GPU 加速）" },
+    ];
+    out property <int> setting-renderer-index:
+        self.setting-renderer == "opengl" ? 1 : self.setting-renderer == "software" ? 2 : 0;
+    out property <bool> renderer-restart-required: self.setting-renderer != self.startup-renderer;
+    in-out property <bool> setting-acrylic: true;
+    in-out property <string> setting-accent-hex: "#6366f1";
+    in-out property <bool> setting-lyric-debug: false;
+    in-out property <float> setting-cache-usage-percent: 34.5;
+    in-out property <string> setting-cache-usage-text: "706.4 MB / 2.00 GB";
+    in-out property <float> setting-cache-limit-mb: 2048;
+    in-out property <float> setting-cache-ahead-mb: 32;
+    in-out property <[string]> setting-lib-paths: [
+        "/home/example/Music/FLAC-Library",
+        "/mnt/media/NeteaseCloudMusic"
+    ];
+    in-out property <[AuxButtonItem]> fullscreen-aux-left: [
+        { id: "favorite", visible: true },
+        { id: "comment", visible: true },
+    ];
+    in-out property <[AuxButtonItem]> fullscreen-aux-right: [
+        { id: "playMode", visible: true },
+        { id: "volume", visible: true },
+    ];
+
+    callback open-settings-window();
+    callback settings-changed(string);
+
+    changed setting-cache-details => { self.settings-changed("setting-cache-details"); }
+    changed setting-auto-launch => { self.settings-changed("setting-auto-launch"); }
+    changed setting-tray-minimize => { self.settings-changed("setting-tray-minimize"); }
+    changed setting-renderer => { self.settings-changed("setting-renderer"); }
+    changed startup-renderer => { self.settings-changed("startup-renderer"); }
+    changed setting-acrylic => { self.settings-changed("setting-acrylic"); }
+    changed setting-accent-hex => { self.settings-changed("setting-accent-hex"); }
+    changed setting-lyric-debug => { self.settings-changed("setting-lyric-debug"); }
+    changed setting-cache-usage-percent => { self.settings-changed("setting-cache-usage-percent"); }
+    changed setting-cache-usage-text => { self.settings-changed("setting-cache-usage-text"); }
+    changed setting-cache-limit-mb => { self.settings-changed("setting-cache-limit-mb"); }
+    changed setting-cache-ahead-mb => { self.settings-changed("setting-cache-ahead-mb"); }
+    changed setting-lib-paths => { self.settings-changed("setting-lib-paths"); }
+    changed fullscreen-aux-left => { self.settings-changed("fullscreen-aux-left"); }
+    changed fullscreen-aux-right => { self.settings-changed("fullscreen-aux-right"); }
+}

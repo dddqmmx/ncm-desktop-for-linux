@@ -1,0 +1,11 @@
+import { TrackItem } from "../models.slint";
+import { DemoLibrary } from "../fixtures/library.slint";
+
+// Local library view and controller callbacks; never deletes files directly.
+export global LibraryState {
+    in-out property <string> local-description: "保存在此设备上的音乐，导入记录会保留在本地曲库中。";
+    in-out property <[TrackItem]> local-tracks: DemoLibrary.local-tracks;
+
+    callback remove-local-track(int);
+    callback clear-local-library();
+}

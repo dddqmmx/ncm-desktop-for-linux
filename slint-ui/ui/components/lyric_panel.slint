@@ -1,0 +1,267 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { SettingsState } from "../state/settings.slint";
+import { PlayerState } from "../state/player.slint";
+import { PlayerViewState } from "../state/player_view.slint";
+import { LyricSeekIndicator } from "lyric_seek_indicator.slint";
+import { LyricLineList } from "lyric_lines.slint";
+import { LyricDebugHud } from "lyric_debug.slint";
+import { LyricToolbar } from "lyric_toolbar.slint";
+
+
+export component LyricPanelView inherits Rectangle {
+    function scroll-position-changed() {
+        root.tooltip-ready = false;
+        root.tooltip-pointer-ready = false;
+        tooltip-idle.start();
+        tooltip-idle.restart();
+        if root.user-scrolling {
+            resume-follow.start();
+            resume-follow.restart();
+            if !root.snapping {
+                snap-to-line.start();
+                snap-to-line.restart();
+            }
+        }
+    }
+
+    in property <bool> is-dark: true;
+
+    property <color> lrc-text: root.is-dark ? rgba(255, 255, 255, 0.90) : rgba(0, 0, 0, 0.90);
+    property <color> lrc-active: root.is-dark ? #ffffff : #000000;
+    property <color> lrc-status: root.is-dark ? rgba(255, 255, 255, 0.50) : rgba(0, 0, 0, 0.50);
+    property <color> lrc-toggle-border: root.is-dark ? rgba(255, 255, 255, 0.20) : rgba(0, 0, 0, 0.16);
+
+    clip: true;
+
+    property <int> active-index: PlayerViewState.active-lyric-index;
+    property <int> reset-position: PlayerViewState.lyric-position-reset;
+    property <bool> extras: PlayerViewState.show-pronunciation;
+    property <bool> translation: PlayerViewState.show-translation;
+    property <bool> user-scrolling: false;
+    property <bool> snapping: false;
+    property <bool> snap-scroll: true;
+    property <bool> needs-center: true;
+    property <bool> snap-next: true;
+    property <length> active-center: 0px;
+    property <int> nearest-index: -1;
+    property <length> centered-center: root.nearest-index >= 0 && root.nearest-index < PlayerViewState.lyrics.length
+        ? PlayerViewState.lyrics[root.nearest-index].layout-center : 0px;
+    property <bool> can-seek: PlayerViewState.lyrics.length > 0 && !PlayerState.is-loading;
+    property <bool> tooltip-ready: true;
+    property <bool> tooltip-pointer-ready: false;
+    property <int> hovered-index: -1; // -2 is the center play button.
+    property <length> pointer-x: -1px;
+    property <length> pointer-y: -1px;
+
+    function update-hover(index: int, x: length, y: length) {
+        // Chromium retains :hover while content scrolls under a stationary
+        // pointer. Slint also sends moves after layout; ignore those here.
+        if Math.abs(x - root.pointer-x) > 0.05px || Math.abs(y - root.pointer-y) > 0.05px {
+            root.pointer-x = x;
+            root.pointer-y = y;
+            root.hovered-index = index;
+            root.tooltip-pointer-ready = true;
+            root.tooltip-ready = false;
+            tooltip-idle.start();
+            tooltip-idle.restart();
+        }
+    }
+
+    function update-indicator() {
+        let show = root.user-scrolling && root.can-seek
+            && root.nearest-index >= 0 && root.nearest-index < PlayerViewState.lyrics.length;
+        PlayerViewState.centered-lyric-index = show ? root.nearest-index : -1;
+        PlayerViewState.centered-lyric-time = show ? PlayerViewState.lyrics[root.nearest-index].time-str : "";
+        PlayerViewState.show-lyric-seek-indicator = show;
+    }
+    changed nearest-index => { root.update-indicator(); }
+    changed can-seek => { root.update-indicator(); }
+
+    function request-center(snap: bool) {
+        if root.user-scrolling { return; }
+        root.snap-next = root.snap-next || snap;
+        root.needs-center = true;
+    }
+    function mark-user-scroll() {
+        root.tooltip-pointer-ready = false;
+        root.user-scrolling = true;
+        root.snapping = false;
+        root.update-indicator();
+        resume-follow.start();
+        resume-follow.restart();
+        snap-to-line.start();
+        snap-to-line.restart();
+    }
+    function scroll-by(delta: length) {
+        root.snap-scroll = true;
+        root.mark-user-scroll();
+        lyric-scroll.content-y = Math.clamp(lyric-scroll.content-y + delta,
+            Math.min(0px, root.height - lyric-scroll.content-height), 0px);
+    }
+    public function cancel-user-scroll(snap: bool) {
+        root.tooltip-pointer-ready = false;
+        root.user-scrolling = false;
+        root.update-indicator();
+        resume-follow.stop();
+        snap-to-line.stop();
+        root.request-center(snap);
+    }
+    function seek-line(index: int) {
+        if !root.can-seek || index < 0 || index >= PlayerViewState.lyrics.length { return; }
+        if RuntimeState.runtime-enabled {
+            RuntimeState.runtime-action("lyric-seek", index, "");
+        } else {
+            PlayerViewState.active-lyric-index = index;
+            PlayerState.current-time-str = PlayerViewState.lyrics[index].time-str;
+        }
+        root.cancel-user-scroll(true);
+    }
+    changed active-index => { root.request-center(false); }
+    changed reset-position => { root.cancel-user-scroll(true); }
+    changed extras => { root.cancel-user-scroll(true); }
+    changed translation => { root.cancel-user-scroll(true); }
+    changed height => { root.cancel-user-scroll(true); }
+    changed width => { root.cancel-user-scroll(true); }
+    changed active-center => { root.request-center(false); }
+
+    // Coalesce layout changes before centering; scaling never changes row height.
+    Timer {
+        interval: 1ms;
+        running: root.needs-center;
+        triggered => {
+            root.needs-center = false;
+            if !root.user-scrolling && root.active-index >= 0 {
+                root.snap-scroll = root.snap-next;
+                lyric-scroll.content-y = Math.clamp(root.height / 2 - root.active-center,
+                    Math.min(0px, root.height - lyric-scroll.content-height), 0px);
+            }
+            root.snap-next = false;
+        }
+    }
+    resume-follow := Timer {
+        interval: 3s;
+        running: false;
+        triggered => { root.cancel-user-scroll(false); }
+    }
+    snap-to-line := Timer {
+        interval: 160ms;
+        running: false;
+        triggered => {
+            self.stop();
+            if root.user-scrolling {
+                root.snapping = true;
+                root.snap-scroll = false;
+                lyric-scroll.content-y = Math.clamp(root.height / 2 - root.centered-center,
+                    Math.min(0px, root.height - lyric-scroll.content-height), 0px);
+            }
+        }
+    }
+    tooltip-idle := Timer {
+        interval: 500ms;
+        running: false;
+        triggered => { self.stop(); root.tooltip-ready = true; }
+    }
+
+    // Track actual pointer movement across the entire panel, including gaps.
+    lyric-pointer := TouchArea {
+        width: 100%;
+        height: 100%;
+        changed has-hover => {
+            if !self.has-hover {
+                root.hovered-index = -1;
+                root.tooltip-pointer-ready = false;
+                root.pointer-x = -1px;
+                root.pointer-y = -1px;
+            }
+        }
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.move {
+                root.update-hover(-1, lyric-pointer.absolute-position.x + lyric-pointer.mouse-x,
+                    lyric-pointer.absolute-position.y + lyric-pointer.mouse-y);
+            }
+            if event.kind == PointerEventKind.down && event.button == PointerEventButton.right
+                && root.user-scrolling {
+                root.cancel-user-scroll(false);
+            }
+        }
+
+        lyric-scroll := Flickable {
+            width: 100%;
+            height: 100%;
+            content-width: self.width;
+            content-height: lrc-col.preferred-height;
+            animate content-y { duration: root.snap-scroll ? 0ms : 350ms; easing: ease; }
+            flicked => { root.mark-user-scroll(); }
+            changed content-y => { root.scroll-position-changed(); }
+
+            lrc-col := LyricLineList {
+                viewport-height: root.height;
+                scroll-y: lyric-scroll.content-y;
+                can-seek: root.can-seek;
+                active-index: root.active-index;
+                hovered-index: root.hovered-index;
+                lrc-active: root.lrc-active;
+                lrc-text: root.lrc-text;
+                lrc-status: root.lrc-status;
+                active-center <=> root.active-center;
+                nearest-index <=> root.nearest-index;
+                seek-line(index) => { root.seek-line(index); }
+                update-hover(index, x, y) => { root.update-hover(index, x, y); }
+                cancel-user-scroll(snap) => { root.cancel-user-scroll(snap); }
+            }
+        }
+
+        // 手动滚动中心指示器 (.lyric-seek-indicator: transition opacity 0.2s ease)
+        lyric-seek-indicator := LyricSeekIndicator {
+            x: 12px;
+            y: (parent.height - self.height) / 2;
+            width: parent.width - 24px;
+            is-dark: root.is-dark;
+            hovered-index: root.hovered-index;
+            seek-line(index) => { root.seek-line(index); }
+            scroll-by(delta) => { root.scroll-by(delta); }
+            update-hover(index, x, y) => { root.update-hover(index, x, y); }
+            cancel-user-scroll(snap) => { root.cancel-user-scroll(snap); }
+        }
+
+        // 歌词同步 Debug HUD (.lyric-debug-hud)
+        if SettingsState.setting-lyric-debug : LyricDebugHud { }
+
+        // 右下角发音/翻译切换工具栏 (.lyric-toolbar: bottom 14px, right 20px, gap 8px -> x=1283, y=914 at 1435x1000)
+        LyricToolbar {
+            x: parent.width - 20px - self.width;
+            y: parent.height - 14px - self.height;
+            is-dark: root.is-dark;
+            pointer-moved(x, y) => { root.update-hover(-1, x, y); }
+            reset-scroll => { root.cancel-user-scroll(false); }
+        }
+        // One input-transparent hint for the panel. A native tooltip window can
+        // generate enter/leave events when opened/closed on Wayland, changing
+        // the retained hover target even though the pointer has not moved.
+        if root.can-seek && root.tooltip-ready && root.tooltip-pointer-ready
+            && ((root.hovered-index >= 0 && root.hovered-index < PlayerViewState.lyrics.length)
+            || (root.hovered-index == -2 && PlayerViewState.show-lyric-seek-indicator))
+            : lyric-hover-hint := Rectangle {
+            x: Math.clamp(root.pointer-x - root.absolute-position.x + 8px, 4px,
+                Math.max(4px, root.width - self.width - 4px));
+            y: Math.clamp(root.pointer-y - root.absolute-position.y + 20px, 4px,
+                Math.max(4px, root.height - self.height - 4px));
+            width: hint-text.preferred-width + 18px;
+            height: hint-text.preferred-height + 12px;
+            border-radius: 4px;
+            border-width: 1px;
+            border-color: root.lrc-toggle-border;
+            background: root.is-dark ? #24242d : #f7f7fa;
+            hint-text := Text {
+                x: 9px;
+                y: 6px;
+                text: root.hovered-index == -2 ? "从此处播放"
+                    : "跳转到 " + PlayerViewState.lyrics[root.hovered-index].time-str + " 播放";
+                accessible-role: text;
+                accessible-label: self.text;
+                color: root.lrc-active;
+                font-size: 12px;
+            }
+        }
+    } // lyric-pointer
+}

@@ -1,0 +1,56 @@
+import { AudioState } from "../state/audio.slint";
+import { PlayerState } from "../state/player.slint";
+import { PlayerViewState } from "../state/player_view.slint";
+import { Icons } from "../icons.slint";
+
+import { AppIcon } from "common.slint";
+
+export component FullscreenAuxBtn inherits Rectangle {
+    in property <string> btn-id;
+    in property <color> text-color: #ffffff;
+
+    width: 20px;
+    height: 20px;
+
+    property <bool> is-active:
+        (root.btn-id == "favorite" && PlayerState.current-song-favorite) ||
+        (root.btn-id == "comment" && PlayerViewState.is-comment-open) ||
+        (root.btn-id == "volume" && PlayerViewState.is-fullscreen-volume-open);
+
+    property <bool> is-disabled:
+        (root.btn-id == "favorite" && PlayerState.current-song-is-local) ||
+        (root.btn-id == "comment" && PlayerState.current-song-is-local);
+
+    opacity: root.is-disabled ? 0.25 : ((root.is-active || ta.has-hover) ? 1.0 : 0.55);
+    animate opacity { duration: 200ms; easing: ease; }
+
+    ta := TouchArea {
+        enabled: !root.is-disabled;
+        mouse-cursor: root.is-disabled ? default : pointer;
+        clicked => {
+            if (root.btn-id == "favorite") {
+                PlayerState.toggle-favorite(PlayerState.current-song-id);
+            } else if (root.btn-id == "comment") {
+                PlayerViewState.is-comment-open = !PlayerViewState.is-comment-open;
+            } else if (root.btn-id == "playMode") {
+                PlayerState.cycle-play-mode();
+            } else if (root.btn-id == "volume") {
+                PlayerViewState.is-fullscreen-volume-open = !PlayerViewState.is-fullscreen-volume-open;
+            }
+        }
+    }
+
+    AppIcon {
+        x: 0px;
+        y: 0px;
+        icon-size: 20px;
+        tint: root.text-color;
+        source: root.btn-id == "favorite"
+            ? (PlayerState.current-song-favorite ? Icons.heart-fill : Icons.heart)
+            : (root.btn-id == "comment"
+                ? Icons.comment
+                : (root.btn-id == "playMode"
+                    ? (PlayerState.play-mode == "random" ? Icons.shuffle : (PlayerState.play-mode == "single" ? Icons.single : Icons.loop))
+                    : (AudioState.volume-percent <= 0.5 ? Icons.volume-mute : Icons.volume)));
+    }
+}

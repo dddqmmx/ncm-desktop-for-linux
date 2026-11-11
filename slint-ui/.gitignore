@@ -1,1 +1,4 @@
 /target/
+# Python quality checker tests
+__pycache__/
+*.py[cod]

@@ -1,4 +1,4 @@
-import { AppState } from "../state.slint";
+import { RuntimeState } from "../state/runtime.slint";
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
 import { SettingsModal } from "settings_modal.slint";
@@ -9,14 +9,15 @@ export component SettingsWindow inherits Window {
     icon: Icons.app-logo;
     preferred-width: 1000px;
     preferred-height: 800px;
-    min-width: 1000px;
-    min-height: 800px;
+    out property <length> minimum-window-width: 1000px;
+    out property <length> minimum-window-height: 800px;
+    min-width: root.minimum-window-width;
+    min-height: root.minimum-window-height;
     no-frame: true;
     resize-border-width: 6px;
     background: Theme.sys-bg;
     in-out property <bool> presented: false;
     callback close-settings();
-    callback drag-window();
     changed presented => { if self.presented { keyboard-focus.focus(); } }
 
     property <float> settings-opacity: root.presented ? 1 : 0;
@@ -36,14 +37,13 @@ export component SettingsWindow inherits Window {
             width: 100%; height: 100%;
             opacity: root.settings-opacity;
             close-settings => { root.close-settings(); }
-            drag-window => { root.drag-window(); }
         }
     }
-    if AppState.runtime-enabled && AppState.runtime-message != "" : Rectangle {
+    if RuntimeState.runtime-enabled && RuntimeState.runtime-message != "" : Rectangle {
         x: 244px; y: parent.height - 52px; width: parent.width - 264px; height: 36px;
         background: Theme.glass-fill-strong; border-radius: 10px;
-        Text { x: 12px; width: parent.width - 24px; height: parent.height; text: AppState.runtime-message; color: Theme.sys-text; font-size: 12px; overflow: elide; vertical-alignment: center; }
-        TouchArea { clicked => { AppState.runtime-message = ""; } }
+        Text { x: 12px; width: parent.width - 24px; height: parent.height; text: RuntimeState.runtime-message; color: Theme.sys-text; font-size: 12px; overflow: elide; vertical-alignment: center; }
+        TouchArea { clicked => { RuntimeState.runtime-message = ""; } }
     }
 
 }

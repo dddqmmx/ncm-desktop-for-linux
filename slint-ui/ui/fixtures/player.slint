@@ -1,0 +1,84 @@
+import { Icons } from "../icons.slint";
+import { QueueSongItem, LyricLineItem, CommentItem } from "../models.slint";
+
+// Read-only sample data for demo mode and visual tests.
+export global DemoPlayer {
+    out property <[QueueSongItem]> queue-songs: [
+        { id: 1, index: 1, name: "Midnight City Lights", artist: "M83 / 落日飞车", cover: Icons.cover-indigo, is-local: false, has-cover: true },
+        { id: 2, index: 2, name: "Oceanic Horizon", artist: "Tycho", cover: Icons.cover-cyan, is-local: false, has-cover: true },
+        { id: 3, index: 3, name: "Golden Hour Glow", artist: "The Midnight", cover: Icons.cover-sunset, is-local: false, has-cover: true },
+        { id: 4, index: 4, name: "Velvet Echoes", artist: "Beach House", cover: Icons.cover-rose, is-local: false, has-cover: true },
+        { id: 5, index: 5, name: "Emerald Forest", artist: "Olafur Arnalds", cover: Icons.cover-mint, is-local: false, has-cover: true },
+        { id: 6, index: 6, name: "Starlight Odyssey", artist: "Daft Punk", cover: Icons.cover-night, is-local: false, has-cover: true },
+    ];
+
+    out property <[LyricLineItem]> lyrics: [
+        { time-str: "0:12", text: "Waiting in a car", pronunciation: "wei-ting in a ka:", translation: "在车里静静等候" },
+        { time-str: "0:24", text: "Waiting for a ride in the dark", pronunciation: "wei-ting fo: a raid in the da:k", translation: "等待在夜色中启程" },
+        { time-str: "0:48", text: "The night city grows", pronunciation: "the nait si-ti grouz", translation: "午夜的城市渐渐苏醒" },
+        { time-str: "1:32", text: "Look at the horizon glow", pronunciation: "luk at the ho-rai-zen glou", translation: "看那地平线上泛起的微光" },
+        { time-str: "1:48", text: "Neon reflections on the wet asphalt", pronunciation: "ni-on ri-flek-shenz on the wet as-folt", translation: "潮湿柏油路面上映出霓虹倒影" },
+        { time-str: "2:06", text: "Underneath the silver overpass", pronunciation: "an-da-ni:th the sil-va ou-va-pa:s", translation: "穿过银色的城市高架桥下" },
+        { time-str: "2:30", text: "The city is my church", pronunciation: "the si-ti iz mai tsha:tsh", translation: "这座城市便是我的圣殿" },
+        { time-str: "2:54", text: "It wraps me in the sparkling twilight", pronunciation: "it raps mi in the spa:-kling twai-lait", translation: "将我包裹在闪烁的暮色之中" },
+    ];
+
+    out property <[CommentItem]> comments: [
+        {
+            id: 501,
+            nickname: "星河观测员",
+            avatar: Icons.avatar-user,
+            is-vip: true,
+            time: "2026-10-12 23:18",
+            content: "在 Linux 桌面上用原生 ALSA BitPerfect 听这首合成器开场，声场宽阔得像把整条夜间的沿海公路搬进了耳机里。",
+            has-reply: false,
+            reply-nickname: "",
+            reply-content: "",
+            liked: "2.4万",
+            is-hot-header: true,
+            is-recent-header: false,
+        },
+        {
+            id: 502,
+            nickname: "Synthwave_84",
+            avatar: Icons.cover-rose,
+            is-vip: true,
+            time: "2026-09-28 01:42",
+            content: "每次写代码到凌晨两点放到这一首，精神立刻重新聚焦。液态玻璃界面配上动态流体背景真的绝配！",
+            has-reply: true,
+            reply-nickname: "深海潜水艇",
+            reply-content: "同感，尤其是歌词丝滑滚动的模糊层次感太舒服了。",
+            liked: "8,912",
+            is-hot-header: false,
+            is-recent-header: false,
+        },
+        {
+            id: 503,
+            nickname: "ArchLinuxUser",
+            avatar: Icons.cover-cyan,
+            is-vip: false,
+            time: "12分钟前",
+            content: "刚刚切换到 Slint 原生渲染版本，内存占用和帧率稳如泰山。",
+            has-reply: false,
+            reply-nickname: "",
+            reply-content: "",
+            liked: "64",
+            is-hot-header: false,
+            is-recent-header: true,
+        },
+        {
+            id: 504,
+            nickname: "落日飞行员",
+            avatar: Icons.cover-sunset,
+            is-vip: true,
+            time: "1小时前",
+            content: "萨克斯风切进来的那一刻，所有的疲惫都烟消云散了。",
+            has-reply: false,
+            reply-nickname: "",
+            reply-content: "",
+            liked: "19",
+            is-hot-header: false,
+            is-recent-header: false,
+        },
+    ];
+}

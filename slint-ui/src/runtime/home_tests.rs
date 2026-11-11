@@ -3,7 +3,7 @@ use super::{
     data::Preferences,
     view::{self, View},
 };
-use crate::{AppState, AppWindow};
+use crate::AppWindow;
 use i_slint_backend_testing::{mock_elapsed_time, ElementRoot};
 use serde_json::json;
 use slint::{ComponentHandle, Model};
@@ -38,29 +38,33 @@ fn discovery_loads_lazily_isolates_failures_and_opens_full_ids() {
     i_slint_backend_testing::init_no_event_loop();
     let app = AppWindow::new().unwrap();
     view::initialize(&app, &Preferences::default());
-    let state = app.global::<AppState>();
+    let runtime_state = app.global::<crate::RuntimeState>();
+    let home_state = app.global::<crate::HomeState>();
+    let playlist_state = app.global::<crate::PlaylistState>();
+    let detail_state = app.global::<crate::DetailState>();
+    let navigation_state = app.global::<crate::NavigationState>();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let controller = Rc::new(RefCell::new(View::new(tx, Preferences::default())));
     let weak = app.as_weak();
     let handle = controller.clone();
-    state.on_runtime_action(move |name, id, arg| {
+    runtime_state.on_runtime_action(move |name, id, arg| {
         handle.borrow_mut().action(&weak.unwrap(), &name, id, &arg)
     });
     app.show().unwrap();
     settle(&app);
     let albums = command(&mut rx, "home-albums");
-    assert!(state.get_home_albums_loading());
+    assert!(home_state.get_home_albums_loading());
     assert!(
-        !state.get_home_charts_loading(),
+        !home_state.get_home_charts_loading(),
         "offscreen charts requested eagerly"
     );
     controller.borrow_mut().apply(&app, event(&albums,json!({"albums":[{
         "id":"9007199254740991", "name":"New release", "picUrl":"https://example.test/new.jpg",
         "artists":[{"name":"Artist A"},{"name":"Artist B"}]
     }]})));
-    assert!(state.get_home_albums_loaded());
-    assert!(!state.get_home_albums_loading());
-    let album = state.get_home_new_albums().row_data(0).unwrap();
+    assert!(home_state.get_home_albums_loaded());
+    assert!(!home_state.get_home_albums_loading());
+    let album = home_state.get_home_new_albums().row_data(0).unwrap();
     assert_eq!(album.artist, "Artist A / Artist B");
     controller.borrow_mut().action(&app, "home-charts", -1, "");
     let charts = command(&mut rx, "home-charts");
@@ -71,14 +75,14 @@ fn discovery_loads_lazily_isolates_failures_and_opens_full_ids() {
             ..event(&charts, json!(null))
         },
     );
-    assert!(!state.get_home_charts_error().is_empty());
-    assert_eq!(state.get_home_new_albums().row_count(), 1);
+    assert!(!home_state.get_home_charts_error().is_empty());
+    assert_eq!(home_state.get_home_new_albums().row_count(), 1);
     assert!(
-        state.get_runtime_message().is_empty(),
+        runtime_state.get_runtime_message().is_empty(),
         "discovery failure replaced the playback status"
     );
     assert!(
-        state.get_home_playlists_loading(),
+        home_state.get_home_playlists_loading(),
         "discovery modified the independent recommendations"
     );
     settle(&app);
@@ -97,38 +101,38 @@ fn discovery_loads_lazily_isolates_failures_and_opens_full_ids() {
         &app,
         event(&charts, json!({"list":[{"id":"wrong","name":"stale"}]})),
     );
-    assert!(state.get_home_charts_loading());
-    assert_eq!(state.get_home_charts().row_count(), 0);
+    assert!(home_state.get_home_charts_loading());
+    assert_eq!(home_state.get_home_charts().row_count(), 0);
     controller.borrow_mut().apply(&app,event(&retried,json!({"list":[{
         "id":"9007199254740990", "name":"Chart", "coverImgUrl":"https://example.test/chart.jpg",
         "updateFrequency":"每日更新", "tracks":[{"first":"Track", "second":"Artist"}]
     }]})));
-    let chart = state.get_home_charts().row_data(0).unwrap();
+    let chart = home_state.get_home_charts().row_data(0).unwrap();
     assert_eq!(chart.tracks.row_data(0).unwrap(), "Track · Artist");
-    assert!(!state.get_home_charts_loading());
+    assert!(!home_state.get_home_charts_loading());
     controller
         .borrow_mut()
         .action(&app, "playlist", chart.id, "");
     let page = command(&mut rx, "page");
     assert_eq!(page.data["id"], "9007199254740990");
-    assert_eq!(state.get_playlist_title(), "Chart");
+    assert_eq!(playlist_state.get_playlist_title(), "Chart");
     controller.borrow_mut().action(&app, "album", album.id, "");
     let page = command(&mut rx, "page");
     assert_eq!(page.data["id"], "9007199254740991");
-    assert_eq!(state.get_album_title(), "New release");
-    assert_eq!(state.get_current_route(), "album");
+    assert_eq!(detail_state.get_album_title(), "New release");
+    assert_eq!(navigation_state.get_current_route(), "album");
     // A login transition invalidates an in-flight refresh without leaving a spinner.
     controller
         .borrow_mut()
         .action(&app, "home-albums", -1, "retry");
     let obsolete = command(&mut rx, "home-albums");
     controller.borrow_mut().action(&app, "qr", -1, "");
-    assert!(!state.get_home_albums_loading());
-    assert!(!state.get_home_albums_loaded());
+    assert!(!home_state.get_home_albums_loading());
+    assert!(!home_state.get_home_albums_loaded());
     controller
         .borrow_mut()
         .apply(&app, event(&obsolete, json!({"albums":[]})));
-    assert_eq!(state.get_home_new_albums().row_count(), 1);
+    assert_eq!(home_state.get_home_new_albums().row_count(), 1);
 }
 
 #[test]
@@ -146,13 +150,15 @@ fn visited_home_covers_survive_card_recycling_and_fullscreen_upgrades() {
         .dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor: 2.0 });
     app.window()
         .set_size(slint::LogicalSize::new(1435.0, 1000.0));
-    let state = app.global::<AppState>();
-    state.set_is_logged_in(true);
+    let account_state = app.global::<crate::AccountState>();
+    let runtime_state = app.global::<crate::RuntimeState>();
+    let home_state = app.global::<crate::HomeState>();
+    account_state.set_is_logged_in(true);
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut controller = View::new(tx, Preferences::default());
     let pending = Rc::new(RefCell::new(HashMap::<i32, u32>::new()));
     let sink = pending.clone();
-    state.on_request_cover(move |id, size| {
+    runtime_state.on_request_cover(move |id, size| {
         let mut pending = sink.borrow_mut();
         let entry = pending.entry(id).or_default();
         *entry = (*entry).max(size as u32);
@@ -218,7 +224,7 @@ fn visited_home_covers_survive_card_recycling_and_fullscreen_upgrades() {
     };
     pump(&mut controller, &mut rx);
     assert_eq!(
-        state
+        home_state
             .get_recommend_playlists()
             .row_data(0)
             .unwrap()
@@ -228,7 +234,7 @@ fn visited_home_covers_survive_card_recycling_and_fullscreen_upgrades() {
         512
     );
     assert_eq!(
-        state
+        home_state
             .get_daily_songs()
             .row_data(0)
             .unwrap()
@@ -238,7 +244,7 @@ fn visited_home_covers_survive_card_recycling_and_fullscreen_upgrades() {
         384
     );
     assert_eq!(
-        state
+        home_state
             .get_home_new_albums()
             .row_data(23)
             .unwrap()
@@ -255,8 +261,16 @@ fn visited_home_covers_survive_card_recycling_and_fullscreen_upgrades() {
     let mut first_requests = 0;
     for pass in 0..2 {
         for (offset, next, prev) in [
-            (0.0, "HomeView::playlist-next", "HomeView::playlist-prev"),
-            (400.0, "HomeView::songs-next", "HomeView::songs-prev"),
+            (
+                0.0,
+                "RecommendedPlaylistsSection::playlist-next",
+                "RecommendedPlaylistsSection::playlist-prev",
+            ),
+            (
+                400.0,
+                "RecommendedSongsHeader::songs-next",
+                "RecommendedSongsHeader::songs-prev",
+            ),
             (
                 740.0,
                 "HomeDiscoverySection::albums-next",
@@ -285,17 +299,17 @@ fn visited_home_covers_survive_card_recycling_and_fullscreen_upgrades() {
             controller.cover_probe.evictions, 0,
             "home covers evicted while browsing"
         );
-        for row in state.get_recommend_playlists().iter() {
+        for row in home_state.get_recommend_playlists().iter() {
             assert_eq!(row.cover.size().width, 512);
         }
-        for row in state
+        for row in home_state
             .get_daily_songs()
             .iter()
-            .chain(state.get_home_new_albums().iter())
+            .chain(home_state.get_home_new_albums().iter())
         {
             assert_eq!(row.cover.size().width, 384);
         }
-        for row in state.get_home_charts().iter() {
+        for row in home_state.get_home_charts().iter() {
             assert_eq!(row.cover.size().width, 256);
         }
         let requests = controller.cover_probe.requests.values().sum::<usize>();
@@ -311,10 +325,10 @@ fn visited_home_covers_survive_card_recycling_and_fullscreen_upgrades() {
     }
     // A list thumbnail must permit the existing fullscreen request to upgrade;
     // recycled home cards and a late smaller delivery must never downgrade it.
-    let song = state.get_daily_songs().row_data(0).unwrap();
+    let song = home_state.get_daily_songs().row_data(0).unwrap();
     controller.request_covers(std::iter::once((song.id, 1600)));
     pump(&mut controller, &mut rx);
-    let full = state.get_daily_songs().row_data(0).unwrap().cover;
+    let full = home_state.get_daily_songs().row_data(0).unwrap().cover;
     assert_eq!(full.size().width, 1600);
     controller.apply_images(
         &app,
@@ -326,6 +340,9 @@ fn visited_home_covers_survive_card_recycling_and_fullscreen_upgrades() {
     );
     controller.request_covers(std::iter::once((song.id, 384)));
     assert!(rx.try_recv().is_err());
-    assert_eq!(state.get_daily_songs().row_data(0).unwrap().cover, full);
+    assert_eq!(
+        home_state.get_daily_songs().row_data(0).unwrap().cover,
+        full
+    );
     assert_eq!(controller.cover_probe.evictions, 0);
 }

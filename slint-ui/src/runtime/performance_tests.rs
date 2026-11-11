@@ -6,7 +6,7 @@ use super::{
     images::{DecodedImage, ImageTarget},
     view::View,
 };
-use crate::{AppState, AppWindow};
+use crate::AppWindow;
 use serde_json::json;
 use slint::{ComponentHandle, Model};
 use std::time::{Duration, Instant};
@@ -25,9 +25,11 @@ fn profile_playlist_cover_updates_and_scrolling() {
     let app = AppWindow::new().unwrap();
     super::view::initialize(&app, &Preferences::default());
     app.show().unwrap();
-    let state = app.global::<AppState>();
-    state.set_current_route("playlist".into());
-    state.set_is_logged_in(true);
+    let navigation_state = app.global::<crate::NavigationState>();
+    let account_state = app.global::<crate::AccountState>();
+    let playlist_state = app.global::<crate::PlaylistState>();
+    navigation_state.set_current_route("playlist".into());
+    account_state.set_is_logged_in(true);
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let mut view = View::new(tx, Preferences::default());
     for count in [100, 1_000, 10_000] {
@@ -83,7 +85,7 @@ fn profile_playlist_cover_updates_and_scrolling() {
         updates.sort_by(f64::total_cmp);
         frames.sort_by(f64::total_cmp);
         println!("{count} songs: apply={apply_ms:.2}ms; cover batch median={:.2}ms max={:.2}ms; software scroll frame median={:.2}ms max={:.2}ms", updates[8], updates[15], frames[8], frames[15]);
-        assert_eq!(state.get_playlist_tracks().row_count(), count);
+        assert_eq!(playlist_state.get_playlist_tracks().row_count(), count);
     }
 }
 
@@ -106,11 +108,13 @@ fn profile_real_playlist_scrolling() {
         .unwrap();
     let app = AppWindow::new().unwrap();
     super::view::initialize(&app, &Preferences::default());
-    let state = app.global::<AppState>();
-    state.set_current_route("playlist".into());
-    state.set_playlist_title("滚动性能测试（模拟数据）".into());
-    state.set_is_logged_in(true);
-    state.set_playlist_tracks(
+    let navigation_state = app.global::<crate::NavigationState>();
+    let playlist_state = app.global::<crate::PlaylistState>();
+    let account_state = app.global::<crate::AccountState>();
+    navigation_state.set_current_route("playlist".into());
+    playlist_state.set_playlist_title("滚动性能测试（模拟数据）".into());
+    account_state.set_is_logged_in(true);
+    playlist_state.set_playlist_tracks(
         Rc::new(slint::VecModel::from(
             (0..10_000)
                 .map(|id| crate::TrackItem {
@@ -260,9 +264,9 @@ fn profile_api_playlist_scrolling() {
         .unwrap();
     let app = AppWindow::new().unwrap();
     super::view::initialize(&app, &Preferences::default());
-    app.global::<AppState>()
+    app.global::<crate::NavigationState>()
         .set_current_route("playlist".into());
-    app.global::<AppState>().set_is_logged_in(true);
+    app.global::<crate::AccountState>().set_is_logged_in(true);
     let (tx, mut commands) = tokio::sync::mpsc::unbounded_channel::<super::backend::Command>();
     let (images, mut image_receiver) = tokio::sync::mpsc::channel(super::images::QUEUE_CAPACITY);
     let background = std::thread::spawn(move || {
@@ -293,11 +297,12 @@ fn profile_api_playlist_scrolling() {
     let view = Rc::new(RefCell::new(View::new(tx.clone(), Preferences::default())));
     let pending = Rc::new(RefCell::new(HashMap::<i32, u32>::new()));
     let requests = pending.clone();
-    app.global::<AppState>().on_request_cover(move |id, size| {
-        let mut requests = requests.borrow_mut();
-        let value = requests.entry(id).or_default();
-        *value = (*value).max(size.max(1) as u32);
-    });
+    app.global::<crate::RuntimeState>()
+        .on_request_cover(move |id, size| {
+            let mut requests = requests.borrow_mut();
+            let value = requests.entry(id).or_default();
+            *value = (*value).max(size.max(1) as u32);
+        });
     let started = Instant::now();
     view.borrow_mut().apply(
         &app,
@@ -311,7 +316,9 @@ fn profile_api_playlist_scrolling() {
     );
     println!(
         "real API tracks: {}; model apply: {:.2}ms",
-        app.global::<AppState>().get_playlist_tracks().row_count(),
+        app.global::<crate::PlaylistState>()
+            .get_playlist_tracks()
+            .row_count(),
         started.elapsed().as_secs_f64() * 1000.0
     );
     app.window().set_size(slint::PhysicalSize::new(1435, 1000));
@@ -510,10 +517,13 @@ fn profile_logged_in_playlist_runtime() {
                 return;
             }
             let app = weak.upgrade().unwrap();
-            let state = app.global::<AppState>();
+            let navigation_state = app.global::<crate::NavigationState>();
+            let home_state = app.global::<crate::HomeState>();
+            let player_state = app.global::<crate::PlayerState>();
+            let playlist_state = app.global::<crate::PlaylistState>();
             if steps >= 690 {
                 if home_started.is_none() {
-                    state.set_current_route("home".into());
+                    navigation_state.set_current_route("home".into());
                     home_started = Some(Instant::now());
                 }
                 if home_started.unwrap().elapsed() < Duration::from_secs(2) {
@@ -522,8 +532,8 @@ fn profile_logged_in_playlist_runtime() {
                 let position =
                     slint::LogicalPosition::new(1200.0 - 8.0 * home_step.min(100) as f32, 250.0);
                 if home_step == 0 {
-                    assert!(!state.get_home_playlists_loading());
-                    assert!(state.get_recommend_playlists().row_count() > 0);
+                    assert!(!home_state.get_home_playlists_loading());
+                    assert!(home_state.get_recommend_playlists().row_count() > 0);
                     app.window().dispatch_event(WindowEvent::PointerPressed {
                         position,
                         button: PointerEventButton::Left,
@@ -541,8 +551,12 @@ fn profile_logged_in_playlist_runtime() {
                         button: PointerEventButton::Left,
                     });
                 } else if home_step == 125 {
-                    assert_eq!(state.get_current_route(), "home", "drag opened a playlist");
-                    assert!(!state.get_is_playing(), "drag started playback");
+                    assert_eq!(
+                        navigation_state.get_current_route(),
+                        "home",
+                        "drag opened a playlist"
+                    );
+                    assert!(!player_state.get_is_playing(), "drag started playback");
                     let heading =
                         ElementHandle::find_by_element_id(&app, "HomeView::home-page-title")
                             .next()
@@ -564,7 +578,7 @@ fn profile_logged_in_playlist_runtime() {
                 return;
             }
             if requested.is_none() {
-                if let Some(row) = state
+                if let Some(row) = playlist_state
                     .get_created_playlists()
                     .iter()
                     .find(|row| row.name.as_str() == name)
@@ -574,15 +588,17 @@ fn profile_logged_in_playlist_runtime() {
                         started.elapsed().as_secs_f64() * 1000.0
                     );
                     requested = Some(Instant::now());
-                    state.invoke_open_playlist(row.id);
+                    playlist_state.invoke_open_playlist(row.id);
                 }
                 return;
             }
             if loaded.is_none() {
-                if !state.get_playlist_loading() && state.get_playlist_tracks().row_count() > 0 {
+                if !playlist_state.get_playlist_loading()
+                    && playlist_state.get_playlist_tracks().row_count() > 0
+                {
                     println!(
                         "live playlist ready: {} tracks, {:.2}ms after click",
-                        state.get_playlist_tracks().row_count(),
+                        playlist_state.get_playlist_tracks().row_count(),
                         requested.unwrap().elapsed().as_secs_f64() * 1000.0
                     );
                     loaded = Some(Instant::now());
@@ -691,8 +707,16 @@ fn profile_logged_in_home_cover_residency() {
     let mut actions = Vec::new();
     for _ in 0..2 {
         for (offset, next, prev) in [
-            (0.0, "HomeView::playlist-next", "HomeView::playlist-prev"),
-            (400.0, "HomeView::songs-next", "HomeView::songs-prev"),
+            (
+                0.0,
+                "RecommendedPlaylistsSection::playlist-next",
+                "RecommendedPlaylistsSection::playlist-prev",
+            ),
+            (
+                400.0,
+                "RecommendedSongsHeader::songs-next",
+                "RecommendedSongsHeader::songs-prev",
+            ),
             (
                 740.0,
                 "HomeDiscoverySection::albums-next",
@@ -723,13 +747,15 @@ fn profile_logged_in_home_cover_residency() {
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(900), move || {
         if started.elapsed() > Duration::from_secs(125) { slint::quit_event_loop().unwrap(); return; }
         let app = weak.upgrade().unwrap();
-        let state = app.global::<AppState>();
-        if !state.get_is_logged_in() || state.get_home_playlists_loading() || state.get_home_songs_loading() || started.elapsed() < Duration::from_secs(6) { return; }
+        let account_state = app.global::<crate::AccountState>();
+        let home_state = app.global::<crate::HomeState>();
+        let navigation_state = app.global::<crate::NavigationState>();
+        if !account_state.get_is_logged_in() || home_state.get_home_playlists_loading() || home_state.get_home_songs_loading() || started.elapsed() < Duration::from_secs(6) { return; }
         let i = step.get();
         if i == 0 {
             heading = ElementHandle::find_by_element_id(&app, "HomeView::home-page-title").next();
             heading_top = heading.as_ref().unwrap().absolute_position().y;
-            println!("live home: playlists={} songs={} scale={}", state.get_recommend_playlists().row_count(), state.get_daily_songs().row_count(), app.window().scale_factor());
+            println!("live home: playlists={} songs={} scale={}", home_state.get_recommend_playlists().row_count(), home_state.get_daily_songs().row_count(), app.window().scale_factor());
         }
         if i == actions.len() || i == actions.len()/2 {
             let view = controller.borrow();
@@ -737,11 +763,11 @@ fn profile_logged_in_home_cover_residency() {
             let (count, bytes) = view.cover_cache_usage();
             let mut sizes = std::collections::BTreeMap::<u32,usize>::new();
             for ((_, size), n) in &p.deliveries { *sizes.entry(*size).or_default() += n; }
-            println!("home pass {}: cache={count} bytes={bytes} requests={} deliveries={} unique={} repeated={} evictions={} sizes={sizes:?}; albums={} charts={}", i/(actions.len()/2), p.requests.values().sum::<usize>(), p.deliveries.values().sum::<usize>(), p.deliveries.len(), p.deliveries.values().filter(|&&n| n > 1).count(), p.evictions, state.get_home_new_albums().row_count(), state.get_home_charts().row_count());
+            println!("home pass {}: cache={count} bytes={bytes} requests={} deliveries={} unique={} repeated={} evictions={} sizes={sizes:?}; albums={} charts={}", i/(actions.len()/2), p.requests.values().sum::<usize>(), p.deliveries.values().sum::<usize>(), p.deliveries.len(), p.deliveries.values().filter(|&&n| n > 1).count(), p.evictions, home_state.get_home_new_albums().row_count(), home_state.get_home_charts().row_count());
         }
         if i == actions.len() { slint::quit_event_loop().unwrap(); return; }
         let (offset, button) = actions[i];
-        assert_eq!(state.get_current_route(), "home", "unexpected navigation at step {i}");
+        assert_eq!(navigation_state.get_current_route(), "home", "unexpected navigation at step {i}");
         let start = Instant::now();
         if button.is_empty() {
             let heading = heading.as_ref().unwrap();
@@ -751,7 +777,7 @@ fn profile_logged_in_home_cover_residency() {
                 delta_y: (heading_top - offset) - heading.absolute_position().y,
             });
         } else {
-            let element = ElementHandle::find_by_element_id(&app, button).next().unwrap_or_else(|| panic!("missing {button}, step={i}, route={}", state.get_current_route()));
+            let element = ElementHandle::find_by_element_id(&app, button).next().unwrap_or_else(|| panic!("missing {button}, step={i}, route={}", navigation_state.get_current_route()));
             element.invoke_accessible_default_action();
         }
         samples.borrow_mut().push(start.elapsed().as_secs_f64()*1000.0);
@@ -760,9 +786,22 @@ fn profile_logged_in_home_cover_residency() {
     slint::run_event_loop().unwrap();
     timer.stop();
     assert_eq!(completed.get(), 70, "home traversal did not finish");
-    assert!(app.global::<AppState>().get_home_new_albums().row_count() > 0);
-    assert!(app.global::<AppState>().get_home_charts().row_count() > 0);
-    assert_eq!(app.global::<AppState>().get_current_route(), "home");
+    assert!(
+        app.global::<crate::HomeState>()
+            .get_home_new_albums()
+            .row_count()
+            > 0
+    );
+    assert!(
+        app.global::<crate::HomeState>()
+            .get_home_charts()
+            .row_count()
+            > 0
+    );
+    assert_eq!(
+        app.global::<crate::NavigationState>().get_current_route(),
+        "home"
+    );
     let mut times = times.borrow_mut();
     times.sort_by(f64::total_cmp);
     println!(

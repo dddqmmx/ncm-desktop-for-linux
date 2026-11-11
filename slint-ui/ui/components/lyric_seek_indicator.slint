@@ -1,0 +1,87 @@
+import { PlayerViewState } from "../state/player_view.slint";
+import { Icons } from "../icons.slint";
+
+import { AppIcon } from "common.slint";
+
+export component LyricSeekIndicator inherits HorizontalLayout {
+    in property <bool> is-dark;
+    in property <int> hovered-index;
+    property <color> lrc-status: root.is-dark ? rgba(255, 255, 255, 0.50) : rgba(0, 0, 0, 0.50);
+    property <color> lrc-toggle-bg: root.is-dark ? rgba(255, 255, 255, 0.88) : rgba(0, 0, 0, 0.72);
+    property <color> lrc-toggle-bg-active: root.is-dark ? #ffffff : rgba(0, 0, 0, 0.88);
+    property <color> lrc-toggle-border: root.is-dark ? rgba(255, 255, 255, 0.20) : rgba(0, 0, 0, 0.16);
+    property <color> lrc-toggle-fg: root.is-dark ? rgba(0, 0, 0, 0.72) : rgba(255, 255, 255, 0.82);
+    property <color> lrc-toggle-fg-active: root.is-dark ? #000000 : #ffffff;
+    callback seek-line(int);
+    callback scroll-by(length);
+    callback update-hover(int, length, length);
+    callback cancel-user-scroll(bool);
+
+    height: 28px;
+    spacing: 10px;
+    alignment: stretch;
+    opacity: PlayerViewState.show-lyric-seek-indicator ? 1.0 : 0.0;
+    visible: PlayerViewState.show-lyric-seek-indicator || self.opacity > 0.01;
+    animate opacity { duration: 200ms; easing: ease; }
+
+    seek-time := Text {
+        text: PlayerViewState.centered-lyric-time;
+        font-size: 12px;
+        font-weight: 600;
+        color: root.lrc-status;
+        vertical-alignment: center;
+    }
+
+    seek-guide := Rectangle {
+        horizontal-stretch: 1;
+        height: 1px;
+        y: (parent.height - self.height) / 2;
+        opacity: 0.35;
+        for dash in Math.ceil(self.width / 6px) : Rectangle {
+            x: dash * 6px;
+            width: Math.min(3px, seek-guide.width - self.x);
+            height: 1px;
+            background: root.lrc-status;
+        }
+    }
+
+    seek-play-button := Rectangle {
+        accessible-role: button;
+        accessible-label: "从此处播放";
+        accessible-enabled: PlayerViewState.show-lyric-seek-indicator;
+        accessible-action-default => { root.seek-line(PlayerViewState.centered-lyric-index); }
+        width: 28px;
+        height: 28px;
+        border-radius: 14px;
+        background: root.hovered-index == -2 ? root.lrc-toggle-bg-active : root.lrc-toggle-bg;
+        border-width: 1px;
+        border-color: root.lrc-toggle-border;
+        animate background { duration: 200ms; easing: ease; }
+
+        seek-btn-ta := TouchArea {
+            enabled: PlayerViewState.show-lyric-seek-indicator;
+            mouse-cursor: pointer;
+            scroll-event(event) => { root.scroll-by(event.delta-y); return accept; }
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.move {
+                    root.update-hover(-2, seek-btn-ta.absolute-position.x + seek-btn-ta.mouse-x,
+                        seek-btn-ta.absolute-position.y + seek-btn-ta.mouse-y);
+                }
+                if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                    root.cancel-user-scroll(false);
+                }
+            }
+            clicked => {
+                root.seek-line(PlayerViewState.centered-lyric-index);
+            }
+        }
+
+        AppIcon {
+            x: 7px;
+            y: 7px;
+            source: Icons.play;
+            icon-size: 14px;
+            tint: root.hovered-index == -2 ? root.lrc-toggle-fg-active : root.lrc-toggle-fg;
+        }
+    }
+}

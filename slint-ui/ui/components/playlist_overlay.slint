@@ -1,8 +1,36 @@
+import { NavigationState } from "../state/navigation.slint";
+import { PlayerState } from "../state/player.slint";
+import { QueueState } from "../state/queue.slint";
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
-import { AppState, QueueSongItem } from "../state.slint";
+import { QueueSongItem } from "../models.slint";
 import { AppIcon, RoundedCover } from "common.slint";
 import { ListView } from "std-widgets.slint";
+
+component ClearQueueButton inherits Rectangle {
+
+    width: 52px;
+    height: 29px;
+    border-radius: 10px;
+    background: clear-ta.has-hover ? Theme.sys-danger-soft : Theme.sys-control;
+    animate background { duration: 200ms; easing: ease; }
+
+    clear-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            QueueState.queue-action("clear-queue", -1);
+        }
+    }
+
+    Text {
+        text: "清空";
+        font-size: 12px;
+        font-weight: 600;
+        color: clear-ta.has-hover ? Theme.sys-danger : Theme.sys-text;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
 
 component PlaylistQueueRow inherits Rectangle {
     in property <QueueSongItem> song;
@@ -146,9 +174,32 @@ component PlaylistQueueRow inherits Rectangle {
     }
 }
 
+component QueueSongList inherits ListView {
+
+    horizontal-scrollbar-policy: always-off;
+    vertical-scrollbar-policy: always-off;
+
+    for song[index] in QueueState.queue-songs : Rectangle {
+        width: root.visible-width;
+        height: (PlayerState.current-song-id == song.id ? 70px : 66px)
+            + (index == QueueState.queue-songs.length - 1 ? 20px : 0px);
+        PlaylistQueueRow {
+            x: 12px;
+            y: PlayerState.current-song-id == song.id ? 2px : 0px;
+            width: parent.width - 34px;
+            song: song;
+            is-active: PlayerState.current-song-id == song.id;
+            remove-clicked => { QueueState.queue-action("remove-queue", song.id); }
+            play-clicked => {
+                QueueState.queue-action("queue-play", song.id);
+            }
+        }
+    }
+}
+
 export component PlaylistOverlay inherits Rectangle {
     in property <bool> presented: true;
-    width: AppState.window-width <= 650px ? (AppState.window-width - 40px) : 360px;
+    width: NavigationState.window-width <= 650px ? (NavigationState.window-width - 40px) : 360px;
     height: 520px;
     border-radius: 28px;
     background: Theme.glass-fill;
@@ -191,7 +242,7 @@ export component PlaylistOverlay inherits Rectangle {
                 x: 104px;
                 y: 31px;
                 height: 16px;
-                text: AppState.queue-songs.length + " 首歌曲";
+                text: QueueState.queue-songs.length + " 首歌曲";
                 font-size: 12px;
                 font-weight: 600;
                 color: Theme.sys-text-tertiary;
@@ -199,63 +250,22 @@ export component PlaylistOverlay inherits Rectangle {
             }
 
             // 清空按钮 (.clear-btn: x=282, y=24, width=52, height=29, border-radius 10px)
-            playlist-clear-btn := Rectangle {
+            playlist-clear-btn := ClearQueueButton {
                 x: parent.width - 24px - 52px;
                 y: 24px;
-                width: 52px;
-                height: 29px;
-                border-radius: 10px;
-                background: clear-ta.has-hover ? Theme.sys-danger-soft : Theme.sys-control;
-                animate background { duration: 200ms; easing: ease; }
-
-                clear-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        if AppState.runtime-enabled { AppState.runtime-action("clear-queue", -1, ""); } else { AppState.queue-songs = []; }
-                        AppState.is-playing = false;
-                    }
-                }
-
-                Text {
-                    text: "清空";
-                    font-size: 12px;
-                    font-weight: 600;
-                    color: clear-ta.has-hover ? Theme.sys-danger : Theme.sys-text;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
             }
         }
 
         // 滚动列表 (.playlist-scroll: padding 0 12px 20px)
-        if root.presented && AppState.queue-songs.length > 0 : queue-scroll := ListView {
+        if root.presented && QueueState.queue-songs.length > 0 : queue-scroll := QueueSongList {
             x: 0px;
             y: 69px;
             width: 100%;
             height: parent.height - 69px;
-            horizontal-scrollbar-policy: always-off;
-            vertical-scrollbar-policy: always-off;
-
-            for song[index] in AppState.queue-songs : Rectangle {
-                width: queue-scroll.visible-width;
-                height: (AppState.current-song-id == song.id ? 70px : 66px)
-                    + (index == AppState.queue-songs.length - 1 ? 20px : 0px);
-                PlaylistQueueRow {
-                    x: 12px;
-                    y: AppState.current-song-id == song.id ? 2px : 0px;
-                    width: parent.width - 34px;
-                    song: song;
-                    is-active: AppState.current-song-id == song.id;
-                    remove-clicked => { if AppState.runtime-enabled { AppState.runtime-action("remove-queue", song.id, ""); } }
-                    play-clicked => {
-                        if AppState.runtime-enabled { AppState.runtime-action("queue-play", song.id, ""); } else { AppState.play-song(song.id, song.name, song.artist, song.cover, song.is-local, song.has-cover); }
-                    }
-                }
-            }
         }
 
         // 空状态 (.empty-state)
-        if AppState.queue-songs.length == 0 : Rectangle {
+        if QueueState.queue-songs.length == 0 : Rectangle {
             x: 0px;
             y: 69px;
             width: 100%;

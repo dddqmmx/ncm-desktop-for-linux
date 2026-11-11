@@ -1,0 +1,26 @@
+import { Theme } from "../theme.slint";
+import { AppIcon } from "../components/common.slint";
+
+export component AuxVisibilityButton inherits Rectangle {
+    in property <bool> shown: true;
+    in property <image> icon;
+    callback toggled();
+    width: 34px;
+    height: 34px;
+    border-radius: 17px;
+    background: touch.has-hover ? Theme.sys-control-hover : transparent;
+    border-width: root.shown ? 0px : 1px;
+    border-color: Theme.sys-border-strong;
+    opacity: root.shown ? 1.0 : 0.34;
+    animate opacity, background { duration: 200ms; easing: ease; }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(); }
+    }
+    AppIcon {
+        x: 8px; y: 8px;
+        source: root.icon;
+        icon-size: 18px;
+        tint: Theme.sys-text;
+    }
+}

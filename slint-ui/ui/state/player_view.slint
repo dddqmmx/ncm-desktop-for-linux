@@ -1,0 +1,34 @@
+import { LyricLineItem, CommentItem } from "../models.slint";
+import { RuntimeState } from "runtime.slint";
+import { AudioState } from "audio.slint";
+import { PlayerState } from "player.slint";
+import { DemoPlayer } from "../fixtures/player.slint";
+
+// Player overlays, lyrics and comments; observes playback and audio availability.
+export global PlayerViewState {
+    in-out property <bool> is-fullscreen: false;
+    in-out property <bool> is-volume-popup-open: false;
+    in-out property <bool> is-fullscreen-volume-open: false;
+    in-out property <bool> is-comment-open: false;
+    in-out property <bool> fullscreen-is-dark: true;
+    in-out property <color> fullscreen-bg-primary: #3b3e98;
+    in-out property <color> fullscreen-bg-secondary: #191d3a;
+    in-out property <bool> show-pronunciation: true;
+    in-out property <bool> show-translation: true;
+    in-out property <int> active-lyric-index: 3;
+    in-out property <int> lyric-position-reset: 0;
+    in-out property <bool> show-lyric-seek-indicator: false;
+    in-out property <int> centered-lyric-index: 4;
+    in-out property <string> centered-lyric-time: "1:48";
+    in-out property <[LyricLineItem]> lyrics: DemoPlayer.lyrics;
+    in-out property <[CommentItem]> comments: DemoPlayer.comments;
+    private property <bool> volume-available: AudioState.can-adjust-volume;
+
+    changed is-comment-open => { if RuntimeState.runtime-enabled && self.is-comment-open { RuntimeState.runtime-action("comments", PlayerState.current-song-id, ""); } }
+    changed volume-available => {
+        if !self.volume-available {
+            self.is-volume-popup-open = false;
+            self.is-fullscreen-volume-open = false;
+        }
+    }
+}

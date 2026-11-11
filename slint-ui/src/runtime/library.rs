@@ -6,6 +6,21 @@ use std::{
 const EXTENSIONS: &[&str] = &[
     "aac", "aif", "aiff", "ape", "flac", "m4a", "mp3", "ogg", "opus", "wav", "webm", "wma",
 ];
+
+/// Remove only the selected library record; keep the source file and watched folders.
+pub fn remove_track(storage: &Storage, id: &str) -> Result<Vec<Song>, String> {
+    let mut songs: Vec<Song> = storage.read("library.json")?;
+    if !songs
+        .iter()
+        .any(|song| song.id == id && song.path.is_some())
+    {
+        return Err("该本地歌曲已不在曲库中".into());
+    }
+    songs.retain(|song| song.id != id);
+    storage.save("library.json", &songs)?;
+    Ok(songs)
+}
+
 pub fn scan(roots: &[PathBuf], previous: Vec<Song>) -> Result<(Vec<Song>, bool), String> {
     fn visit(
         path: &Path,

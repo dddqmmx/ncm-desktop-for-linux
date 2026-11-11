@@ -1,30 +1,110 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { NavigationState } from "../state/navigation.slint";
+import { AccountState } from "../state/account.slint";
+import { PlayerState } from "../state/player.slint";
+import { PlaylistState } from "../state/playlist.slint";
+import { DetailState } from "../state/detail.slint";
+import { HomeState } from "../state/home.slint";
+import { FlowText } from "../components/typography.slint";
 import { Theme } from "../theme.slint";
-import { AppState, RecommendPlaylistItem } from "../state.slint";
+import { RecommendPlaylistItem, DailySongItem, HomeChartItem } from "../models.slint";
 import { HomeCardShelf, HomeDiscoverySection } from "../components/home_sections.slint";
 import { PlaylistButton } from "../overlays/playlist_editor.slint";
 
+component RecommendedSongsHeader inherits Rectangle {
+    in property <bool> at-start;
+    in property <bool> at-end;
+    callback play-daily();
+    callback move-page(int);
+    height: songs-heading.height;
+    songs-heading := FlowText {
+        x: 0px;  text: AccountState.is-logged-in ? "每日推荐歌曲" : "新歌推荐";
+        font-size: 22px; font-weight: 700; color: Theme.sys-text; vertical-alignment: center;
+    }
+    HorizontalLayout {
+        x: parent.width - 172px; width: 172px; height: 32px; spacing: 8px;
+        play-daily-button := PlaylistButton {
+            width: 88px; border-radius: 16px; filled: true; label: "播放全部";
+            enabled: !HomeState.home-songs-loading && HomeState.daily-songs.length > 0;
+            clicked => { root.play-daily(); }
+        }
+        songs-prev := PlaylistButton {
+            width: 34px; border-radius: 17px; filled: true; label: "‹";
+            accessible-label: "上一组推荐歌曲"; enabled: !root.at-start;
+            clicked => { root.move-page(-1); }
+        }
+        songs-next := PlaylistButton {
+            width: 34px; border-radius: 17px; filled: true; label: "›";
+            accessible-label: "下一组推荐歌曲"; enabled: !root.at-end;
+            clicked => { root.move-page(1); }
+        }
+    }
+}
+
+component RecommendedPlaylistsSection inherits VerticalLayout {
+    in property <length> page-top;
+    in property <length> page-height;
+    callback scroll-page(length);
+    callback open-recommendation(RecommendPlaylistItem);
+    spacing: 0px;
+    home-section-header-0 := Rectangle {
+        height: playlist-heading.height;
+        playlist-heading := FlowText {
+            x: 0px;  text: AccountState.is-logged-in ? "每日推荐歌单" : "精选歌单";
+            font-size: 22px; font-weight: 700; color: Theme.sys-text; vertical-alignment: center;
+        }
+        HorizontalLayout {
+            x: parent.width - 76px; width: 76px; height: 32px; spacing: 8px;
+            playlist-prev := PlaylistButton {
+                width: 34px; border-radius: 17px; filled: true; label: "‹";
+                accessible-label: "上一组推荐歌单"; enabled: !playlist-shelf.at-start;
+                clicked => { playlist-shelf.move-page(-1); }
+            }
+            playlist-next := PlaylistButton {
+                width: 34px; border-radius: 17px; filled: true; label: "›";
+                accessible-label: "下一组推荐歌单"; enabled: !playlist-shelf.at-end;
+                clicked => { playlist-shelf.move-page(1); }
+            }
+        }
+    }
+    Rectangle { height: 16px; }
+    playlist-shelf := HomeCardShelf {
+        page-scrolled(delta) => { root.scroll-page(delta); }
+        playlists: HomeState.recommend-playlists;
+        loading: HomeState.home-playlists-loading;
+        page-top: root.page-top; page-height: root.page-height;
+        playlist-clicked(item) => { root.open-recommendation(item); }
+        playlist-play-clicked(item) => {
+            if RuntimeState.runtime-enabled { RuntimeState.runtime-action("play-playlist", item.id, ""); }
+            else { PlayerState.play-song(item.id, item.title, "推荐歌单甄选", item.cover, false, true); }
+        }
+    }
+    Rectangle { height: 40px; }
+}
+
 export component HomeView inherits Rectangle {
+    function open-album(item: DailySongItem) {
+        if RuntimeState.runtime-enabled { RuntimeState.runtime-action("album", item.id, ""); }
+        else {
+            DetailState.album-title = item.title; DetailState.album-artist = item.artist;
+            DetailState.album-cover = item.cover; NavigationState.current-route = "album";
+        }
+    }
+
+    function open-chart(item: HomeChartItem) { PlaylistState.open-playlist(item.id); }
     width: 100%; height: 100%;
-    property <bool> show-playlists: AppState.is-logged-in || AppState.runtime-enabled;
+    property <bool> show-playlists: AccountState.is-logged-in || RuntimeState.runtime-enabled;
     public function scroll-page(delta: length) {
         home-scroll.content-y = Math.clamp(home-scroll.content-y + delta,
             Math.min(0px, home-scroll.height - home-scroll.content-height), 0px);
     }
     public function play-daily() {
-        if AppState.home-songs-loading || AppState.daily-songs.length == 0 { return; }
-        let song = AppState.daily-songs[0];
-        AppState.play-song(song.id, song.title, song.artist, song.cover, false, true);
+        if HomeState.home-songs-loading || HomeState.daily-songs.length == 0 { return; }
+        let song = HomeState.daily-songs[0];
+        PlayerState.play-song(song.id, song.title, song.artist, song.cover, false, true);
     }
     public function open-recommendation(item: RecommendPlaylistItem) {
-        if !AppState.open-playlist(item.id) {
-            AppState.active-playlist-id = item.id;
-            AppState.playlist-title = item.title;
-            AppState.playlist-cover = item.cover;
-            AppState.playlist-description = item.desc;
-            AppState.playlist-owned = false;
-            AppState.playlist-tracks = AppState.detail-tracks;
-            AppState.current-route = "playlist";
-        }
+        PlaylistState.open-playlist(item.id);
     }
     home-scroll := Flickable {
         mouse-drag-pan-enabled: false;
@@ -37,109 +117,54 @@ export component HomeView inherits Rectangle {
             padding-top: 20px; padding-left: 24px; padding-right: 24px;
             padding-bottom: 120px; spacing: 0px;
             home-page-title := Rectangle {
-                height: 51.19px;
-                Text {
-                    width: 100%; height: 100%; text: "主页";
+                height: page-heading.height;
+                page-heading := FlowText {
+                    width: 100%;  text: "主页";
                     font-size: 32px; font-weight: 800; color: Theme.sys-text;
                     vertical-alignment: center;
                 }
             }
             Rectangle { height: 24px; }
-            if root.show-playlists : VerticalLayout {
-                spacing: 0px;
-                home-section-header-0 := Rectangle {
-                    height: 35.19px;
-                    Text {
-                        x: 0px; height: 100%; text: AppState.is-logged-in ? "每日推荐歌单" : "精选歌单";
-                        font-size: 22px; font-weight: 700; color: Theme.sys-text; vertical-alignment: center;
-                    }
-                    HorizontalLayout {
-                        x: parent.width - 76px; width: 76px; height: 32px; spacing: 8px;
-                        playlist-prev := PlaylistButton {
-                            width: 34px; border-radius: 17px; filled: true; label: "‹";
-                            accessible-label: "上一组推荐歌单"; enabled: !playlist-shelf.at-start;
-                            clicked => { playlist-shelf.move-page(-1); }
-                        }
-                        playlist-next := PlaylistButton {
-                            width: 34px; border-radius: 17px; filled: true; label: "›";
-                            accessible-label: "下一组推荐歌单"; enabled: !playlist-shelf.at-end;
-                            clicked => { playlist-shelf.move-page(1); }
-                        }
-                    }
-                }
-                Rectangle { height: 16px; }
-                playlist-shelf := HomeCardShelf {
-                    page-scrolled(delta) => { root.scroll-page(delta); }
-                    playlists: AppState.recommend-playlists;
-                    loading: AppState.home-playlists-loading;
-                    page-top: home-scroll.absolute-position.y; page-height: home-scroll.height;
-                    playlist-clicked(item) => { root.open-recommendation(item); }
-                    playlist-play-clicked(item) => {
-                        if AppState.runtime-enabled { AppState.runtime-action("play-playlist", item.id, ""); }
-                        else { AppState.play-song(item.id, item.title, "推荐歌单甄选", item.cover, false, true); }
-                    }
-                }
-                Rectangle { height: 40px; }
+            if root.show-playlists : RecommendedPlaylistsSection {
+                page-top: home-scroll.absolute-position.y;
+                page-height: home-scroll.height;
+                scroll-page(delta) => { root.scroll-page(delta); }
+                open-recommendation(item) => { root.open-recommendation(item); }
             }
-            home-section-header-1 := Rectangle {
-                height: 35.19px;
-                Text {
-                    x: 0px; height: 100%; text: AppState.is-logged-in ? "每日推荐歌曲" : "新歌推荐";
-                    font-size: 22px; font-weight: 700; color: Theme.sys-text; vertical-alignment: center;
-                }
-                HorizontalLayout {
-                    x: parent.width - 172px; width: 172px; height: 32px; spacing: 8px;
-                    play-daily-button := PlaylistButton {
-                        width: 88px; border-radius: 16px; filled: true; label: "播放全部";
-                        enabled: !AppState.home-songs-loading && AppState.daily-songs.length > 0;
-                        clicked => { root.play-daily(); }
-                    }
-                    songs-prev := PlaylistButton {
-                        width: 34px; border-radius: 17px; filled: true; label: "‹";
-                        accessible-label: "上一组推荐歌曲"; enabled: !song-shelf.at-start;
-                        clicked => { song-shelf.move-page(-1); }
-                    }
-                    songs-next := PlaylistButton {
-                        width: 34px; border-radius: 17px; filled: true; label: "›";
-                        accessible-label: "下一组推荐歌曲"; enabled: !song-shelf.at-end;
-                        clicked => { song-shelf.move-page(1); }
-                    }
-                }
+            home-section-header-1 := RecommendedSongsHeader {
+                at-start: song-shelf.at-start;
+                at-end: song-shelf.at-end;
+                play-daily => { root.play-daily(); }
+                move-page(direction) => { song-shelf.move-page(direction); }
             }
             Rectangle { height: 16px; }
             song-shelf := HomeCardShelf {
                 page-scrolled(delta) => { root.scroll-page(delta); }
-                song-mode: true; songs: AppState.daily-songs;
-                loading: AppState.home-songs-loading;
+                song-mode: true; songs: HomeState.daily-songs;
+                loading: HomeState.home-songs-loading;
                 page-top: home-scroll.absolute-position.y; page-height: home-scroll.height;
-                song-clicked(song) => { AppState.play-song(song.id, song.title, song.artist, song.cover, false, true); }
+                song-clicked(song) => { PlayerState.play-song(song.id, song.title, song.artist, song.cover, false, true); }
             }
             Rectangle { height: 40px; }
             new-albums := HomeDiscoverySection {
                 page-scrolled(delta) => { root.scroll-page(delta); }
                 title: "新碟上架";
                 request-name: "home-albums";
-                loaded: AppState.home-albums-loaded; loading: AppState.home-albums-loading;
-                error: AppState.home-albums-error;
-                songs: AppState.home-new-albums;
+                loaded: HomeState.home-albums-loaded; loading: HomeState.home-albums-loading;
+                error: HomeState.home-albums-error;
+                songs: HomeState.home-new-albums;
                 page-top: home-scroll.absolute-position.y; page-height: home-scroll.height;
-                album-clicked(item) => {
-                    if AppState.runtime-enabled { AppState.runtime-action("album", item.id, ""); }
-                    else {
-                        AppState.album-title = item.title; AppState.album-artist = item.artist;
-                        AppState.album-cover = item.cover; AppState.current-route = "album";
-                    }
-                }
+                album-clicked(item) => { root.open-album(item); }
             }
             Rectangle { height: 40px; }
             charts := HomeDiscoverySection {
                 title: "榜单速览"; chart-mode: true;
                 request-name: "home-charts";
-                loaded: AppState.home-charts-loaded; loading: AppState.home-charts-loading;
-                error: AppState.home-charts-error;
-                chart-items: AppState.home-charts;
+                loaded: HomeState.home-charts-loaded; loading: HomeState.home-charts-loading;
+                error: HomeState.home-charts-error;
+                chart-items: HomeState.home-charts;
                 page-top: home-scroll.absolute-position.y; page-height: home-scroll.height;
-                chart-clicked(item) => { root.open-recommendation({id: item.id, title: item.title, desc: item.update, cover: item.cover}); }
+                chart-clicked(item) => { root.open-chart(item); }
             }
         }
     }

@@ -1,0 +1,21 @@
+import { SettingsState } from "../state/settings.slint";
+import { ModernSwitch } from "../components/common.slint";
+
+import { SettingGroupCard, SettingRowItem } from "controls.slint";
+
+export component DebugSettingsTab inherits VerticalLayout {
+    SettingGroupCard {
+        title: "调试";
+
+        SettingRowItem {
+            title: "歌词 debug";
+            description: "显示歌词同步调试面板并输出相关调试日志";
+            show-divider: false;
+
+            ModernSwitch {
+                y: 0px;
+                checked <=> SettingsState.setting-lyric-debug;
+            }
+        }
+    }
+}

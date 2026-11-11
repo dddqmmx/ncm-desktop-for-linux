@@ -1,0 +1,9 @@
+import { DownloadQualityItem } from "../models.slint";
+
+// Download dialog target and available quality choices.
+export global DownloadState {
+    in-out property <[DownloadQualityItem]> download-qualities;
+    in-out property <int> download-song-id: -1;
+    in-out property <string> download-song-name;
+    in-out property <bool> is-download-open: false;
+}

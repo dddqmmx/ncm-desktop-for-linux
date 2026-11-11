@@ -1,4 +1,4 @@
-use crate::{login_animation, AppState, AppWindow};
+use crate::{login_animation, AppWindow};
 use i_slint_backend_testing::{mock_elapsed_time, ElementHandle, ElementRoot};
 use serde_json::Value;
 use slint::{platform::PointerEventButton, ComponentHandle, Model, PhysicalSize};
@@ -22,26 +22,29 @@ fn login_flip_projects_contents_with_chromium_perspective_and_supports_interrupt
     login_animation::attach(&app).unwrap();
     app.window().set_size(PhysicalSize::new(1435, 1000));
     app.show().unwrap();
-    let state = app.global::<AppState>();
-    state.set_is_login_open(true);
+    let login_state = app.global::<crate::LoginState>();
+    login_state.set_is_login_open(true);
     mock_elapsed_time(Duration::from_secs(1));
     mock_elapsed_time(Duration::from_millis(20));
     let _ = app.root_element().size();
     let gt: Value =
         serde_json::from_str(include_str!("../tests/login-modal-ground-truth.json")).unwrap();
-    state.set_login_mode("qr".into());
+    login_state.set_login_mode("qr".into());
     mock_elapsed_time(Duration::ZERO);
     mock_elapsed_time(Duration::ZERO);
     assert!(
-        state.get_login_flip_ready(),
+        login_state.get_login_flip_ready(),
         "must project captured contents, never resize the layout"
     );
-    assert_ne!(state.get_login_front_frame(), state.get_login_back_frame());
-    let front = state.get_login_front_frame().to_rgba8().unwrap();
-    let back = state.get_login_back_frame().to_rgba8().unwrap();
+    assert_ne!(
+        login_state.get_login_front_frame(),
+        login_state.get_login_back_frame()
+    );
+    let front = login_state.get_login_front_frame().to_rgba8().unwrap();
+    let back = login_state.get_login_back_frame().to_rgba8().unwrap();
     for (model, frame) in [
-        (state.get_login_front_strips(), &front),
-        (state.get_login_back_strips(), &back),
+        (login_state.get_login_front_strips(), &front),
+        (login_state.get_login_back_strips(), &back),
     ] {
         assert_eq!(model.row_count(), 296);
         let uploaded_pixels: u32 = model
@@ -79,7 +82,7 @@ fn login_flip_projects_contents_with_chromium_perspective_and_supports_interrupt
     }
     for direction in ["samples", "reverse"] {
         if direction == "reverse" {
-            state.set_login_mode("form".into());
+            login_state.set_login_mode("form".into());
             mock_elapsed_time(Duration::ZERO);
             mock_elapsed_time(Duration::ZERO);
         }
@@ -152,9 +155,9 @@ fn login_flip_projects_contents_with_chromium_perspective_and_supports_interrupt
             }
         }
     }
-    state.set_login_mode("qr".into());
+    login_state.set_login_mode("qr".into());
     mock_elapsed_time(Duration::from_secs(1));
-    state.set_login_mode("form".into());
+    login_state.set_login_mode("form".into());
     mock_elapsed_time(Duration::from_millis(120));
     let before = strips(&app)[48].absolute_position();
     let button = ElementHandle::find_by_element_id(&app, "LoginModal::flip-switch-btn")
@@ -176,7 +179,7 @@ fn login_flip_projects_contents_with_chromium_perspective_and_supports_interrupt
             button: PointerEventButton::Left,
         });
     assert_eq!(
-        state.get_login_mode(),
+        login_state.get_login_mode(),
         "qr",
         "projected button must reverse in-flight rotation"
     );
@@ -188,11 +191,11 @@ fn login_flip_projects_contents_with_chromium_perspective_and_supports_interrupt
     );
     mock_elapsed_time(Duration::from_secs(1));
     assert!(strips(&app).is_empty());
-    state.set_is_login_open(false);
+    login_state.set_is_login_open(false);
     mock_elapsed_time(Duration::from_millis(350));
-    state.set_is_login_open(true);
+    login_state.set_is_login_open(true);
     mock_elapsed_time(Duration::from_millis(1));
-    assert_eq!(state.get_login_mode(), "form");
+    assert_eq!(login_state.get_login_mode(), "form");
     assert!(
         strips(&app).is_empty(),
         "reopening must not play the previous QR flip backwards"

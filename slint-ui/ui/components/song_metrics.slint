@@ -1,0 +1,15 @@
+import { FlowText } from "typography.slint";
+
+// Virtual lists need one stable row height. Measure the same single-line fonts
+// as the visible rows; the pool and the rows use this shared definition.
+export component SongMetrics inherits Rectangle {
+    visible: false;
+    width: 0px; height: 0px;
+    out property <length> row-height: Math.max(40px, title-line.height + artist-line.height) + 16px;
+    out property <length> row-step: root.row-height + 4px;
+    out property <length> header-height: Math.max(heading-line.height, time-line.height) + 28px + 1px;
+    title-line := FlowText { visible: false; text: "Ag"; font-size: 14px; font-weight: 500; }
+    artist-line := FlowText { visible: false; text: "Ag"; font-size: 12px; }
+    heading-line := FlowText { visible: false; text: "Ag"; font-size: 11px; font-weight: 700; }
+    time-line := FlowText { visible: false; text: "00:00"; font-size: 13px; }
+}

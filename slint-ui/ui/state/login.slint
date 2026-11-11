@@ -1,0 +1,72 @@
+import { RuntimeState } from "runtime.slint";
+import { AccountState } from "account.slint";
+
+// Login form, QR code and flip animation lifecycle.
+export global LoginState {
+    in-out property <bool> login-busy: false;
+    in-out property <bool> login-captcha-busy: false;
+    in-out property <int> login-captcha-seconds: 0;
+    in-out property <image> login-qr-image;
+    in-out property <bool> login-qr-ready: false;
+    in-out property <string> login-qr-message;
+    in-out property <image> login-front-frame;
+    in-out property <image> login-back-frame;
+    in-out property <[image]> login-front-strips;
+    in-out property <[image]> login-back-strips;
+    in-out property <bool> login-flip-ready: false;
+    in-out property <float> login-render-scale: 1;
+    in-out property <bool> is-login-open: false;
+    in-out property <string> login-mode: "form";
+    in-out property <string> login-tab: "password";
+    in-out property <bool> login-remember: false;
+    in-out property <string> login-country-code: "86";
+    in-out property <string> login-phone: "";
+    in-out property <string> login-sms-country-code: "86";
+    in-out property <string> login-sms-phone: "";
+    in-out property <string> login-password: "";
+    in-out property <string> login-code: "";
+    in-out property <string> login-error: "";
+
+    callback prepare-login-flip();
+
+    changed login-tab => { self.login-error = ""; }
+    changed login-mode => {
+        self.login-error = "";
+        if self.is-login-open { self.prepare-login-flip(); }
+        if RuntimeState.runtime-enabled && self.is-login-open { RuntimeState.runtime-action("login-mode", -1, self.login-mode); }
+    }
+    changed is-login-open => {
+        if self.is-login-open { self.reset-login(); }
+        else {
+            if RuntimeState.runtime-enabled { RuntimeState.runtime-action("close-login", -1, ""); }
+            self.login-password = "";
+            self.login-code = "";
+            self.login-captcha-seconds = 0;
+        }
+    }
+
+    public function reset-login() {
+        self.login-mode = "form";
+        self.login-tab = "password";
+        self.login-remember = false;
+        self.login-country-code = "86";
+        self.login-sms-country-code = "86";
+        self.login-phone = "";
+        self.login-sms-phone = "";
+        self.login-password = "";
+        self.login-code = "";
+        self.login-error = "";
+        self.login-busy = false;
+        self.login-captcha-busy = false;
+        self.login-captcha-seconds = 0;
+        self.login-qr-ready = false;
+        self.login-qr-message = "";
+        self.login-flip-ready = false;
+    }
+
+    public function submit-login() {
+        if self.login-busy { return; }
+        if RuntimeState.runtime-enabled { RuntimeState.runtime-action("login", -1, ""); }
+        else { AccountState.is-logged-in = true; self.is-login-open = false; }
+    }
+}

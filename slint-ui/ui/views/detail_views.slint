@@ -1,12 +1,240 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { NavigationState } from "../state/navigation.slint";
+import { AccountState } from "../state/account.slint";
+import { PlaylistState } from "../state/playlist.slint";
+import { DetailState } from "../state/detail.slint";
+import { SongMenuState } from "../state/song_menu.slint";
+import { FlowText, ClampedText } from "../components/typography.slint";
+import { MediaDetailActions } from "detail_actions.slint";
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
-import { AppState, TrackItem } from "../state.slint";
-import { AppIcon, RoundedCover } from "../components/common.slint";
+import { TrackItem } from "../models.slint";
+import { RoundedCover } from "../components/common.slint";
 import { SongList } from "../components/media.slint";
-import { PlaylistButton } from "../overlays/playlist_editor.slint";
 import { SkeletonBlock } from "../components/skeleton.slint";
 
 // 对应 MediaDetailLayout.vue 通用头部 + 列表布局
+component MediaDetailInfo inherits VerticalLayout {
+    function open-artist() {
+        if RuntimeState.runtime-enabled { RuntimeState.runtime-action("artist", -1, ""); } else { NavigationState.current-route = "artist"; }
+    }
+
+    in property <string> variant;
+    in property <[string]> meta;
+    in property <string> description;
+
+    spacing: 12px;
+    alignment: start;
+
+    // Creator slot (歌单创建者头像+昵称 或 专辑歌手名)
+    if root.variant == "playlist" : HorizontalLayout {
+        height: 28px;
+        spacing: 8px;
+        alignment: start;
+
+        RoundedCover {
+            width: 28px;
+            height: 28px;
+            radius: 14px;
+            source: PlaylistState.playlist-creator-avatar;
+        }
+
+        Text {
+            text: PlaylistState.playlist-creator;
+            font-size: 14px;
+            font-weight: 700;
+            color: Theme.sys-text;
+            vertical-alignment: center;
+        }
+    }
+
+    if root.variant == "album" : HorizontalLayout {
+        height: 22px;
+        alignment: start;
+        Rectangle {
+            height: 22px;
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.open-artist(); }
+            }
+            Text {
+                text: DetailState.album-artist;
+                font-size: 14px;
+                font-weight: 700;
+                color: Theme.sys-text;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    // .stats-row (gap 8px, dot 4x4)
+    HorizontalLayout {
+        height: self.preferred-height;
+        spacing: 8px;
+        alignment: start;
+
+        for m[idx] in root.meta : HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+
+            FlowText {
+                text: m;
+                font-size: 14px;
+                font-weight: 500;
+                color: Theme.sys-text-secondary;
+                vertical-alignment: center;
+            }
+
+            if idx < root.meta.length - 1 : Rectangle {
+                width: 4px;
+                height: 4px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 2px;
+                background: Theme.sys-text-disabled;
+            }
+        }
+    }
+
+    if root.description != "" : FlowText {
+        width: root.width * 0.9;
+        text: root.description;
+        font-size: 14px;
+        color: Theme.sys-text-secondary;
+        wrap: word-wrap;
+        max-lines: 2;
+        overflow: elide;
+    }
+}
+
+component MediaDetailHeader inherits Rectangle {
+    in property <string> variant;
+    in property <string> title;
+    in property <string> description;
+    in property <[string]> meta;
+    in property <image> cover;
+    in property <string> search-placeholder;
+    in property <[TrackItem]> songs;
+    in property <bool> loading;
+    in property <bool> metadata-loading;
+    in property <string> load-error;
+    in property <bool> force-search-focus;
+    property <bool> stacked: root.width < 720px;
+    property <length> details-width: root.width - (root.stacked ? 0px : 320px);
+    property <length> header-height: root.stacked
+        ? detail-cover-wrapper.height + 40px + details.height
+        : Math.max(detail-cover-wrapper.height, details.height);
+
+    height: root.header-height;
+
+    // 左侧 280x280 封面 (.cover-wrapper: x=316, y=40, width=280, height=280, border-radius 12px)
+    detail-cover-wrapper := RoundedCover {
+        x: 0px;
+        y: 0px;
+        width: root.stacked ? 200px : 280px;
+        height: self.width;
+        radius: 12px;
+        source: root.cover;
+        is-local-fallback: root.variant == "local";
+        fallback-icon-size: 112px;
+        drop-shadow-blur: 44px;
+        drop-shadow-offset-y: 18px;
+        drop-shadow-color: Theme.sys-shadow-elevated;
+    }
+
+    if root.variant == "playlist" && root.cover.width == 0 : SkeletonBlock {
+        animated: root.load-error == "";
+        x: detail-cover-wrapper.x;
+        y: detail-cover-wrapper.y;
+        width: detail-cover-wrapper.width;
+        height: detail-cover-wrapper.height;
+        border-radius: 12px;
+    }
+
+    // 右侧详情与底部操作栏 (.playlist-details: x = 280 + 40 = 320px -> window x=636, width=749, height=280)
+    details := Rectangle {
+        x: root.stacked ? 0px : detail-cover-wrapper.width + 40px;
+        y: root.stacked ? detail-cover-wrapper.height + 40px : 0px;
+        width: root.details-width;
+        height: Math.max(root.stacked ? 0px : detail-cover-wrapper.height,
+            detail-title.y + detail-title.height + 12px + info.preferred-height + 24px + detail-action-bar.height);
+        detail-title := Rectangle {
+            x: 0px;
+            y: 4px;
+            width: 100%;
+            height: title-text.height;
+            clip: true;
+
+            title-text := ClampedText {
+                width: root.details-width;
+                line-height: 1.2;
+                text: root.title == "" && root.load-error != "" ? "歌单" : root.title;
+                font-size: 42px;
+                font-weight: 800;
+                text-color: Theme.sys-text;
+                max-lines: 2;
+            }
+            if root.metadata-loading && root.title == "" : SkeletonBlock {
+                width: parent.width * 0.75;
+                height: 38px;
+                y: (parent.height - self.height) / 2;
+            }
+        }
+        info := MediaDetailInfo {
+            visible: !root.metadata-loading;
+            x: 0px;
+            y: detail-title.y + detail-title.height + 12px;
+            width: 100%;
+            variant: root.variant;
+            meta: root.meta;
+            description: root.description;
+        }
+
+        if root.metadata-loading : VerticalLayout {
+            x: 0px;
+            y: detail-title.y + detail-title.height + 12px;
+            width: 100%;
+            spacing: 12px;
+            alignment: start;
+            HorizontalLayout {
+                height: 28px;
+                spacing: 8px;
+                alignment: start;
+                SkeletonBlock { width: 28px; height: 28px; border-radius: 14px; }
+                SkeletonBlock { width: 120px; height: 14px; y: 7px; }
+            }
+            SkeletonBlock { width: 200px; height: 16px; }
+            Rectangle { height: 8px; }
+            SkeletonBlock { width: parent.width * 0.9; height: 14px; }
+            SkeletonBlock { width: parent.width * 0.6; height: 14px; }
+        }
+
+        if root.metadata-loading : HorizontalLayout {
+            x: 0px;
+            y: parent.height - detail-action-bar.height;
+            height: 44px;
+            spacing: 10px;
+            alignment: start;
+            SkeletonBlock { width: 144px; height: 44px; border-radius: 22px; }
+            SkeletonBlock { width: 120px; height: 44px; border-radius: 22px; }
+        }
+
+        // 底部操作栏 (.action-bar: y = 280 - 44 = 236px -> window y=276, height 44px, gap 16px)
+        detail-action-bar := MediaDetailActions {
+            visible: !root.metadata-loading;
+            x: 0px;
+            y: parent.height - detail-action-bar.height;
+            width: parent.width;
+
+            variant: root.variant;
+            songs: root.songs;
+            force-search-focus: root.force-search-focus;
+            loading: root.loading;
+            load-error: root.load-error;
+            search-placeholder: root.search-placeholder;
+        }
+    }
+}
+
 export component MediaDetailView inherits Rectangle {
     in property <string> variant: "playlist"; // "playlist" | "album" | "favorites" | "local"
     in property <string> title;
@@ -22,7 +250,7 @@ export component MediaDetailView inherits Rectangle {
 
     width: 100%;
     height: 100%;
-    property <int> playlist-id: AppState.active-playlist-id;
+    property <int> playlist-id: PlaylistState.active-playlist-id;
     changed playlist-id => { if root.variant == "playlist" { detail-scroll.content-y = 0px; } }
     changed loading => { if root.loading { detail-scroll.content-y = 0px; } }
 
@@ -30,507 +258,55 @@ export component MediaDetailView inherits Rectangle {
     property <length> avail-w: root.width - 10px;
     property <length> container-w: Math.min(self.avail-w, 1200px);
     property <length> container-x: (self.avail-w - self.container-w) / 2;
-    property <bool> stacked: root.variant == "playlist" && AppState.window-width <= 900px;
-    property <length> details-width: root.container-w - 80px - (root.stacked ? 0px : 320px);
-    property <bool> wrap-playlist-actions: root.variant == "playlist" && AppState.playlist-can-manage && root.details-width < 438.33px;
-    property <length> action-height: root.wrap-playlist-actions ? 98px : 44px;
-    property <length> title-height: root.stacked && title-measure.preferred-height > 60px ? 100.78px : 50.39px;
-    property <length> description-height: root.metadata-loading ? 44.78px : root.description == "" ? 0px : description-measure.preferred-height > 28px ? 44.78px : 22.39px;
-    property <length> stacked-details-height: 4px + root.title-height + 12px + 28px + 12px + 22.39px
-        + (root.description == "" && !root.metadata-loading ? 0px : 20px + root.description-height) + 24px + root.action-height;
-    property <length> header-height: root.stacked ? 240px + root.stacked-details-height : 280px;
-    title-measure := Text {
-        visible: false; width: root.details-width; text: root.title;
-        font-size: 42px; font-weight: 800; wrap: word-wrap;
-    }
-    description-measure := Text {
-        visible: false; width: root.details-width * 0.9; text: root.description;
-        font-size: 14px; wrap: word-wrap;
-    }
 
     detail-scroll := Flickable {
         width: 100%;
         height: 100%;
         content-width: root.width;
         content-height: detail-container.height;
+        changed content-y => {
+            SongMenuState.close-menu();
+            PlaylistState.is-playlist-actions-open = false;
+        }
         changed content-height => { self.content-y = Math.max(Math.min(0px, self.height - self.content-height), Math.min(0px, self.content-y)); }
 
         detail-container := Rectangle {
             x: root.container-x;
             y: 0px;
             width: root.container-w;
-            height: 40px + root.header-height + 48px + song-list.preferred-height + 120px;
+            height: 40px + detail-header.height + 48px + song-list.preferred-height + 120px;
 
             // .playlist-header (x = +40px -> window x=316, y=40, width=1069, height=280, gap=40px)
-            detail-header := Rectangle {
+            detail-header := MediaDetailHeader {
                 x: 40px;
                 y: 40px;
                 width: parent.width - 80px;
-                height: root.header-height;
-
-                // 左侧 280x280 封面 (.cover-wrapper: x=316, y=40, width=280, height=280, border-radius 12px)
-                detail-cover-wrapper := RoundedCover {
-                    x: 0px;
-                    y: 0px;
-                    width: root.stacked ? 200px : 280px;
-                    height: self.width;
-                    radius: root.variant == "local" ? 0px : 12px;
-                    source: root.cover;
-                    is-local-fallback: root.variant == "local";
-                    fallback-icon-size: 112px;
-                    drop-shadow-blur: 44px;
-                    drop-shadow-offset-y: 18px;
-                    drop-shadow-color: Theme.sys-shadow-elevated;
-                }
-
-                if root.variant == "playlist" && root.cover.width == 0 : SkeletonBlock {
-                    animated: root.load-error == "";
-                    x: detail-cover-wrapper.x;
-                    y: detail-cover-wrapper.y;
-                    width: detail-cover-wrapper.width;
-                    height: detail-cover-wrapper.height;
-                    border-radius: 12px;
-                }
-
-                // 右侧详情与底部操作栏 (.playlist-details: x = 280 + 40 = 320px -> window x=636, width=749, height=280)
-                Rectangle {
-                    x: root.stacked ? 0px : 320px;
-                    y: root.stacked ? 240px : 0px;
-                    width: root.details-width;
-                    height: root.stacked ? root.stacked-details-height : 280px;
-
-                    // .playlist-title (x=636, y=44, width=749, height=50.39, font-size 42px, weight 800)
-                    detail-title := Rectangle {
-                        x: 0px;
-                        y: 4px;
-                        width: 100%;
-                        height: root.title-height;
-                        clip: true;
-
-                        Text {
-                            width: 100%;
-                            height: 100%;
-                            text: root.title == "" && root.load-error != "" ? "歌单" : root.title;
-                            font-size: 42px;
-                            font-weight: 800;
-                            color: Theme.sys-text;
-                            vertical-alignment: center;
-                            overflow: root.stacked ? clip : elide;
-                            wrap: root.stacked ? word-wrap : no-wrap;
-                        }
-                        if root.metadata-loading && root.title == "" : SkeletonBlock {
-                            width: parent.width * 0.75;
-                            height: 38px;
-                            y: (parent.height - self.height) / 2;
-                        }
-                    }
-
-                    // 信息区 (.info-group 下半部分: y = 4 + 50.39 + 12 = 66.39px)
-                    VerticalLayout {
-                        visible: !root.metadata-loading;
-                        x: 0px;
-                        y: 4px + root.title-height + 12px;
-                        width: 100%;
-                        spacing: 12px;
-                        alignment: start;
-
-                        // Creator slot (歌单创建者头像+昵称 或 专辑歌手名)
-                        if root.variant == "playlist" : HorizontalLayout {
-                            height: 28px;
-                            spacing: 8px;
-                            alignment: start;
-
-                            RoundedCover {
-                                width: 28px;
-                                height: 28px;
-                                radius: 14px;
-                                source: AppState.playlist-creator-avatar;
-                            }
-
-                            Text {
-                                text: AppState.playlist-creator;
-                                font-size: 14px;
-                                font-weight: 700;
-                                color: Theme.sys-text;
-                                vertical-alignment: center;
-                            }
-                        }
-
-                        if root.variant == "album" : HorizontalLayout {
-                            height: 22px;
-                            alignment: start;
-                            Rectangle {
-                                height: 22px;
-                                TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { if AppState.runtime-enabled { AppState.runtime-action("artist", -1, ""); } else { AppState.current-route = "artist"; } }
-                                }
-                                Text {
-                                    text: AppState.album-artist;
-                                    font-size: 14px;
-                                    font-weight: 700;
-                                    color: Theme.sys-text;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
-
-                        // .stats-row (gap 8px, dot 4x4)
-                        HorizontalLayout {
-                            height: root.stacked ? 22.39px : 22px;
-                            spacing: 8px;
-                            alignment: start;
-
-                            for m[idx] in root.meta : HorizontalLayout {
-                                spacing: 8px;
-                                alignment: start;
-
-                                Text {
-                                    text: m;
-                                    font-size: 14px;
-                                    font-weight: 500;
-                                    color: Theme.sys-text-secondary;
-                                    vertical-alignment: center;
-                                }
-
-                                if idx < root.meta.length - 1 : Rectangle {
-                                    width: 4px;
-                                    height: 4px;
-                                    y: (parent.height - self.height) / 2;
-                                    border-radius: 2px;
-                                    background: Theme.sys-text-disabled;
-                                }
-                            }
-                        }
-
-                        // .playlist-description (font-size 14px, line-height 1.6)
-                        if root.description != "" && !root.stacked : Text {
-                            width: parent.width * 0.9;
-                            text: root.description;
-                            font-size: 14px;
-                            color: Theme.sys-text-secondary;
-                            wrap: word-wrap;
-                        }
-                        if root.description != "" && root.stacked : Rectangle {
-                            height: 8px + root.description-height;
-                            Text {
-                                x: 0px; y: 8px; width: parent.width * 0.9; height: root.description-height;
-                                text: root.description; font-size: 14px; color: Theme.sys-text-secondary;
-                                wrap: word-wrap; overflow: clip;
-                            }
-                        }
-                    }
-
-                    if root.metadata-loading : VerticalLayout {
-                        x: 0px;
-                        y: 4px + root.title-height + 12px;
-                        width: 100%;
-                        spacing: 12px;
-                        alignment: start;
-                        HorizontalLayout {
-                            height: 28px;
-                            spacing: 8px;
-                            alignment: start;
-                            SkeletonBlock { width: 28px; height: 28px; border-radius: 14px; }
-                            SkeletonBlock { width: 120px; height: 14px; y: 7px; }
-                        }
-                        SkeletonBlock { width: 200px; height: 16px; }
-                        Rectangle { height: 8px; }
-                        SkeletonBlock { width: parent.width * 0.9; height: 14px; }
-                        SkeletonBlock { width: parent.width * 0.6; height: 14px; }
-                    }
-
-                    if root.metadata-loading : HorizontalLayout {
-                        x: 0px;
-                        y: parent.height - root.action-height;
-                        height: 44px;
-                        spacing: 10px;
-                        alignment: start;
-                        SkeletonBlock { width: 144px; height: 44px; border-radius: 22px; }
-                        SkeletonBlock { width: 120px; height: 44px; border-radius: 22px; }
-                    }
-
-                    // 底部操作栏 (.action-bar: y = 280 - 44 = 236px -> window y=276, height 44px, gap 16px)
-                    detail-action-bar := Rectangle {
-                        visible: !root.metadata-loading;
-                        x: 0px;
-                        y: parent.height - root.action-height;
-                        width: parent.width;
-                        height: root.action-height;
-
-                        // .play-main-btn (x=636, y=276, width=144.02, height=44, border-radius 100px, transition transform 0.2s, background 0.2s)
-                        detail-play-main-btn := Rectangle {
-                            x: 0px; y: 0px;
-                            width: 144.02px;
-                            height: 44px;
-                            border-radius: 22px;
-                            background: play-all-ta.has-hover ? Theme.theme-color-strong : Theme.theme-color;
-                            opacity: root.songs.length > 0 ? 1 : 0.45;
-                            animate background { duration: 200ms; easing: ease; }
-
-                            play-all-ta := TouchArea {
-                                enabled: root.songs.length > 0;
-                                mouse-cursor: pointer;
-                                clicked => {
-                                    if (root.songs.length > 0) {
-                                        AppState.play-song(
-                                            root.songs[0].id,
-                                            root.songs[0].name,
-                                            root.songs[0].artist,
-                                            root.songs[0].cover,
-                                            root.songs[0].is-local,
-                                            root.songs[0].has-cover
-                                        );
-                                    }
-                                }
-                            }
-
-                            HorizontalLayout {
-                                alignment: center;
-                                spacing: 8px;
-
-                                AppIcon {
-                                    y: (parent.height - self.height) / 2;
-                                    source: Icons.play;
-                                    icon-size: 20px;
-                                    tint: #ffffff;
-                                }
-
-                                Text {
-                                    text: "播放全部";
-                                    font-size: 15px;
-                                    font-weight: 700;
-                                    color: #ffffff;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
-
-                        // .search-box-container (x=796.02, y=276, width 220px / focus 260px, height 44px, border-radius 100px, transition all 0.3s ease)
-                        detail-search-box := Rectangle {
-                            x: detail-play-main-btn.width + (root.variant == "playlist" ? 10px : 16px);
-                            y: 0px;
-                            property <bool> is-focused: detail-search-input.has-focus || root.force-search-focus;
-                            width: root.variant == "playlist"
-                                ? Math.clamp(root.details-width - 234.33px - (AppState.playlist-can-manage && !root.wrap-playlist-actions ? 54px : 0px), 120px, 240px)
-                                : self.is-focused ? 260px : 220px;
-                            height: 44px;
-                            border-radius: 22px;
-                            background: self.is-focused ? Theme.sys-control-hover : Theme.sys-control;
-                            animate width, background { duration: 300ms; easing: ease; }
-
-                            AppIcon {
-                                x: 16px;
-                                y: 14px;
-                                source: Icons.search-alt;
-                                icon-size: 16px;
-                                tint: Theme.sys-text-tertiary;
-                            }
-
-                            detail-search-input := TextInput {
-                                enabled: !root.loading && root.load-error == "";
-                                x: 40px;
-                                y: 0px;
-                                width: parent.width - 72px;
-                                height: 44px;
-                                text <=> AppState.detail-search-query;
-                                font-size: 13px;
-                                color: Theme.sys-text;
-                                vertical-alignment: center;
-                                single-line: true;
-                            }
-
-                            if AppState.detail-search-query == "" && !detail-search-box.is-focused : Text {
-                                x: 40px;
-                                y: 0px;
-                                height: 44px;
-                                text: root.search-placeholder;
-                                font-size: 13px;
-                                color: Theme.sys-text-tertiary;
-                                vertical-alignment: center;
-                            }
-
-                            if AppState.detail-search-query != "" : Rectangle {
-                                x: parent.width - 32px;
-                                y: 11px;
-                                width: 22px;
-                                height: 22px;
-
-                                TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { AppState.detail-search-query = ""; }
-                                }
-
-                                AppIcon {
-                                    x: 4px;
-                                    y: 4px;
-                                    source: Icons.close;
-                                    icon-size: 14px;
-                                    tint: Theme.sys-text-tertiary;
-                                }
-                            }
-                        }
-
-                        // PlaylistView 收藏数按钮 (.secondary-btn: x=1032.02, y=279, width=96.31, height=38, border-radius 100px)
-                        if root.variant == "playlist" : detail-secondary-btn := Rectangle {
-                            x: detail-search-box.x + detail-search-box.width + 10px;
-                            width: 70.31px;
-                            height: 44px;
-                            y: 0px;
-                            border-radius: 19px;
-                            background: transparent;
-
-                            HorizontalLayout {
-                                alignment: center;
-                                spacing: 6px;
-
-                                AppIcon {
-                                    y: (parent.height - self.height) / 2;
-                                    source: Icons.heart;
-                                    icon-size: 18px;
-                                    tint: Theme.sys-text-secondary;
-                                }
-
-                                Text {
-                                    text: AppState.playlist-subscribed-count;
-                                    font-size: 13px;
-                                    font-weight: 600;
-                                    color: Theme.sys-text-secondary;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
-
-                        // LocalMusicView 导入音乐 (x=1032.02, y=276, width=113.02, height=44) + 清空本地曲库按钮 (x=1161.03, y=278, width=40, height=40)
-                        if root.variant == "local" : HorizontalLayout {
-                            x: detail-search-box.x + detail-search-box.width + 16px;
-                            y: 0px;
-                            height: 44px;
-                            width: 113.02px + (root.songs.length > 0 ? 56px : 0px);
-                            spacing: 16px;
-
-                            local-import-btn := Rectangle {
-                                width: 113.02px;
-                                height: 44px;
-                                border-radius: 22px;
-                                background: imp-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
-                                border-width: 1px;
-                                border-color: Theme.sys-border;
-                                animate background { duration: 200ms; easing: ease; }
-
-                                imp-ta := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => {
-                                        if AppState.runtime-enabled { AppState.runtime-action("local", -1, "add"); } else { AppState.local-description = "已导入 2 首，已跳过 0 个"; }
-                                    }
-                                }
-
-                                HorizontalLayout {
-                                    alignment: center;
-                                    spacing: 7px;
-
-                                    AppIcon {
-                                        y: (parent.height - self.height) / 2;
-                                        source: Icons.download;
-                                        icon-size: 18px;
-                                        tint: imp-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
-                                    }
-
-                                    Text {
-                                        text: "导入音乐";
-                                        font-size: 13px;
-                                        font-weight: 600;
-                                        color: imp-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                            }
-
-                            if root.songs.length > 0 : local-clear-btn := Rectangle {
-                                width: 40px;
-                                height: 40px;
-                                y: (parent.height - self.height) / 2;
-                                border-radius: 20px;
-                                background: clr-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
-                                animate background { duration: 200ms; easing: ease; }
-
-                                clr-ta := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => {
-                                        AppState.dialog-title = "清空本地音乐";
-                                        AppState.dialog-message = "将所有歌曲移出应用曲库，但不会删除磁盘上的音乐文件。";
-                                        AppState.dialog-confirm-text = "清空";
-                                        AppState.dialog-cancel-text = "取消";
-                                        AppState.is-dialog-open = true;
-                                    }
-                                }
-
-                                AppIcon {
-                                    x: 11px;
-                                    y: 11px;
-                                    source: Icons.trash-outline;
-                                    icon-size: 18px;
-                                    tint: clr-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
-                                }
-                            }
-                        }
-
-                        // 更多按钮 (非 local 显示: x=1144.33, y=276, width=44, height=44)
-                        if root.variant != "local" && root.variant != "playlist" : detail-more-btn := Rectangle {
-                            x: detail-search-box.x + detail-search-box.width + 16px;
-                            y: 0px;
-                            width: 44px;
-                            height: 44px;
-                            border-radius: 22px;
-                            background: more-top-ta.has-hover ? Theme.sys-control-hover : transparent;
-                            animate background { duration: 200ms; easing: ease; }
-
-                            more-top-ta := TouchArea { mouse-cursor: pointer; }
-
-                            AppIcon {
-                                x: 12px;
-                                y: 12px;
-                                source: Icons.more;
-                                icon-size: 20px;
-                                tint: more-top-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
-                            }
-                        }
-                        if root.variant == "playlist" && AppState.playlist-can-manage : playlist-actions-trigger := PlaylistButton {
-                            x: root.wrap-playlist-actions ? 0px : detail-search-box.x + detail-search-box.width + 90.31px;
-                            y: root.wrap-playlist-actions ? 54px : 0px;
-                            width: 44px; height: 44px; border-radius: 22px;
-                            border-width: 1px; border-color: Theme.sys-border;
-                            icon: Icons.more; icon-size: 20px; label: "歌单操作";
-                            property <int> restore-focus: AppState.playlist-restore-focus;
-                            changed restore-focus => {
-                                if self.restore-focus == 2 {
-                                    if AppState.playlist-editor-mode == "" && !AppState.is-dialog-open { self.focus(); }
-                                    AppState.playlist-restore-focus = 0;
-                                }
-                            }
-                            clicked => {
-                                AppState.playlist-actions-x = self.absolute-position.x + self.width - 176px;
-                                AppState.playlist-actions-y = self.absolute-position.y + self.height + 8px;
-                                AppState.is-playlist-actions-open = !AppState.is-playlist-actions-open;
-                            }
-                        }
-                    }
-                }
+                variant: root.variant;
+                title: root.title;
+                description: root.description;
+                meta: root.meta;
+                cover: root.cover;
+                search-placeholder: root.search-placeholder;
+                songs: root.songs;
+                loading: root.loading;
+                metadata-loading: root.metadata-loading;
+                load-error: root.load-error;
+                force-search-focus: root.force-search-focus;
             }
 
             // 歌曲列表组件 (x=316, y = 40 + 280 + 48 = 368px, width=1069)
             song-list := SongList {
                 x: 40px;
-                y: 40px + root.header-height + 48px;
+                y: 40px + detail-header.height + 48px;
                 width: parent.width - 80px;
                 songs: root.songs;
                 loading: root.loading;
                 load-error: root.load-error;
-                retry => { AppState.open-playlist(AppState.active-playlist-id); }
+                retry => { PlaylistState.open-playlist(PlaylistState.active-playlist-id); }
                 viewport-top: detail-scroll.absolute-position.y - self.absolute-position.y;
                 viewport-height: detail-scroll.height;
                 is-local-variant: root.variant == "local";
-                show-remove-from-playlist: root.variant == "playlist" && AppState.playlist-owned && AppState.is-logged-in;
+                show-remove-from-playlist: root.variant == "playlist" && PlaylistState.playlist-owned && AccountState.is-logged-in;
             }
         }
     }

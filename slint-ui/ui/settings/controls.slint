@@ -1,0 +1,169 @@
+import { MeasuredText } from "../components/typography.slint";
+import { Theme } from "../theme.slint";
+import { AppIcon } from "../components/common.slint";
+
+// CSS uses a 1.6 line height. Measure an unscaled font separately: querying
+// this Text's own metrics from line-height-factor would create a binding loop.
+export component SettingsText inherits MeasuredText { }
+
+export component SettingsNavBtn inherits Rectangle {
+    in property <string> tab-id;
+    in property <string> label;
+    in property <image> icon;
+    in property <bool> active: false;
+    callback clicked();
+
+    height: 44px;
+    border-radius: 10px;
+    background: (!root.active && ta.has-hover) ? Theme.sys-control : transparent;
+    animate background { duration: 200ms; easing: ease; }
+
+    // 选中时图标弹性放大 1.15 倍 (SettingsSidebar.vue:158 transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1))
+    property <length> icon-dim: 18px * (root.active ? 1.15 : 1);
+    animate icon-dim { duration: 300ms; easing: cubic-bezier(0.34, 1.56, 0.64, 1.0); }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+
+        Rectangle {
+            width: 18px;
+            height: 18px;
+            y: (parent.height - self.height) / 2;
+
+            settings-nav-icon := AppIcon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                source: root.icon;
+                icon-size: root.icon-dim;
+                tint: root.active
+                    ? Theme.theme-color-strong
+                    : (ta.has-hover ? Theme.sys-text-secondary : Theme.sys-text-tertiary);
+            }
+        }
+
+        SettingsText {
+            text: root.label;
+            font-size: 14px;
+            font-weight: 600;
+            color: root.active
+                ? Theme.theme-color-strong
+                : (ta.has-hover ? Theme.sys-text-secondary : Theme.sys-text-tertiary);
+            vertical-alignment: center;
+            animate color { duration: 200ms; easing: ease; }
+        }
+    }
+}
+
+export component SettingGroupCard inherits VerticalLayout {
+    in property <string> title;
+    in property <string> tip: "";
+    in property <bool> no-card: false;
+
+    spacing: 0px;
+    padding-bottom: 32px;
+
+    if root.title != "" : VerticalLayout {
+        padding-left: 4px;
+        padding-bottom: 12px;
+        Rectangle {
+            height: group-title.preferred-height;
+            group-title := SettingsText {
+                width: 100%;
+                height: 100%;
+                text: root.title;
+                font-size: 12px;
+                font-weight: 700;
+                color: Theme.sys-text-tertiary;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    control-card-box := Rectangle {
+        border-radius: root.no-card ? 0px : 20px;
+        background: root.no-card ? transparent : Theme.sys-surface;
+        border-width: root.no-card ? 0px : 1px;
+        border-color: root.no-card ? transparent : Theme.sys-border;
+
+        VerticalLayout {
+            padding-top: root.no-card ? 0px : 9px;
+            padding-bottom: root.no-card ? 0px : 9px;
+            padding-left: root.no-card ? 0px : 21px;
+            padding-right: root.no-card ? 0px : 21px;
+            @children
+        }
+    }
+
+    if root.tip != "" : VerticalLayout {
+        padding-top: 10px;
+        padding-left: 4px;
+        SettingsText {
+            text: root.tip;
+            font-size: 11px;
+            color: Theme.sys-text-tertiary;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// Measure the text at its available width, then size the row from both columns.
+// Each action owns its real width; a switch must not reserve a 280px column.
+export component SettingRowItem inherits VerticalLayout {
+    in property <string> title;
+    in property <string> description: "";
+    in property <bool> show-divider: true;
+    in property <length> action-width: 44px;
+    in property <length> action-height: 24px;
+
+    spacing: 0px;
+    control-row-box := Rectangle {
+        height: row-layout.preferred-height + (root.show-divider ? 1px : 0px);
+        row-layout := HorizontalLayout {
+            width: 100%;
+            height: parent.height - (root.show-divider ? 1px : 0px);
+            padding-top: 16px;
+            padding-bottom: 16px;
+            spacing: 16px;
+            cross-axis-alignment: center;
+            row-info := VerticalLayout {
+                horizontal-stretch: 1;
+                min-width: 0px;
+                spacing: 2px;
+                row-title := SettingsText {
+                    text: root.title;
+                    font-size: 15px;
+                    font-weight: 600;
+                    color: Theme.sys-text;
+                    wrap: word-wrap;
+                }
+                if root.description != "" : row-description := SettingsText {
+                    text: root.description;
+                    font-size: 12px;
+                    color: Theme.sys-text-tertiary;
+                    wrap: word-wrap;
+                }
+            }
+            row-actions := Rectangle {
+                width: root.action-width;
+                height: Math.max(root.action-height, actions.preferred-height);
+                actions := HorizontalLayout {
+                    alignment: end;
+                    @children
+                }
+            }
+        }
+        if root.show-divider : Rectangle {
+            y: parent.height - self.height;
+            width: 100%;
+            height: 1px;
+            background: Theme.sys-border;
+        }
+    }
+}

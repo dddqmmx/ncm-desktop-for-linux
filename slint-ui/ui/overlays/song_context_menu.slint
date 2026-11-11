@@ -1,0 +1,230 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { AccountState } from "../state/account.slint";
+import { PlayerState } from "../state/player.slint";
+import { QueueState } from "../state/queue.slint";
+import { SongMenuState } from "../state/song_menu.slint";
+import { PlaylistState } from "../state/playlist.slint";
+import { MeasuredText } from "../components/typography.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { NavPlaylistItem } from "../models.slint";
+import { RoundedCover } from "../components/common.slint";
+import { MenuItem } from "../components/menu_item.slint";
+import { VirtualRows } from "../components/virtual_rows.slint";
+
+component SongMenuRemoveAction inherits VerticalLayout {
+    in property <length> item-height;
+    spacing: 0px;
+
+    Rectangle { height: 4px; }
+    Rectangle {
+        x: 10px;
+        width: parent.width - 20px;
+        height: 1px;
+        background: Theme.sys-border;
+    }
+    Rectangle { height: 4px; }
+
+    context-menu-item-remove := MenuItem {
+        width: 100%;
+        height: root.item-height;
+        label: "从歌单删除";
+        icon: Icons.trash-outline;
+        danger: true;
+        clicked => {
+            if RuntimeState.runtime-enabled { RuntimeState.runtime-action("remove-track", SongMenuState.open-menu-song-id, ""); }
+            SongMenuState.close-menu();
+        }
+    }
+}
+
+component SongMenuPlaylistList inherits Flickable {
+
+    content-width: self.width;
+    content-height: submenu-rows.height + 4px;
+    submenu-rows := VirtualRows {
+        y: 2px;
+        width: parent.width;
+        row-count: PlaylistState.created-playlists.length;
+        row-height: 40px;
+        viewport-top: -root.content-y - 2px;
+        viewport-height: root.height;
+        for offset in submenu-rows.slot-count : Rectangle {
+            property <int> target-index: submenu-rows.row-index(offset);
+            property <int> item-index: -1;
+            init => { self.item-index = self.target-index; }
+            changed target-index => { self.item-index = self.target-index; }
+            visible: item-index < submenu-rows.end-row;
+            property <NavPlaylistItem> pl: PlaylistState.created-playlists[item-index];
+            y: (item-index) * submenu-rows.row-height;
+            width: parent.width;
+            height: 40px;
+            border-radius: 8px;
+            background: sub-ta.has-hover ? Theme.sys-control : transparent;
+            animate background { duration: 150ms; easing: ease; }
+
+            sub-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    SongMenuState.add-song-to-playlist(pl.id, SongMenuState.open-menu-song-id);
+                    SongMenuState.close-menu();
+                }
+            }
+
+            HorizontalLayout {
+                padding-left: 32px;
+                padding-right: 10px;
+                spacing: 8px;
+                cross-axis-alignment: center;
+
+                playlist-cover := RoundedCover {
+                    width: 28px;
+                    height: 28px;
+                    radius: 6px;
+                    source: pl.cover;
+                    cover-id: pl.id;
+                }
+
+                playlist-name := MeasuredText {
+                    min-width: 0px;
+                    horizontal-stretch: 1;
+                    text: pl.name;
+                    font-size: 12px;
+                    color: Theme.sys-text-secondary;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                playlist-count := MeasuredText {
+                    horizontal-stretch: 0;
+                    text: pl.track-count + "首";
+                    font-size: 11px;
+                    color: Theme.sys-text-disabled;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+component SongMenuAccountActions inherits VerticalLayout {
+    in property <length> item-height;
+    in property <length> submenu-height;
+    spacing: 0px;
+
+    if RuntimeState.runtime-enabled : context-menu-item-download := MenuItem {
+        height: root.item-height;
+        width: 100%;
+        label: "下载歌曲";
+        icon: Icons.download;
+        clicked => {
+            RuntimeState.runtime-action("download", SongMenuState.open-menu-song-id, "");
+            SongMenuState.close-menu();
+        }
+    }
+
+    context-menu-item-add := MenuItem {
+        width: 100%;
+        height: root.item-height;
+        label: "添加到歌单";
+        icon: Icons.plus;
+        trailing-icon: SongMenuState.open-menu-submenu ? Icons.chevron-down : Icons.chevron-right;
+        selected: SongMenuState.open-menu-submenu;
+        clicked => {
+            SongMenuState.open-menu-submenu = !SongMenuState.open-menu-submenu;
+        }
+    }
+
+    if SongMenuState.open-menu-submenu : submenu-scroll := SongMenuPlaylistList {
+        height: root.submenu-height;
+    }
+
+    if SongMenuState.open-menu-show-remove : SongMenuRemoveAction {
+        item-height: root.item-height;
+    }
+}
+
+export component SongContextMenuOverlay inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+
+    property <length> edge-margin: 8px;
+    property <length> anchor-gap: 8px;
+    property <length> item-height: context-menu-item-next.preferred-height;
+    property <length> base-height: 14px + root.item-height + (AccountState.is-logged-in
+        ? root.item-height + (RuntimeState.runtime-enabled ? root.item-height : 0px) + (SongMenuState.open-menu-show-remove ? root.item-height + 9px : 0px)
+        : 40px);
+    property <length> submenu-height: AccountState.is-logged-in && SongMenuState.open-menu-submenu
+        ? Math.min(PlaylistState.created-playlists.length * 40px + 4px, 244px,
+        Math.max(0px, root.height - 2 * root.edge-margin - root.base-height)) : 0px;
+    property <length> anchor-top: SongMenuState.open-menu-anchor-top - root.absolute-position.y;
+    property <length> anchor-bottom: SongMenuState.open-menu-anchor-bottom - root.absolute-position.y;
+
+    TouchArea {
+        clicked => {
+            SongMenuState.close-menu();
+        }
+        scroll-event(event) => {
+            SongMenuState.close-menu();
+            return reject;
+        }
+    }
+
+    context-menu-card := Rectangle {
+        width: Math.min(220px, root.width - 2 * root.edge-margin);
+        height: root.base-height + root.submenu-height;
+        x: Math.clamp(SongMenuState.open-menu-anchor-right - root.absolute-position.x - self.width,
+            root.edge-margin, Math.max(root.edge-margin, root.width - self.width - root.edge-margin));
+        // Follow the clicked button and re-evaluate placement when the submenu or window changes.
+        y: Math.clamp(root.anchor-bottom + root.anchor-gap + self.height <= root.height - root.edge-margin
+            ? root.anchor-bottom + root.anchor-gap : root.anchor-top - root.anchor-gap - self.height,
+            root.edge-margin, Math.max(root.edge-margin, root.height - self.height - root.edge-margin));
+        border-radius: 14px;
+        background: Theme.glass-fill-strong;
+        border-width: 1px;
+        border-color: Theme.glass-border;
+        drop-shadow-blur: 36px;
+        drop-shadow-offset-y: 14px;
+        drop-shadow-color: Theme.glass-shadow-elevated;
+
+        // Keep wheel events inside the card, including at submenu boundaries.
+        TouchArea { scroll-event(event) => { return accept; } }
+
+        VerticalLayout {
+            x: 7px;
+            y: 7px;
+            width: parent.width - 14px;
+            height: parent.height - 14px;
+            spacing: 0px;
+
+            context-menu-item-next := MenuItem {
+                height: root.item-height;
+                border-radius: 10px;
+                label: "添加到下一曲";
+                icon: Icons.next;
+                enabled: SongMenuState.open-menu-song-id != PlayerState.current-song-id;
+                clicked => {
+                    QueueState.queue-action("queue-next", SongMenuState.open-menu-song-id);
+                    SongMenuState.close-menu();
+                }
+            }
+
+            if !AccountState.is-logged-in : Rectangle {
+                height: 40px;
+                Text {
+                    text: "请先登录";
+                    font-size: 13px;
+                    color: Theme.sys-text-tertiary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            if AccountState.is-logged-in : SongMenuAccountActions {
+                item-height: root.item-height;
+                submenu-height: root.submenu-height;
+            }
+        }
+    }
+}

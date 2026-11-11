@@ -1,0 +1,119 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { SettingsState } from "../state/settings.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+
+import { AppIcon } from "../components/common.slint";
+
+import { SettingsText, SettingGroupCard } from "controls.slint";
+
+component LibraryAddFolderButton inherits Rectangle {
+
+    height: 44px;
+    border-radius: 10px;
+    background: add-dir-ta.has-hover ? Theme.sys-control-hover : Theme.sys-surface-muted;
+    border-width: 2px;
+    border-color: Theme.sys-border-strong;
+
+    add-dir-ta := TouchArea { mouse-cursor: pointer; clicked => { RuntimeState.runtime-action("local", -1, "add"); } }
+
+    SettingsText {
+        text: "+ 添加文件夹";
+        font-size: 13px;
+        font-weight: 700;
+        color: add-dir-ta.has-hover ? Theme.sys-text-secondary : Theme.sys-text-tertiary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component LibraryFolderRow inherits Rectangle {
+    in property <string> path;
+    height: 61px;
+    border-radius: 12px;
+    background: Theme.sys-surface-muted;
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+
+        AppIcon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.folder;
+            icon-size: 16px;
+            tint: Theme.sys-text-secondary;
+        }
+
+        SettingsText {
+            horizontal-stretch: 1;
+            text: path;
+            font-size: 13px;
+            color: Theme.sys-text;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        Rectangle {
+            width: 78px;
+            height: 32px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 10px;
+            background: rs-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
+            border-width: 1px;
+            border-color: rs-ta.has-hover ? Theme.sys-border-strong : Theme.sys-border;
+
+            rs-ta := TouchArea { mouse-cursor: pointer; clicked => { RuntimeState.runtime-action("local", -1, "scan"); } }
+
+            SettingsText {
+                text: "重新扫描";
+                font-size: 13px;
+                font-weight: 700;
+                color: rs-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        Rectangle {
+            width: 54px;
+            height: 32px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 10px;
+            background: rm-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
+            border-width: 1px;
+            border-color: rm-ta.has-hover ? Theme.sys-border-strong : Theme.sys-border;
+
+            rm-ta := TouchArea { mouse-cursor: pointer; clicked => { RuntimeState.runtime-action("remove-folder", -1, path); } }
+
+            SettingsText {
+                text: "移除";
+                font-size: 13px;
+                font-weight: 700;
+                color: rm-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+export component LibrarySettingsTab inherits VerticalLayout {
+    SettingGroupCard {
+        title: "本地文件夹";
+        no-card: true;
+        tip: "添加文件夹后会自动递归扫描音频并加入本地音乐列表；移除文件夹会同步清理对应歌曲。";
+
+        VerticalLayout {
+            spacing: 8px;
+
+            for path in SettingsState.setting-lib-paths : library-path-row := LibraryFolderRow {
+                path: path;
+            }
+
+            add-folder := LibraryAddFolderButton {
+
+            }
+        }
+    }
+}

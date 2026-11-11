@@ -1,0 +1,189 @@
+import { NavigationState } from "../state/navigation.slint";
+import { SongMetrics } from "song_metrics.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { TrackItem } from "../models.slint";
+import { AppIcon } from "common.slint";
+import { VirtualRows } from "virtual_rows.slint";
+import { SkeletonBlock } from "skeleton.slint";
+import { PlaylistButton } from "../overlays/playlist_editor.slint";
+
+import { SongTrackRow } from "song_track_row.slint";
+
+component SongLoadingRow inherits Rectangle {
+    in property <length> title-column-width;
+    in property <length> album-column-width;
+    in property <bool> show-album-col;
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 0px;
+        loading-index-column := Rectangle {
+            width: 40px;
+            SkeletonBlock { x: 0px; width: 14px; height: 12px; y: (parent.height - self.height) / 2; }
+        }
+        loading-title-column := HorizontalLayout {
+            width: root.title-column-width;
+            padding-right: 16px;
+            spacing: 14px;
+            SkeletonBlock { width: 40px; height: 40px; y: (parent.height - self.height) / 2; }
+            Rectangle {
+                horizontal-stretch: 1;
+                SkeletonBlock { x: 0px; y: 14px; width: parent.width * 0.7; height: 14px; }
+                SkeletonBlock { x: 0px; y: 36px; width: parent.width * 0.4; height: 10px; }
+            }
+        }
+        if root.show-album-col : loading-album-column := Rectangle {
+            width: root.album-column-width;
+            SkeletonBlock { x: 0px; width: parent.width * 0.6; height: 12px; y: (parent.height - self.height) / 2; }
+        }
+        loading-time-column := Rectangle {
+            width: 116px;
+            SkeletonBlock { x: parent.width - 78px; width: 40px; height: 12px; y: (parent.height - self.height) / 2; }
+        }
+    }
+}
+
+export component SongList inherits VerticalLayout {
+    metrics := SongMetrics { }
+    in property <[TrackItem]> songs: [];
+    in property <bool> loading: false;
+    in property <string> load-error;
+    callback retry();
+    in property <length> viewport-top;
+    in property <length> viewport-height;
+    in property <bool> is-local-variant: false;
+    in property <bool> show-remove-from-playlist: false;
+
+    property <bool> show-album-col: NavigationState.window-width > 900px;
+    // Resolve flexible columns once for the whole table, independently of each
+    // row's text metrics. Header, loading rows and recycled rows share the result.
+    property <length> flexible-width: Math.max(0px, root.width - 32px - 40px - 116px);
+    property <length> title-column-width: root.flexible-width * (root.show-album-col ? 0.6 : 1.0);
+    property <length> album-column-width: root.flexible-width - root.title-column-width;
+    spacing: 0px;
+
+    // 吸顶表头 (.list-header-content: height metrics.header-height, padding 14px 16px, border-bottom 1px)
+    list-header := Rectangle {
+        height: metrics.header-height;
+
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            spacing: 0px;
+
+            index-column := Text {
+                width: 40px;
+                text: "#";
+                font-size: 11px;
+                font-weight: 700;
+                color: Theme.sys-text-tertiary;
+                vertical-alignment: center;
+            }
+
+            title-column := Text {
+                width: root.title-column-width;
+                text: "标题";
+                font-size: 11px;
+                font-weight: 700;
+                color: Theme.sys-text-tertiary;
+                vertical-alignment: center;
+            }
+
+            if root.show-album-col : album-column := Text {
+                width: root.album-column-width;
+                text: root.is-local-variant ? "文件" : "专辑";
+                font-size: 11px;
+                font-weight: 700;
+                color: Theme.sys-text-tertiary;
+                vertical-alignment: center;
+            }
+
+            time-column := HorizontalLayout {
+                width: 116px;
+                alignment: end;
+                padding-right: root.is-local-variant ? 40px : 38px;
+
+                duration-heading := AppIcon {
+                    y: (parent.height - self.height) / 2;
+                    source: Icons.clock;
+                    icon-size: 14px;
+                    tint: Theme.sys-text-tertiary;
+                }
+            }
+        }
+
+        Rectangle {
+            y: parent.height - 1px;
+            width: 100%;
+            height: 1px;
+            background: Theme.sys-border;
+        }
+    }
+
+    if root.loading : loading-rows := VerticalLayout {
+        spacing: 0px;
+        accessible-role: progress-indicator;
+        accessible-label: "正在加载歌曲";
+        for index in Math.max(6, Math.ceil(root.viewport-height / metrics.row-step)) : SongLoadingRow {
+            height: metrics.row-step;
+            title-column-width: root.title-column-width;
+            album-column-width: root.album-column-width;
+            show-album-col: root.show-album-col;
+        }
+    }
+
+    rows := VirtualRows {
+        row-count: root.loading || root.load-error != "" ? 0 : root.songs.length;
+        row-height: metrics.row-step;
+        viewport-top: root.viewport-top - self.y;
+        viewport-height: root.viewport-height;
+        for offset in rows.slot-count : SongTrackRow {
+            property <int> target-index: rows.row-index(offset);
+            property <int> item-index: -1;
+            init => { self.item-index = self.target-index; }
+            changed target-index => { self.item-index = self.target-index; }
+            visible: item-index < rows.end-row;
+            y: (item-index) * rows.row-height + 2px;
+            width: parent.width;
+            track: root.songs[item-index];
+            title-column-width: root.title-column-width;
+            album-column-width: root.album-column-width;
+            is-local-variant: root.is-local-variant;
+            show-remove-from-playlist: root.show-remove-from-playlist;
+        }
+    }
+
+    if !root.loading && root.load-error != "" : load-error-panel := Rectangle {
+        height: 132px;
+        Text {
+            x: 16px; y: 16px; width: parent.width - 32px; height: 48px;
+            text: "歌单加载失败：" + root.load-error;
+            font-size: 14px;
+            color: Theme.sys-text-secondary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+        retry-button := PlaylistButton {
+            x: (parent.width - self.width) / 2; y: 76px;
+            width: 96px; height: 36px; border-radius: 18px;
+            label: "重新加载";
+            filled: true;
+            clicked => { root.retry(); }
+        }
+    }
+
+    if !root.loading && root.load-error == "" && root.songs.length == 0 : empty-state := Rectangle {
+        height: 100px;
+        Text {
+            text: "暂无歌曲";
+            font-size: 14px;
+            color: Theme.sys-text-tertiary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

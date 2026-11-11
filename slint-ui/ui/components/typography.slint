@@ -1,0 +1,50 @@
+// Text owns its line boxes; containers measure the result instead of copying
+// a browser's rounded pixel dimensions into their geometry.
+export component MeasuredText inherits Text {
+    in property <float> line-height: 1.6;
+    out property <length> line-size: root.font-size * root.line-height;
+    line-height-factor: root.line-size / Math.max(1px, font-probe.font-metrics.ascent - font-probe.font-metrics.descent);
+    font-probe := Text {
+        visible: false;
+        font-family: root.font-family;
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+    }
+}
+
+// Flowing paragraphs own their line-box height. Labels inside fixed controls
+// use MeasuredText so the enclosing layout can stretch and center the label.
+export component FlowText inherits MeasuredText {
+    height: Math.max(1, Math.round(self.preferred-height / root.line-size)) * root.line-size;
+}
+
+// A clamped paragraph needs a drawing box that also contains glyph ascenders
+// and descenders. Tight leading otherwise makes Slint elide a whole line even
+// though the measured layout reserves two lines. Keep that overhang separate
+// from the line boxes used by the surrounding layout.
+export component ClampedText inherits Rectangle {
+    in property <string> text;
+    in property <length> font-size: 15px;
+    in property <int> font-weight: 400;
+    in property <color> text-color;
+    in property <float> line-height: 1.3;
+    in property <int> max-lines: 2;
+    property <length> line-size: root.font-size * root.line-height;
+    property <length> glyph-padding: Math.max(Math.abs(measure.font-metrics.descent),
+        measure.font-metrics.ascent - measure.font-metrics.descent - root.line-size);
+    preferred-width: measure.preferred-width;
+    height: Math.min(root.max-lines, Math.max(1, Math.round(measure.preferred-height / root.line-size))) * root.line-size;
+    measure := FlowText {
+        visible: false; width: root.width;
+        text: root.text; font-size: root.font-size; font-weight: root.font-weight;
+        line-height: root.line-height; wrap: word-wrap; max-lines: root.max-lines;
+    }
+    FlowText {
+        y: -root.glyph-padding;
+        width: root.width; height: self.preferred-height + 2 * root.glyph-padding;
+        text: root.text; font-size: root.font-size; font-weight: root.font-weight;
+        color: root.text-color; line-height: root.line-height;
+        wrap: word-wrap; max-lines: root.max-lines; overflow: elide;
+        vertical-alignment: center;
+    }
+}

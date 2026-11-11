@@ -40,7 +40,7 @@ NCM_PROFILE_LIVE_HOME=1 NCM_PROFILE_CACHE=/tmp/ncm-main-live-cache \
 
 ```sh
 cargo test --locked --offline home_tests -- --test-threads=1
-node --test sidecar/music-api.test.cjs
+cargo test --locked --offline runtime::api::
 NCM_SLINT_SCREENSHOT_DIR=/tmp/ncm-home timeout 60s cargo test --locked --offline real_home_scroll_and_theme_layout -- --ignored --nocapture --test-threads=1
 ```
 

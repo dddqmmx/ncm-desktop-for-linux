@@ -1,0 +1,23 @@
+import { Icons } from "../icons.slint";
+import { TrackItem } from "../models.slint";
+
+// Read-only sample data for demo mode and visual tests.
+export global DemoLibrary {
+    out property <[TrackItem]> detail-tracks: [
+        { id: 1, index-str: "01", name: "Midnight City Lights", artist: "M83 / 落日飞车", album: "Hurry Up, We're Dreaming", duration: "04:03", cover: Icons.cover-indigo, is-favorite: true, is-local: false, has-cover: true },
+        { id: 2, index-str: "02", name: "Oceanic Horizon", artist: "Tycho", album: "Awake", duration: "04:42", cover: Icons.cover-cyan, is-favorite: true, is-local: false, has-cover: true },
+        { id: 3, index-str: "03", name: "Golden Hour Glow", artist: "The Midnight", album: "Endless Summer", duration: "05:16", cover: Icons.cover-sunset, is-favorite: false, is-local: false, has-cover: true },
+        { id: 4, index-str: "04", name: "Velvet Echoes", artist: "Beach House", album: "Depression Cherry", duration: "05:38", cover: Icons.cover-rose, is-favorite: true, is-local: false, has-cover: true },
+        { id: 5, index-str: "05", name: "Emerald Forest", artist: "Olafur Arnalds", album: "re:member", duration: "03:54", cover: Icons.cover-mint, is-favorite: false, is-local: false, has-cover: true },
+        { id: 6, index-str: "06", name: "Starlight Odyssey", artist: "Daft Punk", album: "Random Access Memories", duration: "04:37", cover: Icons.cover-night, is-favorite: true, is-local: false, has-cover: true },
+        { id: 7, index-str: "07", name: "Resonance 2026", artist: "HOME", album: "Odyssey", duration: "03:32", cover: Icons.cover-indigo, is-favorite: false, is-local: false, has-cover: true },
+        { id: 8, index-str: "08", name: "Afterglow Highway", artist: "Timecop1983", album: "Night Drive", duration: "04:19", cover: Icons.cover-sunset, is-favorite: true, is-local: false, has-cover: true },
+    ];
+
+    out property <[TrackItem]> local-tracks: [
+        { id: 201, index-str: "01", name: "Clair de Lune (24bit/96kHz)", artist: "Claude Debussy", album: "debussy_clair_de_lune.flac", duration: "05:08", cover: Icons.cover-cyan, is-favorite: false, is-local: true, has-cover: false },
+        { id: 202, index-str: "02", name: "Merry Christmas Mr. Lawrence", artist: "坂本龙一", album: "sakamoto_lawrence_master.flac", duration: "04:46", cover: Icons.cover-indigo, is-favorite: false, is-local: true, has-cover: true },
+        { id: 203, index-str: "03", name: " Cornfield Chase (Organ Master)", artist: "Hans Zimmer", album: "interstellar_ost_02.opus", duration: "02:06", cover: Icons.cover-night, is-favorite: false, is-local: true, has-cover: false },
+        { id: 204, index-str: "04", name: "Plastic Love (Original 12\" Mix)", artist: "竹内まりや", album: "variety_1984_remaster.flac", duration: "07:56", cover: Icons.cover-rose, is-favorite: false, is-local: true, has-cover: true },
+    ];
+}

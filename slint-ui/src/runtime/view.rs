@@ -1,7 +1,12 @@
+mod lyrics;
+mod song_actions;
+
 use super::{
     backend::{Command, Event},
     covers::{cover_model, update_covers, CoverCache},
     data::{items, text, time, Ids, Lyric, Preferences, Song},
+    playback::{clamp_position, PlaybackState},
+    queue::{PlaybackQueue, Removal},
 };
 use crate::*;
 use serde_json::{json, Value};
@@ -9,6 +14,7 @@ use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::{
     collections::{HashMap, HashSet},
     rc::Rc,
+    time::{Duration, Instant},
 };
 pub fn model<T: Clone + 'static>(v: Vec<T>) -> ModelRc<T> {
     Rc::new(VecModel::from(v)).into()
@@ -16,25 +22,28 @@ pub fn model<T: Clone + 'static>(v: Vec<T>) -> ModelRc<T> {
 fn strings(v: Vec<String>) -> ModelRc<SharedString> {
     model(v.into_iter().map(Into::into).collect())
 }
-fn cancel_playlist_loading(state: &AppState<'_>) {
+fn cancel_playlist_loading(app: &AppWindow) {
+    let home_state = app.global::<crate::HomeState>();
+    let artist_state = app.global::<crate::ArtistState>();
+    let playlist_state = app.global::<crate::PlaylistState>();
     // Public discovery responses also carry an epoch. Allow lazy loaders to
     // restart any request invalidated by a login/logout transition.
-    if state.get_home_albums_loading() {
-        state.set_home_albums_loading(false);
-        state.set_home_albums_loaded(false);
+    if home_state.get_home_albums_loading() {
+        home_state.set_home_albums_loading(false);
+        home_state.set_home_albums_loaded(false);
     }
-    if state.get_home_charts_loading() {
-        state.set_home_charts_loading(false);
-        state.set_home_charts_loaded(false);
+    if home_state.get_home_charts_loading() {
+        home_state.set_home_charts_loading(false);
+        home_state.set_home_charts_loaded(false);
     }
-    if state.get_artist_loading() {
-        state.set_artist_loading(false);
-        state.set_artist_load_error("登录状态已变化，请重新加载歌手".into());
+    if artist_state.get_artist_loading() {
+        artist_state.set_artist_loading(false);
+        artist_state.set_artist_load_error("登录状态已变化，请重新加载歌手".into());
     }
-    if state.get_playlist_loading() {
-        state.set_playlist_loading(false);
-        state.set_playlist_metadata_loading(false);
-        state.set_playlist_load_error("登录状态已变化，请重新加载歌单".into());
+    if playlist_state.get_playlist_loading() {
+        playlist_state.set_playlist_loading(false);
+        playlist_state.set_playlist_metadata_loading(false);
+        playlist_state.set_playlist_load_error("登录状态已变化，请重新加载歌单".into());
     }
 }
 fn artist_is_single(album: &Value) -> bool {
@@ -75,8 +84,13 @@ pub struct View {
     cover_refs: HashMap<i32, String>,
     image_targets: HashMap<String, String>,
     likes: HashSet<String>,
-    queue: Vec<String>,
-    current: Option<String>,
+    queue: PlaybackQueue,
+    position_ms: u64,
+    resume_pending: bool,
+    seek_target: Option<(u64, Instant)>,
+    playback_dirty: bool,
+    last_playback_save: Instant,
+    saved_playback: Option<PlaybackState>,
     displayed: Vec<String>,
     local: Vec<String>,
     daily: Vec<String>,
@@ -110,6 +124,16 @@ impl View {
     pub(super) fn cover_cache_usage(&self) -> (usize, usize) {
         self.images.usage()
     }
+    #[cfg(test)]
+    pub(super) fn memory_model_counts(&self) -> serde_json::Value {
+        serde_json::json!({
+            "songs": self.songs.len(),
+            "cover_refs": self.cover_refs.len(),
+            "cover_urls": self.cover_handles.len(),
+            "displayed": self.displayed.len(),
+            "queue": self.queue.ids().len(),
+        })
+    }
     pub fn new(
         sender: tokio::sync::mpsc::UnboundedSender<Command>,
         preferences: Preferences,
@@ -125,8 +149,13 @@ impl View {
             cover_refs: HashMap::new(),
             image_targets: HashMap::new(),
             likes: HashSet::new(),
-            queue: vec![],
-            current: None,
+            queue: PlaybackQueue::default(),
+            position_ms: 0,
+            resume_pending: false,
+            seek_target: None,
+            playback_dirty: false,
+            last_playback_save: Instant::now(),
+            saved_playback: Some(PlaybackState::default()),
             displayed: vec![],
             local: vec![],
             daily: vec![],
@@ -253,7 +282,7 @@ impl View {
         app: &AppWindow,
         images: impl Iterator<Item = super::images::DecodedImage>,
     ) {
-        let state = app.global::<AppState>();
+        let login_state = app.global::<crate::LoginState>();
         let mut changed = HashSet::new();
         for image in images {
             if image.epoch != self.epoch {
@@ -277,7 +306,7 @@ impl View {
                     }
                     changed.insert(url.clone());
                     let mut pinned: HashSet<_> = self.image_targets.values().cloned().collect();
-                    if let Some(song) = self.current.as_ref().and_then(|id| self.songs.get(id)) {
+                    if let Some(song) = self.queue.current().and_then(|id| self.songs.get(id)) {
                         pinned.insert(song.cover.clone());
                     }
                     let evicted = self.images.insert(
@@ -294,14 +323,14 @@ impl View {
                 }
                 super::images::ImageTarget::LoginQr(token) => {
                     if self.login_waiting && self.tokens.get("qr").copied() == Some(token) {
-                        state.set_login_qr_image(slint::Image::from_rgba8(image.pixels));
-                        state.set_login_qr_ready(true);
+                        login_state.set_login_qr_image(slint::Image::from_rgba8(image.pixels));
+                        login_state.set_login_qr_ready(true);
                     }
                 }
             }
         }
         if !changed.is_empty() {
-            self.refresh_images(&state, &changed);
+            self.refresh_images(app, &changed);
         }
     }
     fn entity_cover(&mut self, kind: &str, id: &str, url: &str) -> i32 {
@@ -337,7 +366,16 @@ impl View {
                 .collect(),
         )
     }
-    fn refresh_images(&self, state: &AppState<'_>, changed: &HashSet<String>) {
+    fn refresh_images(&self, app: &AppWindow, changed: &HashSet<String>) {
+        let detail_state = app.global::<crate::DetailState>();
+        let playlist_state = app.global::<crate::PlaylistState>();
+        let library_state = app.global::<crate::LibraryState>();
+        let home_state = app.global::<crate::HomeState>();
+        let artist_state = app.global::<crate::ArtistState>();
+        let player_view_state = app.global::<crate::PlayerViewState>();
+        let queue_state = app.global::<crate::QueueState>();
+        let player_state = app.global::<crate::PlayerState>();
+        let account_state = app.global::<crate::AccountState>();
         let mut changes = HashMap::new();
         for url in changed {
             if let Some(handles) = self.cover_handles.get(url) {
@@ -348,23 +386,23 @@ impl View {
             }
         }
         let cover = |id: i32| changes.get(&id).cloned();
-        update_covers(state.get_detail_tracks(), &changes);
-        update_covers(state.get_playlist_tracks(), &changes);
-        update_covers(state.get_local_tracks(), &changes);
-        update_covers(state.get_daily_songs(), &changes);
-        update_covers(state.get_recommend_playlists(), &changes);
-        update_covers(state.get_home_new_albums(), &changes);
-        update_covers(state.get_home_charts(), &changes);
-        update_covers(state.get_created_playlists(), &changes);
-        update_covers(state.get_artist_top_songs(), &changes);
-        update_covers(state.get_artist_latest(), &changes);
-        update_covers(state.get_artist_albums(), &changes);
-        update_covers(state.get_artist_eps(), &changes);
-        update_covers(state.get_artist_mvs(), &changes);
-        update_covers(state.get_comments(), &changes);
-        update_covers(state.get_queue_songs(), &changes);
-        if let Some(image) = cover(state.get_current_song_id()) {
-            state.set_current_song_cover(image);
+        update_covers(detail_state.get_detail_tracks(), &changes);
+        update_covers(playlist_state.get_playlist_tracks(), &changes);
+        update_covers(library_state.get_local_tracks(), &changes);
+        update_covers(home_state.get_daily_songs(), &changes);
+        update_covers(home_state.get_recommend_playlists(), &changes);
+        update_covers(home_state.get_home_new_albums(), &changes);
+        update_covers(home_state.get_home_charts(), &changes);
+        update_covers(playlist_state.get_created_playlists(), &changes);
+        update_covers(artist_state.get_artist_top_songs(), &changes);
+        update_covers(artist_state.get_artist_latest(), &changes);
+        update_covers(artist_state.get_artist_albums(), &changes);
+        update_covers(artist_state.get_artist_eps(), &changes);
+        update_covers(artist_state.get_artist_mvs(), &changes);
+        update_covers(player_view_state.get_comments(), &changes);
+        update_covers(queue_state.get_queue_songs(), &changes);
+        if let Some(image) = cover(player_state.get_current_song_id()) {
+            player_state.set_current_song_cover(image);
         }
         for (key, url) in &self.image_targets {
             if !changed.contains(url) {
@@ -372,18 +410,19 @@ impl View {
             }
             let image = self.image(url);
             match key.as_str() {
-                "user" => state.set_user_avatar(image),
-                "playlist" => state.set_playlist_cover(image),
-                "creator" => state.set_playlist_creator_avatar(image),
-                "album" => state.set_album_cover(image),
-                "artist" => state.set_artist_avatar(image),
+                "user" => account_state.set_user_avatar(image),
+                "playlist" => playlist_state.set_playlist_cover(image),
+                "creator" => playlist_state.set_playlist_creator_avatar(image),
+                "album" => detail_state.set_album_cover(image),
+                "artist" => artist_state.set_artist_avatar(image),
                 _ => {}
             }
         }
     }
-    fn queue_model(&mut self, state: &AppState<'_>) {
+    fn queue_model(&mut self, state: &crate::QueueState<'_>) {
         state.set_queue_songs(cover_model(
             self.queue
+                .ids()
                 .iter()
                 .enumerate()
                 .filter_map(|(i, id)| {
@@ -400,14 +439,119 @@ impl View {
                 .collect(),
         ));
     }
+    pub fn restore_playback(&mut self, app: &AppWindow, mut saved: PlaybackState) {
+        saved.normalize();
+        self.queue.clear();
+        self.queue
+            .replace(saved.queue.iter().map(|song| song.id.clone()));
+        for song in &saved.queue {
+            self.register(song.clone());
+        }
+        if let Some(id) = saved.current_id.clone() {
+            self.queue.select(id);
+        }
+        self.position_ms = saved.position_ms;
+        self.resume_pending = self.queue.current().is_some();
+        self.loading = false;
+        self.paused = false;
+        self.saved_playback = Some(saved);
+        let player_state = app.global::<crate::PlayerState>();
+        player_state.set_is_playing(false);
+        player_state.set_is_loading(false);
+        if let Some(song) = self
+            .queue
+            .current()
+            .and_then(|id| self.songs.get(id))
+            .cloned()
+        {
+            self.show_current(app, &song, self.position_ms);
+        } else {
+            self.queue_model(&app.global::<crate::QueueState>());
+        }
+    }
+
+    pub fn save_playback_if_changed(&mut self, _app: &AppWindow, force: bool) {
+        // Queue edits and seeks are saved on the next UI tick. During playback,
+        // serialize the queue at most once per two seconds, not every frame.
+        if !force
+            && !self.playback_dirty
+            && self.last_playback_save.elapsed() < Duration::from_secs(2)
+        {
+            return;
+        }
+        self.last_playback_save = Instant::now();
+        self.playback_dirty = false;
+        let saved = PlaybackState {
+            queue: self
+                .queue
+                .ids()
+                .iter()
+                .filter_map(|id| self.songs.get(id).cloned())
+                .collect(),
+            current_id: self.queue.current().cloned(),
+            position_ms: self.position_ms,
+        };
+        if self.saved_playback.as_ref() != Some(&saved) {
+            self.send("save-playback", serde_json::to_value(&saved).unwrap());
+            self.saved_playback = Some(saved);
+        }
+    }
+
     fn play(&mut self, app: &AppWindow, id: String, replace: bool) {
+        self.play_from(app, id, replace, 0);
+    }
+
+    fn queue_next(&mut self, app: &AppWindow, id: String) {
+        let Some(song) = self.songs.get(&id) else {
+            return;
+        };
+        let message = format!("已将「{}」添加到下一曲", song.name);
+        if !self.queue.add_next(id) {
+            return;
+        }
+        self.playback_dirty = true;
+        let runtime_state = app.global::<crate::RuntimeState>();
+        self.queue_model(&app.global::<crate::QueueState>());
+        runtime_state.set_runtime_message(message.into());
+    }
+
+    fn clear_queue(&mut self, app: &AppWindow) {
+        self.queue.clear();
+        self.position_ms = 0;
+        self.resume_pending = false;
+        self.seek_target = None;
+        self.playback_dirty = true;
+        self.paused = false;
+        self.loading = false;
+        self.send("stop", Value::Null);
+        *self.tokens.entry("play".into()).or_default() += 1;
+        *self.tokens.entry("lyrics".into()).or_default() += 1;
+        *self.tokens.entry("comments".into()).or_default() += 1;
+        self.queue_model(&app.global::<crate::QueueState>());
+        crate::playback_ui::clear(
+            &app.global::<crate::PlayerState>(),
+            &app.global::<crate::PlayerViewState>(),
+        );
+    }
+
+    fn remove_from_queue(&mut self, app: &AppWindow, id: &str) {
+        match self.queue.remove(id) {
+            Removal::Missing => return,
+            Removal::Removed => self.queue_model(&app.global::<crate::QueueState>()),
+            Removal::Current(Some(next)) => self.play(app, next, false),
+            Removal::Current(None) => self.clear_queue(app),
+        }
+        self.playback_dirty = true;
+    }
+
+    fn play_from(&mut self, app: &AppWindow, id: String, replace: bool, position_ms: u64) {
         let Some(song) = self.songs.get(&id).cloned() else {
             return;
         };
-        *self.tokens.entry("lyrics".into()).or_default() += 1;
+        let position_ms = clamp_position(&song, position_ms);
         *self.tokens.entry("comments".into()).or_default() += 1;
         if replace {
-            self.queue = if self.route == "home" && self.daily.contains(&id) {
+            let ids = if self.route == "home" && self.daily.contains(&id) {
                 self.daily.clone()
             } else if self.route == "local-music" && self.local.contains(&id) {
                 self.local.clone()
@@ -416,101 +560,108 @@ impl View {
             } else {
                 vec![id.clone()]
             };
-        } else if !self.queue.contains(&id) {
-            self.queue.push(id.clone())
+            self.queue.replace(ids);
         }
-        self.current = Some(id);
+        self.queue.select(id);
+        self.resume_pending = false;
+        self.seek_target = None;
+        self.playback_dirty = true;
         self.loading = true;
         self.paused = false;
-        let s = app.global::<AppState>();
-        s.set_is_loading(true);
-        s.set_is_playing(false);
-        s.set_progress_percent(0.0);
-        s.set_current_time_str("0:00".into());
-        s.set_duration_time_str(time(song.duration).into());
-        s.set_current_song_id(self.ids.intern("song", &song.id));
-        s.set_current_song_title(song.name.clone().into());
-        s.set_current_song_artist(song.artist.clone().into());
-        s.set_current_song_cover(self.image(&song.cover));
-        self.request_cover_urls(vec![(song.cover.clone(), 800)]);
-        s.set_current_song_is_local(song.path.is_some());
-        s.set_current_song_has_cover(!song.cover.is_empty());
-        s.set_current_song_favorite(self.likes.contains(&song.id));
-        s.set_runtime_message("".into());
-        self.lyrics.clear();
-        self.lyric_progress_ms = 0;
-        s.set_lyrics(model(vec![]));
-        s.set_active_lyric_index(-1);
-        s.set_lyric_position_reset(s.get_lyric_position_reset().wrapping_add(1));
-        s.set_comments(cover_model(vec![]));
-        self.queue_model(&s);
-        self.send("play", json!({ "song" : song }));
-        if song.path.is_none() {
-            self.send("lyrics", json!({ "id" : song.id }));
-            if s.get_is_comment_open() {
-                self.send("comments", json!({ "id" : song.id, "limit" : 50 }));
-            }
+        let player_state = app.global::<crate::PlayerState>();
+        let player_view_state = app.global::<crate::PlayerViewState>();
+        player_state.set_is_loading(true);
+        player_state.set_is_playing(false);
+        // Queue playback before the artwork and lyric metadata requests.
+        self.send("play", json!({ "song": song, "position_ms": position_ms }));
+        self.show_current(app, &song, position_ms);
+        if song.path.is_none() && player_view_state.get_is_comment_open() {
+            self.send("comments", json!({ "id" : song.id, "limit" : 50 }));
         }
     }
+
+    fn show_current(&mut self, app: &AppWindow, song: &Song, position_ms: u64) {
+        let player_state = app.global::<crate::PlayerState>();
+        let runtime_state = app.global::<crate::RuntimeState>();
+        let player_view_state = app.global::<crate::PlayerViewState>();
+        self.position_ms = position_ms;
+        player_state.set_progress_percent(if song.duration > 0 {
+            (position_ms as f64 / song.duration as f64 * 100.0) as f32
+        } else {
+            0.0
+        });
+        player_state.set_current_time_str(time(position_ms).into());
+        player_state.set_buffered_percent(0.0);
+        player_state.set_duration_time_str(time(song.duration).into());
+        player_state.set_current_song_id(self.ids.intern("song", &song.id));
+        player_state.set_current_song_title(song.name.clone().into());
+        player_state.set_current_song_artist(song.artist.clone().into());
+        player_state.set_current_song_cover(self.image(&song.cover));
+        self.request_cover_urls(vec![(song.cover.clone(), 800)]);
+        player_state.set_current_song_is_local(song.path.is_some());
+        player_state.set_current_song_has_cover(!song.cover.is_empty());
+        player_state.set_current_song_favorite(self.likes.contains(&song.id));
+        runtime_state.set_runtime_message("".into());
+        self.load_song_lyrics(app, song, position_ms);
+        player_view_state.set_comments(cover_model(vec![]));
+        self.queue_model(&app.global::<crate::QueueState>());
+    }
     fn step(&mut self, app: &AppWindow, delta: i32, natural: bool) {
-        if self.queue.is_empty() {
-            return;
-        }
-        let pos = self
-            .current
-            .as_ref()
-            .and_then(|id| self.queue.iter().position(|q| q == id))
-            .unwrap_or(0);
-        let mode = app.global::<AppState>().get_play_mode();
-        let next = if natural && mode == "single" {
-            pos
-        } else if mode == "random" && self.queue.len() > 1 {
+        let mode = app.global::<crate::PlayerState>().get_play_mode();
+        if mode == "random" {
             self.rng ^= self.rng << 13;
             self.rng ^= self.rng >> 7;
             self.rng ^= self.rng << 17;
-            (pos + 1 + (self.rng as usize % (self.queue.len() - 1))) % self.queue.len()
-        } else {
-            (pos as i64 + delta as i64).rem_euclid(self.queue.len() as i64) as usize
-        };
-        self.play(app, self.queue[next].clone(), false);
+        }
+        if let Some(id) = self.queue.step(delta, natural, &mode, self.rng).cloned() {
+            self.play(app, id, false);
+        }
     }
     fn page(&mut self, app: &AppWindow, kind: &str, id: &str, autoplay: bool) {
         self.route = kind.into();
-        let s = app.global::<AppState>();
-        s.set_artist_loading(kind == "artist");
-        s.set_artist_load_error("".into());
+        let artist_state = app.global::<crate::ArtistState>();
+        let playlist_state = app.global::<crate::PlaylistState>();
+        let home_state = app.global::<crate::HomeState>();
+        let detail_state = app.global::<crate::DetailState>();
+        let navigation_state = app.global::<crate::NavigationState>();
+        let runtime_state = app.global::<crate::RuntimeState>();
+        let search_state = app.global::<crate::SearchState>();
+        artist_state.set_artist_loading(kind == "artist");
+        artist_state.set_artist_load_error("".into());
         if kind == "artist" {
-            s.set_active_artist_id(self.ids.intern("artist", id));
+            artist_state.set_active_artist_id(self.ids.intern("artist", id));
             self.image_targets.remove("artist");
-            s.set_artist_avatar(slint::Image::default());
-            s.set_artist_name("".into());
-            s.set_artist_summary("".into());
-            s.set_artist_pills(strings(vec![]));
-            s.set_artist_latest(cover_model(vec![]));
-            s.set_artist_albums(cover_model(vec![]));
-            s.set_artist_eps(cover_model(vec![]));
-            s.set_artist_mvs(cover_model(vec![]));
-            s.set_artist_top_songs(cover_model(vec![]));
+            artist_state.set_artist_avatar(slint::Image::default());
+            artist_state.set_artist_name("".into());
+            artist_state.set_artist_summary("".into());
+            artist_state.set_artist_pills(strings(vec![]));
+            artist_state.set_artist_latest(cover_model(vec![]));
+            artist_state.set_artist_albums(cover_model(vec![]));
+            artist_state.set_artist_eps(cover_model(vec![]));
+            artist_state.set_artist_mvs(cover_model(vec![]));
+            artist_state.set_artist_top_songs(cover_model(vec![]));
         }
-        s.set_playlist_loading(kind == "playlist");
-        s.set_playlist_metadata_loading(kind == "playlist");
-        s.set_playlist_load_error("".into());
+        playlist_state.set_playlist_loading(kind == "playlist");
+        playlist_state.set_playlist_metadata_loading(kind == "playlist");
+        playlist_state.set_playlist_load_error("".into());
         if kind == "playlist" {
             self.active_playlist = id.into();
             let handle = self.ids.intern("playlist", id);
-            let preview = s
+            let preview = playlist_state
                 .get_created_playlists()
                 .iter()
                 .find(|p| p.id == handle)
                 .map(|p| (p.name, p.cover))
                 .or_else(|| {
-                    s.get_recommend_playlists()
+                    home_state
+                        .get_recommend_playlists()
                         .iter()
                         .find(|p| p.id == handle)
                         .map(|p| (p.title, p.cover))
                 })
                 .or_else(|| {
-                    s.get_home_charts()
+                    home_state
+                        .get_home_charts()
                         .iter()
                         .find(|p| p.id == handle)
                         .map(|p| (p.title, p.cover))
@@ -519,52 +670,55 @@ impl View {
             // Detach the previous page's images before any late decode arrives.
             self.image_targets.remove("playlist");
             self.image_targets.remove("creator");
-            s.set_active_playlist_id(handle);
-            s.set_playlist_title(title);
-            s.set_playlist_cover(cover);
+            playlist_state.set_active_playlist_id(handle);
+            playlist_state.set_playlist_title(title);
+            playlist_state.set_playlist_cover(cover);
             if let Some(url) = self.cover_refs.get(&handle).cloned() {
-                s.set_playlist_cover(self.target_image("playlist", &url));
+                playlist_state.set_playlist_cover(self.target_image("playlist", &url));
             }
-            s.set_playlist_description("".into());
-            s.set_playlist_creator("".into());
-            s.set_playlist_creator_avatar(slint::Image::default());
-            s.set_playlist_meta(model(vec![]));
-            s.set_playlist_track_count(0);
-            s.set_playlist_subscribed_count("".into());
-            s.set_playlist_special_type(0);
-            s.set_playlist_is_private(false);
-            s.set_is_playlist_actions_open(false);
+            playlist_state.set_playlist_description("".into());
+            playlist_state.set_playlist_creator("".into());
+            playlist_state.set_playlist_creator_avatar(slint::Image::default());
+            playlist_state.set_playlist_meta(model(vec![]));
+            playlist_state.set_playlist_track_count(0);
+            playlist_state.set_playlist_subscribed_count("".into());
+            playlist_state.set_playlist_special_type(0);
+            playlist_state.set_playlist_is_private(false);
+            playlist_state.set_is_playlist_actions_open(false);
         }
         if kind == "album" {
             self.image_targets.remove("album");
             let handle = self.ids.intern("album", id);
-            let preview = s.get_home_new_albums().iter().find(|a| a.id == handle);
-            s.set_album_title(
+            let preview = home_state
+                .get_home_new_albums()
+                .iter()
+                .find(|a| a.id == handle);
+            detail_state.set_album_title(
                 preview
                     .as_ref()
                     .map(|a| a.title.clone())
                     .unwrap_or_default(),
             );
-            s.set_album_artist(
+            detail_state.set_album_artist(
                 preview
                     .as_ref()
                     .map(|a| a.artist.clone())
                     .unwrap_or_default(),
             );
-            s.set_album_cover(preview.map(|a| a.cover).unwrap_or_default());
-            s.set_album_description("".into());
-            s.set_album_meta(model(vec![]));
+            detail_state.set_album_cover(preview.map(|a| a.cover).unwrap_or_default());
+            detail_state.set_album_description("".into());
+            detail_state.set_album_meta(model(vec![]));
             self.album_artist.clear();
             if let Some(url) = self.cover_refs.get(&handle).cloned() {
-                s.set_album_cover(self.target_image("album", &url));
+                detail_state.set_album_cover(self.target_image("album", &url));
             }
         }
-        s.set_current_route(kind.into());
-        s.set_detail_search_query("".into());
-        s.set_detail_tracks(model(vec![]));
-        s.set_playlist_tracks(model(vec![]));
-        s.set_playlist_owned(false);
-        s.set_runtime_message(
+        navigation_state.set_current_route(kind.into());
+        detail_state.set_detail_search_query("".into());
+        detail_state.set_detail_tracks(model(vec![]));
+        playlist_state.set_playlist_tracks(model(vec![]));
+        playlist_state.set_playlist_owned(false);
+        runtime_state.set_runtime_message(
             if kind == "playlist" {
                 ""
             } else {
@@ -576,7 +730,7 @@ impl View {
         self.send(
             "page",
             json!(
-                { "kind" : kind, "id" : id, "query" : s.get_search_query().as_str(),
+                { "kind" : kind, "id" : id, "query" : search_state.get_search_query().as_str(),
                 "autoplay" : autoplay }
             ),
         );
@@ -585,19 +739,34 @@ impl View {
         self.ids.get(id, "song").map(str::to_owned)
     }
     pub fn action(&mut self, app: &AppWindow, name: &str, id: i32, arg: &str) {
-        let s = app.global::<AppState>();
+        let home_state = app.global::<crate::HomeState>();
+        let player_state = app.global::<crate::PlayerState>();
+        let artist_state = app.global::<crate::ArtistState>();
+        let search_state = app.global::<crate::SearchState>();
+        let playlist_state = app.global::<crate::PlaylistState>();
+        let runtime_state = app.global::<crate::RuntimeState>();
+        let player_view_state = app.global::<crate::PlayerViewState>();
+        let login_state = app.global::<crate::LoginState>();
+        let account_state = app.global::<crate::AccountState>();
+        let detail_state = app.global::<crate::DetailState>();
+        let navigation_state = app.global::<crate::NavigationState>();
+        let download_state = app.global::<crate::DownloadState>();
         match name {
             "home-albums" => {
-                if !s.get_home_albums_loading() && (!s.get_home_albums_loaded() || arg == "retry") {
-                    s.set_home_albums_loading(true);
-                    s.set_home_albums_error("".into());
+                if !home_state.get_home_albums_loading()
+                    && (!home_state.get_home_albums_loaded() || arg == "retry")
+                {
+                    home_state.set_home_albums_loading(true);
+                    home_state.set_home_albums_error("".into());
                     self.send(name, json!({}));
                 }
             }
             "home-charts" => {
-                if !s.get_home_charts_loading() && (!s.get_home_charts_loaded() || arg == "retry") {
-                    s.set_home_charts_loading(true);
-                    s.set_home_charts_error("".into());
+                if !home_state.get_home_charts_loading()
+                    && (!home_state.get_home_charts_loaded() || arg == "retry")
+                {
+                    home_state.set_home_charts_loading(true);
+                    home_state.set_home_charts_error("".into());
                     self.send(name, json!({}));
                 }
             }
@@ -606,17 +775,22 @@ impl View {
                     self.play(app, id, name == "play")
                 }
             }
+            "queue-next" => {
+                if let Some(id) = self.handle_for_song(id) {
+                    self.queue_next(app, id);
+                }
+            }
             "toggle" => {
                 if self.loading {
                     return;
                 }
-                if let Some(id) = self.current.clone() {
-                    if !s.get_is_playing() && !self.paused {
-                        self.play(app, id, false)
+                if let Some(id) = self.queue.current().cloned() {
+                    if !player_state.get_is_playing() && !self.paused {
+                        self.play_from(app, id, false, self.position_ms)
                     } else {
                         self.send("toggle", Value::Null)
                     }
-                } else if let Some(id) = self.queue.first().cloned() {
+                } else if let Some(id) = self.queue.ids().first().cloned() {
                     self.play(app, id, false)
                 }
             }
@@ -649,8 +823,8 @@ impl View {
                 let artist = if self.route == "album" {
                     self.album_artist.clone()
                 } else {
-                    self.current
-                        .as_ref()
+                    self.queue
+                        .current()
                         .and_then(|id| self.songs.get(id))
                         .map(|s| s.artist_id.clone())
                         .unwrap_or_default()
@@ -662,7 +836,7 @@ impl View {
             "artist-retry" => {
                 if let Some(id) = self
                     .ids
-                    .get(s.get_active_artist_id(), "artist")
+                    .get(artist_state.get_active_artist_id(), "artist")
                     .map(str::to_owned)
                 {
                     self.page(app, "artist", &id, false);
@@ -678,15 +852,15 @@ impl View {
                     self.send(
                         "page",
                         json!(
-                            { "kind" : "search", "query" : s.get_search_query().as_str(),
+                            { "kind" : "search", "query" : search_state.get_search_query().as_str(),
                             "offset" : self.displayed.len() }
                         ),
                     );
                 }
             }
             "search" => {
-                if !s.get_search_query().trim().is_empty() {
-                    s.set_search_show_results(true);
+                if !search_state.get_search_query().trim().is_empty() {
+                    search_state.set_search_show_results(true);
                     self.page(app, "search", "", false);
                 }
             }
@@ -695,12 +869,12 @@ impl View {
                     return;
                 }
                 self.route = arg.into();
-                s.set_artist_loading(false);
+                artist_state.set_artist_loading(false);
                 *self.tokens.entry("page".into()).or_default() += 1;
-                s.set_playlist_loading(false);
-                s.set_playlist_metadata_loading(false);
-                s.set_playlist_load_error("".into());
-                s.set_runtime_message("".into());
+                playlist_state.set_playlist_loading(false);
+                playlist_state.set_playlist_metadata_loading(false);
+                playlist_state.set_playlist_load_error("".into());
+                runtime_state.set_runtime_message("".into());
                 match arg {
                     "favorites" => self.page(app, "favorites", "", false),
                     "artist" => self.action(app, "artist", -1, ""),
@@ -713,97 +887,33 @@ impl View {
                     _ => {}
                 }
             }
-            "favorite" => {
-                if !s.get_is_logged_in() {
-                    s.set_is_login_open(true);
-                    return;
-                }
-                if let Some(id) = self.handle_for_song(id) {
-                    if self.songs.get(&id).is_some_and(|s| s.path.is_none())
-                        && self.pending_likes.insert(id.clone())
-                    {
-                        self.send_mutation(
-                            "like",
-                            json!({ "id" : id, "like":! self.likes.contains(& id) }),
-                        );
-                    }
-                }
-            }
+            "favorite" => self.toggle_song_favorite(app, id),
             "add-track" => {
-                let song = if s.get_open_menu_song_id() >= 0 {
-                    s.get_open_menu_song_id()
-                } else {
-                    s.get_current_song_id()
-                };
-                if let (Some(pid), Some(song)) = (
-                    self.ids.get(id, "playlist").map(str::to_owned),
-                    self.handle_for_song(song),
-                ) {
-                    self.send_mutation(
-                        "playlist_track_add",
-                        json!({ "pid" : pid, "tracks" : [song] }),
-                    );
+                if let Ok(song) = arg.parse::<i32>() {
+                    self.add_song_to_playlist(id, song);
                 }
             }
-            "remove-track" => {
-                if let Some(song) = self.handle_for_song(id) {
-                    if s.get_playlist_can_manage() {
-                        self.send_mutation(
-                            "playlist_track_delete",
-                            json!({ "pid" : self.active_playlist, "tracks" : [song] }),
-                        );
-                    }
-                }
-            }
-            "clear-queue" => {
-                self.queue.clear();
-                self.current = None;
-                self.loading = false;
-                self.send("stop", Value::Null);
-                *self.tokens.entry("play".into()).or_default() += 1;
-                *self.tokens.entry("lyrics".into()).or_default() += 1;
-                *self.tokens.entry("comments".into()).or_default() += 1;
-                s.set_lyrics(model(vec![]));
-                s.set_comments(cover_model(vec![]));
-                self.queue_model(&s);
-                s.set_current_song_title("未在播放".into());
-                s.set_current_song_artist("".into());
-                s.set_current_song_id(-1);
-                s.set_is_loading(false);
-            }
+            "remove-track" => self.remove_song_from_playlist(app, id),
+            "clear-queue" => self.clear_queue(app),
             "remove-queue" => {
                 if let Some(id) = self.handle_for_song(id) {
-                    let pos = self.queue.iter().position(|q| q == &id).unwrap_or(0);
-                    self.queue.retain(|q| q != &id);
-                    if self.current.as_ref() == Some(&id) {
-                        if self.queue.is_empty() {
-                            self.action(app, "clear-queue", -1, "")
-                        } else {
-                            self.play(
-                                app,
-                                self.queue[pos.min(self.queue.len() - 1)].clone(),
-                                false,
-                            )
-                        }
-                    }
-                    self.queue_model(&s);
+                    self.remove_from_queue(app, &id);
                 }
             }
             "lyric-seek" => {
-                if !self.loading && !s.get_is_loading() && id >= 0 {
+                if !self.loading && !player_state.get_is_loading() && id >= 0 {
                     if let Some(line) = self.lyrics.get(id as usize) {
                         let ms = line.ms;
-                        self.send("seek", json!({ "seconds" : ms as f64 / 1000.0 }));
-                        s.set_active_lyric_index(id);
-                        s.set_current_time_str(time(ms).into());
-                        s.set_lyric_position_reset(s.get_lyric_position_reset().wrapping_add(1));
+                        self.seek_to_ms(app, ms);
+                        player_view_state.set_active_lyric_index(id);
                     }
                 }
             }
             "comments" => {
                 if let Some(id) = self
-                    .current
-                    .clone()
+                    .queue
+                    .current()
+                    .cloned()
                     .filter(|id| self.songs.get(id).is_some_and(|s| s.path.is_none()))
                 {
                     self.send("comments", json!({ "id" : id, "limit" : 50 }));
@@ -820,23 +930,23 @@ impl View {
                 if self.login_waiting && name == "login" {
                     return;
                 }
-                s.set_login_error("".into());
-                let password_mode = s.get_login_tab() == "password";
+                login_state.set_login_error("".into());
+                let password_mode = login_state.get_login_tab() == "password";
                 let (phone, secret, country) = if password_mode {
                     (
-                        s.get_login_phone(),
-                        s.get_login_password(),
-                        s.get_login_country_code(),
+                        login_state.get_login_phone(),
+                        login_state.get_login_password(),
+                        login_state.get_login_country_code(),
                     )
                 } else {
                     (
-                        s.get_login_sms_phone(),
-                        s.get_login_code(),
-                        s.get_login_sms_country_code(),
+                        login_state.get_login_sms_phone(),
+                        login_state.get_login_code(),
+                        login_state.get_login_sms_country_code(),
                     )
                 };
                 if name == "login" && (phone.is_empty() || secret.is_empty()) {
-                    s.set_login_error(
+                    login_state.set_login_error(
                         if password_mode {
                             "请输入手机号和密码"
                         } else {
@@ -848,46 +958,48 @@ impl View {
                 }
                 self.epoch += 1;
                 self.login_waiting = true;
-                cancel_playlist_loading(&s);
-                s.set_login_busy(name == "login");
-                s.set_login_captcha_busy(false);
+                cancel_playlist_loading(app);
+                login_state.set_login_busy(name == "login");
+                login_state.set_login_captcha_busy(false);
                 if name == "qr" {
-                    s.set_login_qr_ready(false);
-                    s.set_login_qr_image(slint::Image::default());
-                    s.set_login_qr_message("正在加载二维码...".into());
+                    login_state.set_login_qr_ready(false);
+                    login_state.set_login_qr_image(slint::Image::default());
+                    login_state.set_login_qr_message("正在加载二维码...".into());
                     // QR login remembers the session independently of the form checkbox.
                     self.send("qr", json!({ "remember" : true }));
                 } else {
-                    let mut params = json!({ "phone":phone.as_str(), "countrycode":country.as_str(), "rememberMe":s.get_login_remember() });
+                    let mut params = json!({ "phone":phone.as_str(), "countrycode":country.as_str(), "rememberMe":login_state.get_login_remember() });
                     params[if password_mode { "password" } else { "captcha" }] =
                         json!(secret.as_str());
                     self.send(
                         "login",
-                        json!({ "params":params, "remember":s.get_login_remember() }),
+                        json!({ "params":params, "remember":login_state.get_login_remember() }),
                     );
                 }
             }
             "captcha" => {
-                if s.get_login_captcha_busy() || s.get_login_captcha_seconds() > 0 {
+                if login_state.get_login_captcha_busy()
+                    || login_state.get_login_captcha_seconds() > 0
+                {
                     return;
                 }
-                s.set_login_error("".into());
-                if s.get_login_sms_phone().is_empty() {
-                    s.set_login_error("请输入手机号码".into());
+                login_state.set_login_error("".into());
+                if login_state.get_login_sms_phone().is_empty() {
+                    login_state.set_login_error("请输入手机号码".into());
                     return;
                 }
-                s.set_login_captcha_busy(true);
-                self.send("captcha", json!({ "phone":s.get_login_sms_phone().as_str(), "ctcode":s.get_login_sms_country_code().as_str() }));
+                login_state.set_login_captcha_busy(true);
+                self.send("captcha", json!({ "phone":login_state.get_login_sms_phone().as_str(), "ctcode":login_state.get_login_sms_country_code().as_str() }));
             }
             "close-login" | "cancel-login" => {
                 // A closed dialog must not receive a late captcha result on reopening.
                 *self.tokens.entry("captcha".into()).or_default() += 1;
-                s.set_login_captcha_busy(false);
+                login_state.set_login_captcha_busy(false);
                 if self.login_waiting {
                     self.login_waiting = false;
                     self.epoch += 1;
-                    cancel_playlist_loading(&s);
-                    s.set_login_busy(false);
+                    cancel_playlist_loading(app);
+                    login_state.set_login_busy(false);
                     self.send("cancel-login", Value::Null);
                     self.send("home", json!({}));
                     self.send("devices", json!({}));
@@ -896,44 +1008,38 @@ impl View {
             }
             "logout" => {
                 self.epoch += 1;
-                cancel_playlist_loading(&s);
+                cancel_playlist_loading(app);
                 self.login_waiting = false;
                 self.likes.clear();
                 self.image_targets.clear();
                 self.pending_likes.clear();
-                self.queue.clear();
-                self.current = None;
+                self.clear_queue(app);
                 self.displayed.clear();
                 self.daily.clear();
-                self.send("stop", Value::Null);
                 self.send("logout", Value::Null);
-                self.queue_model(&s);
-                s.set_is_logged_in(false);
-                s.set_user_nickname("未登录".into());
-                s.set_user_avatar(slint::Image::default());
-                s.set_created_playlists(model(vec![]));
-                s.set_detail_tracks(model(vec![]));
-                s.set_playlist_tracks(model(vec![]));
-                s.set_daily_songs(cover_model(vec![]));
-                s.set_recommend_playlists(cover_model(vec![]));
-                s.set_current_song_title("未在播放".into());
-                s.set_current_song_artist("".into());
-                s.set_current_song_id(-1);
-                s.set_current_song_cover(slint::Image::default());
-                s.set_playlist_owned(false);
-                s.set_playlist_loading(false);
-                s.set_playlist_metadata_loading(false);
-                s.set_playlist_load_error("".into());
-                s.set_is_login_open(false);
-                s.set_current_route("home".into());
+                account_state.set_is_logged_in(false);
+                account_state.set_user_nickname("未登录".into());
+                account_state.set_user_avatar(slint::Image::default());
+                playlist_state.set_created_playlists(model(vec![]));
+                detail_state.set_detail_tracks(model(vec![]));
+                playlist_state.set_playlist_tracks(model(vec![]));
+                home_state.set_daily_songs(cover_model(vec![]));
+                home_state.set_recommend_playlists(cover_model(vec![]));
+                playlist_state.set_playlist_owned(false);
+                playlist_state.set_playlist_loading(false);
+                playlist_state.set_playlist_metadata_loading(false);
+                playlist_state.set_playlist_load_error("".into());
+                login_state.set_is_login_open(false);
+                navigation_state.set_current_route("home".into());
                 self.route = "home".into();
                 self.send("home", json!({}));
             }
             "local" => {
-                s.set_runtime_message("正在更新本地曲库…".into());
+                runtime_state.set_runtime_message("正在更新本地曲库…".into());
                 self.send("local", json!({ "action" : arg }));
             }
             "remove-folder" => self.send("local", json!({ "action" : "remove", "path" : arg })),
+            "remove-local-track" => self.remove_local_song(app, id),
             "clear-cache" => {
                 self.loading = false;
                 self.send("stop", Value::Null);
@@ -966,15 +1072,15 @@ impl View {
                     .cloned()
                 {
                     if name == "download" {
-                        s.set_runtime_message("正在检查下载权限…".into());
-                        s.set_download_song_id(id);
-                        s.set_download_song_name(song.name.clone().into());
-                        s.set_download_qualities(model(vec![]));
-                        s.set_is_download_open(true);
+                        runtime_state.set_runtime_message("正在检查下载权限…".into());
+                        download_state.set_download_song_id(id);
+                        download_state.set_download_song_name(song.name.clone().into());
+                        download_state.set_download_qualities(model(vec![]));
+                        download_state.set_is_download_open(true);
                         self.send("download-options", json!({"song":song}));
                     } else if self.downloads.insert(song.id.clone()) {
-                        s.set_is_download_open(false);
-                        s.set_runtime_message("正在下载…".into());
+                        download_state.set_is_download_open(false);
+                        runtime_state.set_runtime_message("正在下载…".into());
                         self.send("download", json!({"song":song,"quality":arg}));
                     }
                 }
@@ -982,116 +1088,146 @@ impl View {
             _ => {}
         }
     }
-    pub fn seek(&mut self, percent: f32) {
-        if let Some(song) = self.current.as_ref().and_then(|id| self.songs.get(id)) {
-            self.send(
-                "seek",
-                json!(
-                    { "seconds" : song.duration as f64 * percent.clamp(0.0, 100.0) as f64
-                    / 100000.0 }
-                ),
-            );
+    pub fn seek(&mut self, app: &AppWindow, percent: f32) {
+        if !percent.is_finite() {
+            return;
+        }
+        if let Some(song) = self.queue.current().and_then(|id| self.songs.get(id)) {
+            let ms = (song.duration as f64 * percent.clamp(0.0, 100.0) as f64 / 100.0) as u64;
+            self.seek_to_ms(app, ms);
+        }
+    }
+    fn seek_to_ms(&mut self, app: &AppWindow, ms: u64) {
+        self.position_ms = ms;
+        self.update_lyric_position(app, ms, true);
+        self.playback_dirty = true;
+        let player_state = app.global::<crate::PlayerState>();
+        player_state.set_current_time_str(time(ms).into());
+        if let Some(song) = self.queue.current().and_then(|id| self.songs.get(id)) {
+            player_state.set_progress_percent(if song.duration > 0 {
+                (ms as f64 / song.duration as f64 * 100.0) as f32
+            } else {
+                0.0
+            });
+        }
+        if !self.resume_pending {
+            self.seek_target = Some((ms, Instant::now()));
+            self.send("seek", json!({ "seconds": ms as f64 / 1000.0 }));
         }
     }
     pub fn editor(&mut self, app: &AppWindow, action: &str) {
-        let s = app.global::<AppState>();
+        let account_state = app.global::<crate::AccountState>();
+        let login_state = app.global::<crate::LoginState>();
+        let playlist_state = app.global::<crate::PlaylistState>();
+        let dialog_state = app.global::<crate::DialogState>();
         match action {
             "create" => {
-                if !s.get_is_logged_in() {
-                    s.set_is_login_open(true);
+                if !account_state.get_is_logged_in() {
+                    login_state.set_is_login_open(true);
                     return;
                 }
-                s.set_playlist_editor_name("".into());
-                s.set_playlist_editor_description("".into());
-                s.set_playlist_editor_private(false);
-                s.set_playlist_editor_mode("create".into());
-                s.set_playlist_editor_error("".into());
+                playlist_state.set_playlist_editor_name("".into());
+                playlist_state.set_playlist_editor_description("".into());
+                playlist_state.set_playlist_editor_private(false);
+                playlist_state.set_playlist_editor_mode("create".into());
+                playlist_state.set_playlist_editor_error("".into());
             }
             "edit" => {
-                if !s.get_playlist_can_manage() {
+                if !playlist_state.get_playlist_can_manage() {
                     return;
                 }
-                s.set_playlist_editor_name(s.get_playlist_title());
-                s.set_playlist_editor_description(s.get_playlist_description());
-                s.set_playlist_editor_mode("edit".into());
-                s.set_playlist_editor_error("".into());
+                playlist_state.set_playlist_editor_name(playlist_state.get_playlist_title());
+                playlist_state
+                    .set_playlist_editor_description(playlist_state.get_playlist_description());
+                playlist_state.set_playlist_editor_mode("edit".into());
+                playlist_state.set_playlist_editor_error("".into());
             }
             "close" => {
                 if self.editor_pending {
                     return;
                 }
-                s.set_playlist_restore_focus(if s.get_playlist_editor_mode() == "create" {
-                    1
-                } else {
-                    2
-                });
-                s.set_playlist_editor_mode("".into());
+                playlist_state.set_playlist_restore_focus(
+                    if playlist_state.get_playlist_editor_mode() == "create" {
+                        1
+                    } else {
+                        2
+                    },
+                );
+                playlist_state.set_playlist_editor_mode("".into());
             }
             "delete" => {
-                if !s.get_playlist_can_manage() {
+                if !playlist_state.get_playlist_can_manage() {
                     return;
                 }
-                s.set_playlist_delete_id(s.get_active_playlist_id());
-                s.set_dialog_title("删除歌单".into());
-                s.set_dialog_message(
-                    format!("确定删除「{}」吗？删除后无法恢复。", s.get_playlist_title()).into(),
+                dialog_state.set_playlist_delete_id(playlist_state.get_active_playlist_id());
+                dialog_state.set_dialog_title("删除歌单".into());
+                dialog_state.set_dialog_message(
+                    format!(
+                        "确定删除「{}」吗？删除后无法恢复。",
+                        playlist_state.get_playlist_title()
+                    )
+                    .into(),
                 );
-                s.set_dialog_mode("confirm-cancel".into());
-                s.set_dialog_confirm_text("删除".into());
-                s.set_dialog_cancel_text("取消".into());
-                s.set_is_dialog_open(true);
+                dialog_state.set_dialog_mode("confirm-cancel".into());
+                dialog_state.set_dialog_confirm_text("删除".into());
+                dialog_state.set_dialog_cancel_text("取消".into());
+                dialog_state.set_is_dialog_open(true);
             }
             "confirm-delete" => {
-                if s.get_playlist_can_manage()
-                    && s.get_playlist_delete_id() == s.get_active_playlist_id()
+                if playlist_state.get_playlist_can_manage()
+                    && dialog_state.get_playlist_delete_id()
+                        == playlist_state.get_active_playlist_id()
                 {
                     self.send_mutation("playlist_delete", json!({ "id" : self.active_playlist }));
                 }
             }
             "submit" => {
-                if self.editor_pending || !s.get_playlist_editor_can_submit() {
+                if self.editor_pending || !playlist_state.get_playlist_editor_can_submit() {
                     return;
                 }
                 self.editor_pending = true;
-                s.set_playlist_editor_can_submit(false);
-                let name = crate::playlists::normalize_name(&s.get_playlist_editor_name());
-                if s.get_playlist_editor_mode() == "create" {
+                playlist_state.set_playlist_editor_can_submit(false);
+                let name =
+                    crate::playlists::normalize_name(&playlist_state.get_playlist_editor_name());
+                if playlist_state.get_playlist_editor_mode() == "create" {
                     self.send_mutation(
                         "playlist_create",
                         json!(
-                            { "name" : name, "privacy" : if s
-                            .get_playlist_editor_private() { 10 } else { 0 } }
+                            { "name" : name, "privacy" : if playlist_state.get_playlist_editor_private() { 10 } else { 0 } }
                         ),
                     );
                 } else {
                     self.send_mutation(
                         "playlist_update",
                         json!(
-                            { "id" : self.active_playlist, "name" : name, "desc" : s
-                            .get_playlist_editor_description().trim() }
+                            { "id" : self.active_playlist, "name" : name, "desc" : playlist_state.get_playlist_editor_description().trim() }
                         ),
                     );
                 }
             }
             _ => {}
         }
-        let name = crate::playlists::limit_text(&s.get_playlist_editor_name(), 40);
-        let desc = crate::playlists::limit_text(&s.get_playlist_editor_description(), 1000);
-        s.set_playlist_editor_name(name.clone().into());
-        s.set_playlist_editor_description(desc.clone().into());
-        s.set_playlist_editor_name_length(name.encode_utf16().count() as i32);
-        s.set_playlist_editor_description_length(desc.encode_utf16().count() as i32);
-        s.set_playlist_editor_can_submit(
+        let name = crate::playlists::limit_text(&playlist_state.get_playlist_editor_name(), 40);
+        let desc =
+            crate::playlists::limit_text(&playlist_state.get_playlist_editor_description(), 1000);
+        playlist_state.set_playlist_editor_name(name.clone().into());
+        playlist_state.set_playlist_editor_description(desc.clone().into());
+        playlist_state.set_playlist_editor_name_length(name.encode_utf16().count() as i32);
+        playlist_state.set_playlist_editor_description_length(desc.encode_utf16().count() as i32);
+        playlist_state.set_playlist_editor_can_submit(
             !self.editor_pending
                 && !crate::playlists::normalize_name(&name).is_empty()
-                && s.get_is_logged_in()
-                && (s.get_playlist_editor_mode() == "create"
-                    || (s.get_playlist_can_manage()
-                        && (s.get_playlist_title() != name
-                            || s.get_playlist_description() != desc))),
+                && account_state.get_is_logged_in()
+                && (playlist_state.get_playlist_editor_mode() == "create"
+                    || (playlist_state.get_playlist_can_manage()
+                        && (playlist_state.get_playlist_title() != name
+                            || playlist_state.get_playlist_description() != desc))),
         );
     }
-    fn update_likes(&self, state: &AppState<'_>) {
+    fn update_likes(&self, app: &AppWindow) {
+        let detail_state = app.global::<crate::DetailState>();
+        let playlist_state = app.global::<crate::PlaylistState>();
+        let player_state = app.global::<crate::PlayerState>();
         let update = |source: ModelRc<TrackItem>| {
             cover_model(
                 source
@@ -1106,11 +1242,11 @@ impl View {
                     .collect(),
             )
         };
-        state.set_detail_tracks(update(state.get_detail_tracks()));
-        state.set_playlist_tracks(update(state.get_playlist_tracks()));
-        state.set_current_song_favorite(
-            self.current
-                .as_ref()
+        detail_state.set_detail_tracks(update(detail_state.get_detail_tracks()));
+        playlist_state.set_playlist_tracks(update(playlist_state.get_playlist_tracks()));
+        player_state.set_current_song_favorite(
+            self.queue
+                .current()
                 .is_some_and(|id| self.likes.contains(id)),
         );
     }
@@ -1133,66 +1269,84 @@ impl View {
         {
             return;
         }
-        let s = app.global::<AppState>();
+        let home_state = app.global::<crate::HomeState>();
+        let login_state = app.global::<crate::LoginState>();
+        let player_state = app.global::<crate::PlayerState>();
+        let artist_state = app.global::<crate::ArtistState>();
+        let playlist_state = app.global::<crate::PlaylistState>();
+        let download_state = app.global::<crate::DownloadState>();
+        let runtime_state = app.global::<crate::RuntimeState>();
+        let search_state = app.global::<crate::SearchState>();
+        let account_state = app.global::<crate::AccountState>();
+        let navigation_state = app.global::<crate::NavigationState>();
+        let audio_state = app.global::<crate::AudioState>();
+        let player_view_state = app.global::<crate::PlayerViewState>();
+        let library_state = app.global::<crate::LibraryState>();
+        let settings_state = app.global::<crate::SettingsState>();
         if let Some(error) = event.error {
             match event.name.as_str() {
                 "home-albums" => {
-                    s.set_home_albums_loading(false);
-                    s.set_home_albums_loaded(true);
-                    s.set_home_albums_error("新碟暂时加载失败，请重试".into());
+                    home_state.set_home_albums_loading(false);
+                    home_state.set_home_albums_loaded(true);
+                    home_state.set_home_albums_error("新碟暂时加载失败，请重试".into());
                     return;
                 }
                 "home-charts" => {
-                    s.set_home_charts_loading(false);
-                    s.set_home_charts_loaded(true);
-                    s.set_home_charts_error("榜单暂时加载失败，请重试".into());
+                    home_state.set_home_charts_loading(false);
+                    home_state.set_home_charts_loaded(true);
+                    home_state.set_home_charts_error("榜单暂时加载失败，请重试".into());
                     return;
                 }
                 "captcha" => {
-                    s.set_login_captcha_busy(false);
-                    s.set_login_error(error.clone().into());
+                    login_state.set_login_captcha_busy(false);
+                    login_state.set_login_error(error.clone().into());
                 }
                 "login" | "qr" => {
                     self.login_waiting = false;
-                    s.set_login_busy(false);
-                    s.set_login_error(error.clone().into());
-                    s.set_login_qr_message(error.clone().into());
+                    login_state.set_login_busy(false);
+                    login_state.set_login_error(error.clone().into());
+                    login_state.set_login_qr_message(error.clone().into());
                     self.send("home", json!({}));
                 }
                 "play" => {
                     self.loading = false;
-                    s.set_is_loading(false);
-                    s.set_is_playing(false);
+                    self.resume_pending = self.queue.current().is_some();
+                    player_state.set_is_loading(false);
+                    player_state.set_is_playing(false);
+                }
+                "save-playback" => {
+                    // A failed disk write must be retried on the next save interval.
+                    self.saved_playback = None;
                 }
                 "home" => {
-                    s.set_home_playlists_loading(false);
-                    s.set_home_songs_loading(false);
+                    home_state.set_home_playlists_loading(false);
+                    home_state.set_home_songs_loading(false);
                 }
                 "page" if self.route == "artist" => {
-                    s.set_artist_loading(false);
-                    s.set_artist_load_error(error.clone().into());
+                    artist_state.set_artist_loading(false);
+                    artist_state.set_artist_load_error(error.clone().into());
                 }
                 "page" if self.route == "playlist" => {
-                    s.set_playlist_loading(false);
-                    s.set_playlist_metadata_loading(false);
-                    s.set_playlist_load_error(error.clone().into());
+                    playlist_state.set_playlist_loading(false);
+                    playlist_state.set_playlist_metadata_loading(false);
+                    playlist_state.set_playlist_load_error(error.clone().into());
                 }
                 "mutation" => {
                     self.editor_pending = false;
                     self.pending_likes.clear();
-                    s.set_playlist_editor_error(error.clone().into());
+                    playlist_state.set_playlist_editor_error(error.clone().into());
                     self.editor(app, "validate");
                 }
-                "download-options" => s.set_is_download_open(false),
+                "download-options" => download_state.set_is_download_open(false),
                 _ => {}
             }
-            s.set_runtime_message(error.into());
+            runtime_state.set_runtime_message(error.into());
             return;
         }
         let data = event.data;
         match event.name.as_str() {
             "home-albums" => {
-                s.set_home_new_albums(cover_model(
+                home_state.set_home_new_albums(cover_model(
                     items(&data["albums"])
                         .iter()
                         .filter(|a| !text(&a["id"]).is_empty() && !text(&a["name"]).is_empty())
@@ -1222,12 +1376,12 @@ impl View {
                         })
                         .collect(),
                 ));
-                s.set_home_albums_loading(false);
-                s.set_home_albums_loaded(true);
-                s.set_home_albums_error("".into());
+                home_state.set_home_albums_loading(false);
+                home_state.set_home_albums_loaded(true);
+                home_state.set_home_albums_error("".into());
             }
             "home-charts" => {
-                s.set_home_charts(cover_model(
+                home_state.set_home_charts(cover_model(
                     items(&data["list"])
                         .iter()
                         .filter(|p| {
@@ -1263,9 +1417,9 @@ impl View {
                         })
                         .collect(),
                 ));
-                s.set_home_charts_loading(false);
-                s.set_home_charts_loaded(true);
-                s.set_home_charts_error("".into());
+                home_state.set_home_charts_loading(false);
+                home_state.set_home_charts_loaded(true);
+                home_state.set_home_charts_error("".into());
             }
             "home" => {
                 let b = &data["body"];
@@ -1273,7 +1427,7 @@ impl View {
                     .get("recommend")
                     .or(b["playlists"].get("result"))
                     .unwrap_or(&Value::Null);
-                s.set_recommend_playlists(cover_model(
+                home_state.set_recommend_playlists(cover_model(
                     items(pls)
                         .iter()
                         .map(|p| RecommendPlaylistItem {
@@ -1294,7 +1448,7 @@ impl View {
                     .unwrap_or(&Value::Null);
                 let songs = self.api_songs(songlist);
                 self.daily = songs.iter().map(|s| s.id.clone()).collect();
-                s.set_daily_songs(cover_model(
+                home_state.set_daily_songs(cover_model(
                     songs
                         .into_iter()
                         .map(|song| {
@@ -1312,7 +1466,7 @@ impl View {
                 let colors = [
                     "purple", "orange", "red", "blue", "green", "dark", "pink", "indigo",
                 ];
-                s.set_browse_categories(model(
+                search_state.set_browse_categories(model(
                     items(&b["categories"]["sub"])
                         .iter()
                         .enumerate()
@@ -1322,19 +1476,19 @@ impl View {
                         })
                         .collect(),
                 ));
-                s.set_home_playlists_loading(false);
-                s.set_home_songs_loading(false);
+                home_state.set_home_playlists_loading(false);
+                home_state.set_home_songs_loading(false);
             }
             "login" => {
                 if data.is_null() {
                     return;
                 }
                 self.login_waiting = false;
-                s.set_login_busy(false);
-                s.set_is_logged_in(true);
-                s.set_user_nickname("正在获取用户信息…".into());
-                s.set_is_login_open(false);
-                s.set_runtime_message("登录成功".into());
+                login_state.set_login_busy(false);
+                account_state.set_is_logged_in(true);
+                account_state.set_user_nickname("正在获取用户信息…".into());
+                login_state.set_is_login_open(false);
+                runtime_state.set_runtime_message("登录成功".into());
                 self.send("account", json!({}));
                 self.send("home", json!({}));
                 self.send("configure-xeapi", json!({}));
@@ -1345,12 +1499,13 @@ impl View {
                 }
                 let b = &data["body"];
                 let uid = text(&b["profile"]["userId"]);
-                s.set_is_logged_in(true);
-                s.set_user_nickname(text(&b["profile"]["nickname"]).into());
-                s.set_user_avatar(self.target_image("user", &text(&b["profile"]["avatarUrl"])));
-                s.set_created_playlists(self.nav(&b["playlists"], &uid));
+                account_state.set_is_logged_in(true);
+                account_state.set_user_nickname(text(&b["profile"]["nickname"]).into());
+                account_state
+                    .set_user_avatar(self.target_image("user", &text(&b["profile"]["avatarUrl"])));
+                playlist_state.set_created_playlists(self.nav(&b["playlists"], &uid));
                 self.likes = items(&b["likes"]).iter().map(text).collect();
-                self.update_likes(&s);
+                self.update_likes(app);
             }
             "page" => self.apply_page(app, &data),
             "playlist-metadata" => {
@@ -1368,12 +1523,12 @@ impl View {
                         } else {
                             self.likes.remove(&id);
                         }
-                        self.update_likes(&s);
+                        self.update_likes(app);
                     }
                     "playlist_create" | "playlist_update" => {
                         self.editor_pending = false;
-                        s.set_playlist_editor_mode("".into());
-                        s.set_playlist_editor_can_submit(false);
+                        playlist_state.set_playlist_editor_mode("".into());
+                        playlist_state.set_playlist_editor_can_submit(false);
                         let id = if op == "playlist_create" {
                             text(&data["body"]["playlist"]["id"])
                         } else {
@@ -1386,9 +1541,9 @@ impl View {
                     }
                     "playlist_delete" => {
                         if text(&p["id"]) == self.active_playlist {
-                            s.set_current_route("home".into());
-                            s.set_playlist_tracks(model(vec![]));
-                            s.set_playlist_owned(false);
+                            navigation_state.set_current_route("home".into());
+                            playlist_state.set_playlist_tracks(model(vec![]));
+                            playlist_state.set_playlist_owned(false);
                         }
                         self.send("account", json!({}));
                     }
@@ -1401,79 +1556,62 @@ impl View {
                     }
                     _ => {}
                 }
-                s.set_runtime_message("已保存".into());
+                runtime_state.set_runtime_message("已保存".into());
             }
             "play" => {
                 if !data.is_null() {
                     self.loading = false;
-                    s.set_is_loading(false);
+                    player_state.set_is_loading(false);
                 }
             }
             "finished" => {
                 if data["reason"] == "ended" && !self.loading {
                     self.step(app, 1, true)
                 } else if data["reason"] == "error" {
-                    s.set_runtime_message("音频流播放失败，请重试或切换音质".into());
-                    s.set_is_playing(false);
+                    runtime_state.set_runtime_message("音频流播放失败，请重试或切换音质".into());
+                    player_state.set_is_playing(false);
                 }
             }
             "snapshot" => {
                 let progress = data["progress"].as_u64().unwrap_or(0);
-                if !self.loading {
+                let owns_snapshot = !self.resume_pending
+                    && data["play_token"].as_u64().is_none_or(|token| {
+                        token != 0 && token == self.tokens.get("play").copied().unwrap_or(0)
+                    });
+                let seek_ready = self.seek_target.is_none_or(|(target, since)| {
+                    target.abs_diff(progress) <= 1000 || since.elapsed() >= Duration::from_secs(2)
+                });
+                if self.loading {
+                    player_state.set_is_playing(false);
+                    player_state.set_is_loading(true);
+                } else if owns_snapshot {
                     self.paused = data["paused"] == true;
+                    player_state.set_is_playing(data["playing"] == true);
+                    player_state.set_is_loading(data["buffering"] == true);
                 }
-                s.set_is_playing(!self.loading && data["playing"] == true);
-                s.set_is_loading(self.loading || data["buffering"] == true);
-                s.set_session_volume_locked(data["locked"] == true);
-                s.set_can_adjust_volume(s.get_setting_software_volume() && data["locked"] != true);
-                if !self.loading {
-                    if let Some(song) = self.current.as_ref().and_then(|id| self.songs.get(id)) {
-                        s.set_current_time_str(time(progress).into());
-                        s.set_progress_percent(if song.duration > 0 {
+                audio_state.set_session_volume_locked(data["locked"] == true);
+                let update_progress =
+                    !self.loading && owns_snapshot && seek_ready && data["active"] != false;
+                if update_progress {
+                    self.seek_target = None;
+                    if let Some(song) = self.queue.current().and_then(|id| self.songs.get(id)) {
+                        self.position_ms = clamp_position(song, progress);
+                        player_state.set_current_time_str(time(progress).into());
+                        player_state.set_progress_percent(if song.duration > 0 {
                             (progress as f64 / song.duration as f64 * 100.0).clamp(0.0, 100.0)
                                 as f32
                         } else {
                             0.0
                         });
-                        s.set_buffered_percent(data["buffered"].as_f64().unwrap_or(0.0) as f32);
+                        player_state
+                            .set_buffered_percent(data["buffered"].as_f64().unwrap_or(0.0) as f32);
                     }
                 }
-                if !self.loading {
-                    let jumped = self.lyric_progress_ms.abs_diff(progress) > 1000;
-                    self.lyric_progress_ms = progress;
-                    s.set_active_lyric_index(
-                        self.lyrics
-                            .partition_point(|l| l.ms <= progress.saturating_add(50))
-                            as i32
-                            - 1,
-                    );
-                    if jumped {
-                        s.set_lyric_position_reset(s.get_lyric_position_reset().wrapping_add(1));
-                    }
+                if update_progress {
+                    self.update_lyric_position(app, progress, false);
                 }
             }
-            "lyrics" => {
-                self.lyrics = serde_json::from_value(data).unwrap_or_default();
-                s.set_lyrics(model(
-                    self.lyrics
-                        .iter()
-                        .map(|l| LyricLineItem {
-                            time_str: time(l.ms).into(),
-                            text: l.text.clone().into(),
-                            translation: l.translation.clone().into(),
-                            pronunciation: l.pronunciation.clone().into(),
-                            ..Default::default()
-                        })
-                        .collect(),
-                ));
-                s.set_active_lyric_index(
-                    self.lyrics
-                        .partition_point(|l| l.ms <= self.lyric_progress_ms.saturating_add(50))
-                        as i32
-                        - 1,
-                );
-                s.set_lyric_position_reset(s.get_lyric_position_reset().wrapping_add(1));
-            }
+            "lyrics" => self.apply_lyrics(app, data),
             "comments" => {
                 let b = &data["body"];
                 let mut rows = vec![];
@@ -1499,7 +1637,7 @@ impl View {
                         });
                     }
                 }
-                s.set_comments(cover_model(rows));
+                player_view_state.set_comments(cover_model(rows));
             }
             "local" => {
                 if data.is_null() {
@@ -1508,17 +1646,20 @@ impl View {
                 let songs: Vec<Song> =
                     serde_json::from_value(data["songs"].clone()).unwrap_or_default();
                 self.local = songs.iter().map(|s| s.id.clone()).collect();
-                s.set_local_tracks(self.tracks(songs));
+                if self.route == "local-music" {
+                    self.displayed = self.local.clone();
+                }
+                library_state.set_local_tracks(self.tracks(songs));
                 let folders: Vec<std::path::PathBuf> =
                     serde_json::from_value(data["folders"].clone()).unwrap_or_default();
                 self.preferences.folders = folders.clone();
-                s.set_setting_lib_paths(strings(
+                settings_state.set_setting_lib_paths(strings(
                     folders
                         .iter()
                         .map(|p| p.to_string_lossy().into_owned())
                         .collect(),
                 ));
-                s.set_local_description(
+                library_state.set_local_description(
                     format!(
                         "{} 首本地歌曲{}",
                         self.local.len(),
@@ -1531,7 +1672,7 @@ impl View {
                     .into(),
                 );
                 if event.token > 0 {
-                    s.set_runtime_message("本地曲库已更新".into());
+                    runtime_state.set_runtime_message("本地曲库已更新".into());
                 }
             }
             "devices" | "device" => {
@@ -1539,7 +1680,7 @@ impl View {
                     return;
                 }
                 self.devices = items(&data).to_vec();
-                s.set_output_devices(model(
+                audio_state.set_output_devices(model(
                     self.devices
                         .iter()
                         .map(|d| OutputDeviceItem {
@@ -1554,11 +1695,12 @@ impl View {
                     .iter()
                     .position(|d| d["current"] == true)
                     .or_else(|| self.devices.iter().position(|d| d["default"] == true));
-                s.set_setting_output_device_index(active.map_or(-1, |index| index as i32));
+                audio_state
+                    .set_setting_output_device_index(active.map_or(-1, |index| index as i32));
                 if let Some(index) = active {
                     let d = &self.devices[index];
-                    s.set_setting_output_device_label(text(&d["name"]).into());
-                    s.set_setting_supports_exclusive(text(&d["id"]).starts_with("hw:"));
+                    audio_state.set_setting_output_device_label(text(&d["name"]).into());
+                    audio_state.set_setting_supports_exclusive(text(&d["id"]).starts_with("hw:"));
                     if event.name == "device" {
                         self.preferences.device = d["id"]
                             .as_str()
@@ -1566,15 +1708,15 @@ impl View {
                             .map(str::to_owned);
                     }
                 } else {
-                    s.set_setting_output_device_label("无可用输出设备".into());
-                    s.set_setting_supports_exclusive(false);
+                    audio_state.set_setting_output_device_label("无可用输出设备".into());
+                    audio_state.set_setting_supports_exclusive(false);
                 }
             }
             "cache" => {
                 if data.is_null() {
                     return;
                 }
-                s.set_setting_cache_details(strings(
+                settings_state.set_setting_cache_details(strings(
                     [
                         ("song", "song_count"),
                         ("entity", "entity_count"),
@@ -1592,23 +1734,24 @@ impl View {
                 ));
                 let total = data["total"].as_f64().unwrap_or(0.0);
                 let max = data["max"].as_f64().unwrap_or(1.0);
-                s.set_setting_cache_usage_percent((total / max.max(1.0) * 100.0) as f32);
-                s.set_setting_cache_usage_text(
+                settings_state
+                    .set_setting_cache_usage_percent((total / max.max(1.0) * 100.0) as f32);
+                settings_state.set_setting_cache_usage_text(
                     format!("{:.1} MB / {:.2} GB", total / 1048576.0, max / 1073741824.0).into(),
                 );
             }
             "qr" => {
                 if let Some(message) = data["message"].as_str() {
-                    s.set_login_qr_message(message.into());
+                    login_state.set_login_qr_message(message.into());
                 }
             }
             "captcha" => {
-                s.set_login_captcha_busy(false);
-                s.set_login_captcha_seconds(60);
-                s.set_login_error("".into());
+                login_state.set_login_captcha_busy(false);
+                login_state.set_login_captcha_seconds(60);
+                login_state.set_login_error("".into());
             }
             "download-options" => {
-                s.set_download_qualities(model(
+                download_state.set_download_qualities(model(
                     items(&data)
                         .iter()
                         .map(|q| DownloadQualityItem {
@@ -1619,59 +1762,65 @@ impl View {
                         })
                         .collect(),
                 ));
-                s.set_runtime_message("".into());
+                runtime_state.set_runtime_message("".into());
             }
             "download" => {
                 self.downloads.remove(&text(&data["song_id"]));
                 if let Some(error) = data["error"].as_str() {
-                    s.set_runtime_message(error.into());
+                    runtime_state.set_runtime_message(error.into());
                 } else if data["cancelled"] != true {
-                    s.set_runtime_message(format!("已下载到 {}", text(&data["path"])).into());
+                    runtime_state
+                        .set_runtime_message(format!("已下载到 {}", text(&data["path"])).into());
                 } else {
-                    s.set_runtime_message("已取消下载".into());
+                    runtime_state.set_runtime_message("已取消下载".into());
                 }
             }
-            "logout" => s.set_runtime_message("已退出登录".into()),
+            "logout" => runtime_state.set_runtime_message("已退出登录".into()),
             _ => {}
         }
     }
     fn apply_playlist_metadata(&mut self, app: &AppWindow, id: &str, p: &Value) {
-        let s = app.global::<AppState>();
-        s.set_active_playlist_id(self.ids.intern("playlist", id));
-        s.set_playlist_title(text(&p["name"]).into());
-        s.set_playlist_description(text(&p["description"]).into());
-        s.set_playlist_cover(self.target_image("playlist", &text(&p["coverImgUrl"])));
-        s.set_playlist_creator(text(&p["creator"]["nickname"]).into());
-        s.set_playlist_creator_avatar(
+        let playlist_state = app.global::<crate::PlaylistState>();
+        playlist_state.set_active_playlist_id(self.ids.intern("playlist", id));
+        playlist_state.set_playlist_title(text(&p["name"]).into());
+        playlist_state.set_playlist_description(text(&p["description"]).into());
+        playlist_state.set_playlist_cover(self.target_image("playlist", &text(&p["coverImgUrl"])));
+        playlist_state.set_playlist_creator(text(&p["creator"]["nickname"]).into());
+        playlist_state.set_playlist_creator_avatar(
             self.target_image("creator", &text(&p["creator"]["avatarUrl"])),
         );
-        s.set_playlist_owned(
-            s.get_created_playlists()
+        playlist_state.set_playlist_owned(
+            playlist_state
+                .get_created_playlists()
                 .iter()
                 .any(|p| self.ids.get(p.id, "playlist") == Some(id)),
         );
-        s.set_playlist_special_type(p["specialType"].as_i64().unwrap_or(0) as i32);
-        s.set_playlist_is_private(p["privacy"] == 10);
+        playlist_state.set_playlist_special_type(p["specialType"].as_i64().unwrap_or(0) as i32);
+        playlist_state.set_playlist_is_private(p["privacy"] == 10);
         let count = p["trackCount"]
             .as_u64()
             .unwrap_or(items(&p["tracks"]).len() as u64)
             .min(i32::MAX as u64) as i32;
-        s.set_playlist_track_count(count);
-        s.set_playlist_subscribed_count(text(&p["subscribedCount"]).into());
-        s.set_playlist_meta(strings(vec![
+        playlist_state.set_playlist_track_count(count);
+        playlist_state.set_playlist_subscribed_count(text(&p["subscribedCount"]).into());
+        playlist_state.set_playlist_meta(strings(vec![
             format!("{count} 首歌曲"),
             format!("{} 次播放", text(&p["playCount"])),
         ]));
-        s.set_playlist_metadata_loading(false);
+        playlist_state.set_playlist_metadata_loading(false);
     }
     fn apply_page(&mut self, app: &AppWindow, data: &Value) {
-        let s = app.global::<AppState>();
+        let search_state = app.global::<crate::SearchState>();
+        let detail_state = app.global::<crate::DetailState>();
+        let artist_state = app.global::<crate::ArtistState>();
+        let playlist_state = app.global::<crate::PlaylistState>();
+        let runtime_state = app.global::<crate::RuntimeState>();
         let b = &data["body"];
         let kind = text(&data["kind"]);
         let id = text(&data["id"]);
         let songs = match kind.as_str() {
             "search" => {
-                s.set_search_result_count(
+                search_state.set_search_result_count(
                     b["result"]["songCount"]
                         .as_i64()
                         .unwrap_or(0)
@@ -1686,12 +1835,12 @@ impl View {
             }
             "album" => {
                 let a = &b["album"];
-                s.set_album_title(text(&a["name"]).into());
-                s.set_album_description(text(&a["description"]).into());
-                s.set_album_cover(self.target_image("album", &text(&a["picUrl"])));
-                s.set_album_artist(text(&a["artist"]["name"]).into());
+                detail_state.set_album_title(text(&a["name"]).into());
+                detail_state.set_album_description(text(&a["description"]).into());
+                detail_state.set_album_cover(self.target_image("album", &text(&a["picUrl"])));
+                detail_state.set_album_artist(text(&a["artist"]["name"]).into());
                 self.album_artist = text(&a["artist"]["id"]);
-                s.set_album_meta(strings(vec![
+                detail_state.set_album_meta(strings(vec![
                     format!("{} 首歌曲", items(&b["songs"]).len()),
                     text(&a["company"]),
                 ]));
@@ -1703,15 +1852,15 @@ impl View {
             }
             "artist" => {
                 let a = &b["detail"]["data"]["artist"];
-                s.set_artist_loading(false);
+                artist_state.set_artist_loading(false);
                 if !a.is_object() {
-                    s.set_artist_load_error("未获取到歌手详情".into());
+                    artist_state.set_artist_load_error("未获取到歌手详情".into());
                     return;
                 }
-                s.set_artist_load_error("".into());
-                s.set_artist_name(a["name"].as_str().unwrap_or("未知歌手").into());
+                artist_state.set_artist_load_error("".into());
+                artist_state.set_artist_name(a["name"].as_str().unwrap_or("未知歌手").into());
                 let avatar = text(&a["avatar"]);
-                s.set_artist_avatar(self.target_image(
+                artist_state.set_artist_avatar(self.target_image(
                     "artist",
                     &if avatar.is_empty() {
                         text(&a["cover"])
@@ -1765,7 +1914,7 @@ impl View {
                         }
                     })
                     .collect();
-                s.set_artist_pills(strings(vec![
+                artist_state.set_artist_pills(strings(vec![
                     format!(
                         "{} 张专辑",
                         a["albumSize"].as_u64().unwrap_or(full_albums.len() as u64)
@@ -1775,7 +1924,7 @@ impl View {
                 ]));
                 let songs = self.api_songs(&b["top"]["songs"]);
                 let summary = text(&a["briefDesc"]);
-                s.set_artist_summary(
+                artist_state.set_artist_summary(
                     if !summary.trim().is_empty() {
                         summary.trim().to_owned()
                     } else if let Some(latest) = albums.first() {
@@ -1793,7 +1942,7 @@ impl View {
                     }
                     .into(),
                 );
-                s.set_artist_latest(cover_model(
+                artist_state.set_artist_latest(cover_model(
                     albums
                         .iter()
                         .take(2)
@@ -1806,10 +1955,10 @@ impl View {
                         })
                         .collect(),
                 ));
-                s.set_artist_albums(cover_model(full_albums));
-                s.set_artist_eps(cover_model(eps));
-                s.set_artist_mvs(cover_model(mvs));
-                s.set_artist_top_songs(cover_model(
+                artist_state.set_artist_albums(cover_model(full_albums));
+                artist_state.set_artist_eps(cover_model(eps));
+                artist_state.set_artist_mvs(cover_model(mvs));
+                artist_state.set_artist_top_songs(cover_model(
                     songs
                         .iter()
                         .enumerate()
@@ -1850,13 +1999,13 @@ impl View {
         self.displayed = songs.iter().map(|s| s.id.clone()).collect();
         let tracks = self.tracks(songs);
         if kind == "playlist" {
-            s.set_playlist_tracks(tracks);
-            s.set_playlist_loading(false);
-            s.set_playlist_load_error("".into());
+            playlist_state.set_playlist_tracks(tracks);
+            playlist_state.set_playlist_loading(false);
+            playlist_state.set_playlist_load_error("".into());
         } else {
-            s.set_detail_tracks(tracks)
+            detail_state.set_detail_tracks(tracks)
         }
-        s.set_runtime_message("".into());
+        runtime_state.set_runtime_message("".into());
         if data["autoplay"] == true {
             if let Some(id) = self.displayed.first().cloned() {
                 self.play(app, id, true)
@@ -1864,17 +2013,22 @@ impl View {
         }
     }
     pub fn save_preferences_if_changed(&mut self, app: &AppWindow) {
-        let s = app.global::<AppState>();
+        let settings_state = app.global::<crate::SettingsState>();
+        let audio_state = app.global::<crate::AudioState>();
+        let player_state = app.global::<crate::PlayerState>();
+        let player_view_state = app.global::<crate::PlayerViewState>();
         let theme = app.global::<Theme>();
         self.preferences.renderer =
-            crate::rendering::Renderer::from_name(&s.get_setting_renderer());
-        self.preferences.quality = s.get_setting_sound_quality().into();
-        self.preferences.strict = s.get_setting_strict_bitperfect();
-        self.preferences.exclusive = s.get_setting_exclusive_mode();
-        self.preferences.software_volume = s.get_setting_software_volume();
-        self.preferences.volume = s.get_volume_percent() as f64 / 100.0;
-        self.preferences.cache_limit_mb = s.get_setting_cache_limit_mb().max(64.0) as u64;
-        self.preferences.cache_ahead_mb = s.get_setting_cache_ahead_mb().max(1.0) as u64;
+            crate::rendering::Renderer::from_name(&settings_state.get_setting_renderer());
+        self.preferences.quality = audio_state.get_setting_sound_quality().into();
+        self.preferences.strict = audio_state.get_setting_strict_bitperfect();
+        self.preferences.exclusive = audio_state.get_setting_exclusive_mode();
+        self.preferences.software_volume = audio_state.get_setting_software_volume();
+        self.preferences.volume = audio_state.get_volume_percent() as f64 / 100.0;
+        self.preferences.cache_limit_mb =
+            settings_state.get_setting_cache_limit_mb().max(64.0) as u64;
+        self.preferences.cache_ahead_mb =
+            settings_state.get_setting_cache_ahead_mb().max(1.0) as u64;
         let aux = |model: ModelRc<AuxButtonItem>| {
             model
                 .iter()
@@ -1887,17 +2041,17 @@ impl View {
             "muted": theme.get_theme_color_muted().as_argb_encoded(),
             "strong": theme.get_theme_color_strong().as_argb_encoded(),
             "tint": theme.get_theme_color_tint().as_argb_encoded(),
-            "play_mode": s.get_play_mode().as_str(),
-            "pronunciation": s.get_show_pronunciation(),
-            "translation": s.get_show_translation(),
+            "play_mode": player_state.get_play_mode().as_str(),
+            "pronunciation": player_view_state.get_show_pronunciation(),
+            "translation": player_view_state.get_show_translation(),
             "dark": theme.get_is_dark(),
             "mode": theme.get_theme_mode().as_str(),
-            "accent": s.get_setting_accent_hex().as_str(),
-            "acrylic": s.get_setting_acrylic(),
-            "lyric_debug": s.get_setting_lyric_debug(),
-            "auto_launch": s.get_setting_auto_launch(),
-            "left": aux(s.get_fullscreen_aux_left()),
-            "right": aux(s.get_fullscreen_aux_right()),
+            "accent": settings_state.get_setting_accent_hex().as_str(),
+            "acrylic": settings_state.get_setting_acrylic(),
+            "lyric_debug": settings_state.get_setting_lyric_debug(),
+            "auto_launch": settings_state.get_setting_auto_launch(),
+            "left": aux(settings_state.get_fullscreen_aux_left()),
+            "right": aux(settings_state.get_fullscreen_aux_right()),
         });
         let next = serde_json::to_value(&self.preferences).unwrap();
         if next != self.last_preferences {
@@ -1907,80 +2061,92 @@ impl View {
     }
 }
 pub fn initialize(app: &AppWindow, prefs: &Preferences) {
-    let s = app.global::<AppState>();
-    s.set_is_logged_in(false);
-    s.set_user_nickname("未登录".into());
-    s.set_user_avatar(slint::Image::default());
-    s.set_is_playing(false);
-    s.set_is_loading(false);
-    s.set_current_song_id(-1);
-    s.set_current_song_title("未在播放".into());
-    s.set_current_song_artist("".into());
-    s.set_current_song_cover(slint::Image::default());
-    s.set_current_song_favorite(false);
-    s.set_progress_percent(0.0);
-    s.set_buffered_percent(0.0);
-    s.set_current_time_str("0:00".into());
-    s.set_duration_time_str("0:00".into());
-    s.set_playlist_owned(false);
-    s.set_playlist_loading(false);
-    s.set_playlist_metadata_loading(false);
-    s.set_playlist_load_error("".into());
-    s.set_active_playlist_id(-1);
-    s.set_playlist_title("".into());
-    s.set_playlist_description("".into());
-    s.set_playlist_meta(model(vec![]));
-    s.set_search_result_count(0);
-    s.set_home_playlists_loading(true);
-    s.set_home_songs_loading(true);
-    s.set_created_playlists(model(vec![]));
-    s.set_recommend_playlists(cover_model(vec![]));
-    s.set_daily_songs(cover_model(vec![]));
-    s.set_home_new_albums(cover_model(vec![]));
-    s.set_home_charts(cover_model(vec![]));
-    s.set_home_albums_loaded(false);
-    s.set_home_charts_loaded(false);
-    s.set_home_albums_loading(false);
-    s.set_home_charts_loading(false);
-    s.set_home_albums_error("".into());
-    s.set_home_charts_error("".into());
-    s.set_browse_categories(model(vec![]));
-    s.set_detail_tracks(model(vec![]));
-    s.set_playlist_tracks(model(vec![]));
-    s.set_local_tracks(model(vec![]));
-    s.set_queue_songs(cover_model(vec![]));
-    s.set_lyrics(model(vec![]));
-    s.set_comments(cover_model(vec![]));
-    s.set_artist_latest(cover_model(vec![]));
-    s.set_artist_albums(cover_model(vec![]));
-    s.set_artist_eps(cover_model(vec![]));
-    s.set_artist_mvs(cover_model(vec![]));
-    s.set_artist_top_songs(cover_model(vec![]));
-    s.set_active_lyric_index(-1);
-    s.set_setting_renderer(prefs.renderer.name().into());
-    s.set_startup_renderer(prefs.renderer.name().into());
-    s.set_setting_sound_quality(prefs.quality.clone().into());
-    s.set_setting_audio_engine("native".into());
-    s.set_setting_exclusive_mode(prefs.exclusive);
-    s.set_setting_strict_bitperfect(prefs.strict);
-    s.set_setting_software_volume(prefs.software_volume);
-    s.set_volume_percent((prefs.volume * 100.0) as f32);
-    s.set_output_devices(model(vec![]));
-    s.set_setting_output_device_index(-1);
-    s.set_setting_output_device_label("正在检测输出设备…".into());
-    s.set_setting_supports_exclusive(false);
-    s.set_setting_cache_limit_mb(prefs.cache_limit_mb as f32);
-    s.set_setting_cache_ahead_mb(prefs.cache_ahead_mb as f32);
-    s.set_setting_cache_usage_percent(0.0);
-    s.set_setting_cache_usage_text("正在读取…".into());
-    s.set_setting_lib_paths(strings(
+    let account_state = app.global::<crate::AccountState>();
+    let player_state = app.global::<crate::PlayerState>();
+    let playlist_state = app.global::<crate::PlaylistState>();
+    let search_state = app.global::<crate::SearchState>();
+    let home_state = app.global::<crate::HomeState>();
+    let detail_state = app.global::<crate::DetailState>();
+    let library_state = app.global::<crate::LibraryState>();
+    let queue_state = app.global::<crate::QueueState>();
+    let player_view_state = app.global::<crate::PlayerViewState>();
+    let artist_state = app.global::<crate::ArtistState>();
+    let settings_state = app.global::<crate::SettingsState>();
+    let audio_state = app.global::<crate::AudioState>();
+    let runtime_state = app.global::<crate::RuntimeState>();
+    account_state.set_is_logged_in(false);
+    account_state.set_user_nickname("未登录".into());
+    account_state.set_user_avatar(slint::Image::default());
+    player_state.set_is_playing(false);
+    player_state.set_is_loading(false);
+    player_state.set_current_song_id(-1);
+    player_state.set_current_song_title("未在播放".into());
+    player_state.set_current_song_artist("".into());
+    player_state.set_current_song_cover(slint::Image::default());
+    player_state.set_current_song_favorite(false);
+    player_state.set_progress_percent(0.0);
+    player_state.set_buffered_percent(0.0);
+    player_state.set_current_time_str("0:00".into());
+    player_state.set_duration_time_str("0:00".into());
+    playlist_state.set_playlist_owned(false);
+    playlist_state.set_playlist_loading(false);
+    playlist_state.set_playlist_metadata_loading(false);
+    playlist_state.set_playlist_load_error("".into());
+    playlist_state.set_active_playlist_id(-1);
+    playlist_state.set_playlist_title("".into());
+    playlist_state.set_playlist_description("".into());
+    playlist_state.set_playlist_meta(model(vec![]));
+    search_state.set_search_result_count(0);
+    home_state.set_home_playlists_loading(true);
+    home_state.set_home_songs_loading(true);
+    playlist_state.set_created_playlists(model(vec![]));
+    home_state.set_recommend_playlists(cover_model(vec![]));
+    home_state.set_daily_songs(cover_model(vec![]));
+    home_state.set_home_new_albums(cover_model(vec![]));
+    home_state.set_home_charts(cover_model(vec![]));
+    home_state.set_home_albums_loaded(false);
+    home_state.set_home_charts_loaded(false);
+    home_state.set_home_albums_loading(false);
+    home_state.set_home_charts_loading(false);
+    home_state.set_home_albums_error("".into());
+    home_state.set_home_charts_error("".into());
+    search_state.set_browse_categories(model(vec![]));
+    detail_state.set_detail_tracks(model(vec![]));
+    playlist_state.set_playlist_tracks(model(vec![]));
+    library_state.set_local_tracks(model(vec![]));
+    queue_state.set_queue_songs(cover_model(vec![]));
+    player_view_state.set_lyrics(model(vec![]));
+    player_view_state.set_comments(cover_model(vec![]));
+    artist_state.set_artist_latest(cover_model(vec![]));
+    artist_state.set_artist_albums(cover_model(vec![]));
+    artist_state.set_artist_eps(cover_model(vec![]));
+    artist_state.set_artist_mvs(cover_model(vec![]));
+    artist_state.set_artist_top_songs(cover_model(vec![]));
+    player_view_state.set_active_lyric_index(-1);
+    settings_state.set_setting_renderer(prefs.renderer.name().into());
+    settings_state.set_startup_renderer(prefs.renderer.name().into());
+    audio_state.set_setting_sound_quality(prefs.quality.clone().into());
+    audio_state.set_setting_audio_engine("native".into());
+    audio_state.set_setting_exclusive_mode(prefs.exclusive);
+    audio_state.set_setting_strict_bitperfect(prefs.strict);
+    audio_state.set_setting_software_volume(prefs.software_volume);
+    audio_state.set_volume_percent((prefs.volume * 100.0) as f32);
+    audio_state.set_output_devices(model(vec![]));
+    audio_state.set_setting_output_device_index(-1);
+    audio_state.set_setting_output_device_label("正在检测输出设备…".into());
+    audio_state.set_setting_supports_exclusive(false);
+    settings_state.set_setting_cache_limit_mb(prefs.cache_limit_mb as f32);
+    settings_state.set_setting_cache_ahead_mb(prefs.cache_ahead_mb as f32);
+    settings_state.set_setting_cache_usage_percent(0.0);
+    settings_state.set_setting_cache_usage_text("正在读取…".into());
+    settings_state.set_setting_lib_paths(strings(
         prefs
             .folders
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect(),
     ));
-    s.set_setting_tray_minimize(false);
+    settings_state.set_setting_tray_minimize(false);
     let v = &prefs.visual;
     let theme = app.global::<Theme>();
     if let Some(d) = v["dark"].as_bool() {
@@ -1990,12 +2156,12 @@ pub fn initialize(app: &AppWindow, prefs: &Preferences) {
         theme.set_theme_mode(m.into())
     }
     if let Some(a) = v["acrylic"].as_bool() {
-        s.set_setting_acrylic(a)
+        settings_state.set_setting_acrylic(a)
     }
-    s.set_setting_auto_launch(v["auto_launch"] == true);
-    s.set_setting_lyric_debug(v["lyric_debug"] == true);
+    settings_state.set_setting_auto_launch(v["auto_launch"] == true);
+    settings_state.set_setting_lyric_debug(v["lyric_debug"] == true);
     if let Some(hex) = v["accent"].as_str() {
-        s.set_setting_accent_hex(hex.into());
+        settings_state.set_setting_accent_hex(hex.into());
         if let Some(hex) = hex
             .strip_prefix('#')
             .and_then(|h| u32::from_str_radix(h, 16).ok())
@@ -2023,13 +2189,13 @@ pub fn initialize(app: &AppWindow, prefs: &Preferences) {
         .as_str()
         .filter(|m| ["loop", "single", "random"].contains(m))
     {
-        s.set_play_mode(mode.into());
+        player_state.set_play_mode(mode.into());
     }
     if let Some(show) = v["pronunciation"].as_bool() {
-        s.set_show_pronunciation(show)
+        player_view_state.set_show_pronunciation(show)
     }
     if let Some(show) = v["translation"].as_bool() {
-        s.set_show_translation(show)
+        player_view_state.set_show_translation(show)
     }
     let aux = |key: &str| {
         model(
@@ -2043,10 +2209,10 @@ pub fn initialize(app: &AppWindow, prefs: &Preferences) {
         )
     };
     if v["left"].is_array() {
-        s.set_fullscreen_aux_left(aux("left"));
+        settings_state.set_fullscreen_aux_left(aux("left"));
     }
     if v["right"].is_array() {
-        s.set_fullscreen_aux_right(aux("right"));
+        settings_state.set_fullscreen_aux_right(aux("right"));
     }
-    s.set_runtime_enabled(true);
+    runtime_state.set_runtime_enabled(true);
 }

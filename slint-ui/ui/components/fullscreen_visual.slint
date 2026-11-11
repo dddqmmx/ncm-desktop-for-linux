@@ -1,0 +1,140 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { NavigationState } from "../state/navigation.slint";
+import { AudioState } from "../state/audio.slint";
+import { SettingsState } from "../state/settings.slint";
+import { PlayerState } from "../state/player.slint";
+import { PlayerViewState } from "../state/player_view.slint";
+import { FullscreenProgress } from "fullscreen_progress.slint";
+
+import { RoundedCover } from "common.slint";
+import { FlowText } from "typography.slint";
+import { FullscreenTransport } from "fullscreen_transport.slint";
+import { FullscreenAuxGroup } from "fullscreen_aux_group.slint";
+import { VolumePopup } from "volume_popup.slint";
+
+component FullscreenTransportRow inherits Rectangle {
+    in property <color> text-color;
+    in property <color> contrast-color;
+    in property <color> btn-bg;
+    in property <color> btn-text;
+    height: transport.preferred-height;
+    VolumePopup {
+        x: parent.width - self.width;
+        base-y: -self.height - 10px;
+        opened: PlayerViewState.is-fullscreen-volume-open;
+        enabled: AudioState.can-adjust-volume;
+        volume <=> AudioState.volume-percent;
+        background: root.contrast-color;
+        border-color: rgba(255, 255, 255, 0.12);
+        drop-shadow-blur: 24px;
+        drop-shadow-offset-y: 8px;
+        drop-shadow-color: rgba(0, 0, 0, 0.25);
+    }
+    transport := HorizontalLayout {
+        spacing: 24px;
+        FullscreenAuxGroup { items: SettingsState.fullscreen-aux-left; align-right: true; text-color: root.text-color; }
+        FullscreenTransport {
+            text-color: root.text-color;
+            btn-bg: root.btn-bg;
+            btn-text: root.btn-text;
+            contrast-color: root.contrast-color;
+        }
+        FullscreenAuxGroup { items: SettingsState.fullscreen-aux-right; text-color: root.text-color; }
+    }
+}
+
+component FullscreenTrackMetadata inherits VerticalLayout {
+    in property <bool> compact;
+    in property <color> text-color;
+
+    spacing: 8px;
+    fullscreen-track-title := FlowText {
+        text: PlayerState.current-song-title;
+        font-size: root.compact ? 28px : 38px;
+        font-weight: 800;
+        color: root.text-color;
+        horizontal-alignment: center;
+        overflow: elide;
+        min-width: 0px;
+    }
+    artist-row := Rectangle {
+        height: artist-name.preferred-height;
+        artist-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                PlayerViewState.is-fullscreen = false;
+                if RuntimeState.runtime-enabled { RuntimeState.runtime-action("artist", -1, ""); }
+                else { NavigationState.current-route = "artist"; }
+            }
+        }
+        artist-name := FlowText {
+            width: 100%;
+            text: PlayerState.current-song-artist;
+            font-size: 18px;
+            line-height: 1.2;
+            color: root.text-color;
+            opacity: artist-ta.has-hover ? 1 : 0.7;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}
+
+export component FullscreenVisualPanel inherits Rectangle {
+    in property <color> text-color;
+    in property <color> contrast-color;
+    in property <color> btn-bg;
+    in property <color> btn-text;
+    in property <bool> compact: false;
+    property <length> cover-size: Math.max(0px, Math.min(root.width, 450px,
+        root.height - metadata.preferred-height - playback-controls.preferred-height - 70px));
+
+    visual-content := VerticalLayout {
+        width: Math.min(parent.width, 450px);
+        height: self.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: Math.max(0px, (parent.height - self.height) / 2);
+        spacing: 0px;
+        fullscreen-cover-wrapper := Rectangle {
+            height: root.cover-size;
+            property <float> cover-scale: PlayerState.is-playing ? 1.02 : 1;
+            animate cover-scale { duration: 800ms; easing: cubic-bezier(0.2, 0, 0.2, 1); }
+            fullscreen-cover-scaled := RoundedCover {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: root.cover-size * parent.cover-scale;
+                height: self.width;
+                radius: 24px;
+                source: PlayerState.current-song-cover;
+                cover-id: PlayerState.current-song-id;
+                requested-size: 1600;
+                is-local-fallback: PlayerState.current-song-is-local && !PlayerState.current-song-has-cover;
+                fallback-icon-size: root.cover-size / 4;
+                drop-shadow-blur: 60px;
+                drop-shadow-offset-y: 30px;
+                drop-shadow-color: rgba(0, 0, 0, 0.30);
+            }
+        }
+        Rectangle { height: 40px; }
+        metadata := FullscreenTrackMetadata {
+            width: Math.min(root.width, 450px);
+            compact: root.compact;
+            text-color: root.text-color;
+        }
+        Rectangle { height: 30px; }
+        playback-controls := VerticalLayout {
+            width: Math.min(root.width, 450px);
+            spacing: 30px;
+            progress-row := FullscreenProgress {
+                text-color: root.text-color;
+                contrast-color: root.contrast-color;
+            }
+            transport-row := FullscreenTransportRow {
+                text-color: root.text-color;
+                contrast-color: root.contrast-color;
+                btn-bg: root.btn-bg;
+                btn-text: root.btn-text;
+            }
+        }
+    }
+}

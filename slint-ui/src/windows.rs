@@ -1,4 +1,4 @@
-use crate::{AppState, AppWindow, SettingsWindow, Theme};
+use crate::{AppWindow, AudioState, RuntimeState, SettingsState, SettingsWindow, Theme};
 use slint::{winit_030::WinitWindowAccessor, CloseRequestResponse, ComponentHandle};
 
 // Copy only the changed preference: copying a whole snapshot would overwrite
@@ -12,23 +12,13 @@ macro_rules! copy_properties {
     };
 }
 
-fn sync_preferences(source: AppState<'_>, target: AppState<'_>, field: Option<&str>) {
+fn sync_settings(source: SettingsState<'_>, target: SettingsState<'_>, field: Option<&str>) {
     copy_properties!(source, target, field,
-        "runtime-message" => get_runtime_message => set_runtime_message,
         "setting-cache-details" => get_setting_cache_details => set_setting_cache_details,
-        "output-devices" => get_output_devices => set_output_devices,
-        "setting-output-device-index" => get_setting_output_device_index => set_setting_output_device_index,
         "setting-auto-launch" => get_setting_auto_launch => set_setting_auto_launch,
         "setting-tray-minimize" => get_setting_tray_minimize => set_setting_tray_minimize,
         "setting-renderer" => get_setting_renderer => set_setting_renderer,
         "startup-renderer" => get_startup_renderer => set_startup_renderer,
-        "setting-sound-quality" => get_setting_sound_quality => set_setting_sound_quality,
-        "setting-audio-engine" => get_setting_audio_engine => set_setting_audio_engine,
-        "setting-software-volume" => get_setting_software_volume => set_setting_software_volume,
-        "setting-output-device-label" => get_setting_output_device_label => set_setting_output_device_label,
-        "setting-supports-exclusive" => get_setting_supports_exclusive => set_setting_supports_exclusive,
-        "setting-exclusive-mode" => get_setting_exclusive_mode => set_setting_exclusive_mode,
-        "setting-strict-bitperfect" => get_setting_strict_bitperfect => set_setting_strict_bitperfect,
         "setting-acrylic" => get_setting_acrylic => set_setting_acrylic,
         "setting-accent-hex" => get_setting_accent_hex => set_setting_accent_hex,
         "setting-lyric-debug" => get_setting_lyric_debug => set_setting_lyric_debug,
@@ -39,9 +29,28 @@ fn sync_preferences(source: AppState<'_>, target: AppState<'_>, field: Option<&s
         "setting-lib-paths" => get_setting_lib_paths => set_setting_lib_paths,
         "fullscreen-aux-left" => get_fullscreen_aux_left => set_fullscreen_aux_left,
         "fullscreen-aux-right" => get_fullscreen_aux_right => set_fullscreen_aux_right,
+    );
+}
+
+fn sync_audio(source: AudioState<'_>, target: AudioState<'_>, field: Option<&str>) {
+    copy_properties!(source, target, field,
+        "output-devices" => get_output_devices => set_output_devices,
+        "setting-output-device-index" => get_setting_output_device_index => set_setting_output_device_index,
+        "setting-sound-quality" => get_setting_sound_quality => set_setting_sound_quality,
+        "setting-audio-engine" => get_setting_audio_engine => set_setting_audio_engine,
+        "setting-software-volume" => get_setting_software_volume => set_setting_software_volume,
+        "setting-output-device-label" => get_setting_output_device_label => set_setting_output_device_label,
+        "setting-supports-exclusive" => get_setting_supports_exclusive => set_setting_supports_exclusive,
+        "setting-exclusive-mode" => get_setting_exclusive_mode => set_setting_exclusive_mode,
+        "setting-strict-bitperfect" => get_setting_strict_bitperfect => set_setting_strict_bitperfect,
         "volume-percent" => get_volume_percent => set_volume_percent,
-        "can-adjust-volume" => get_can_adjust_volume => set_can_adjust_volume,
         "session-volume-locked" => get_session_volume_locked => set_session_volume_locked,
+    );
+}
+
+fn sync_runtime(source: RuntimeState<'_>, target: RuntimeState<'_>, field: Option<&str>) {
+    copy_properties!(source, target, field,
+        "runtime-message" => get_runtime_message => set_runtime_message,
     );
 }
 
@@ -55,6 +64,36 @@ pub(crate) fn sync_theme(source: Theme<'_>, target: Theme<'_>, field: Option<&st
         "theme-color-strong" => get_theme_color_strong => set_theme_color_strong,
         "theme-color-tint" => get_theme_color_tint => set_theme_color_tint,
     );
+}
+
+fn install_settings_size_constraints(settings: &SettingsWindow) {
+    use slint::winit_030::{winit, EventResult};
+    let weak = settings.as_weak();
+    let mut applied = None;
+    settings
+        .window()
+        .on_winit_window_event(move |window, event| {
+            // Wayland recreates hidden windows asynchronously. Slint 1.18.1 keeps
+            // the old constraint cache, so apply the limits once the new native
+            // window can draw, and again when its display scale changes.
+            if matches!(event, winit::event::WindowEvent::RedrawRequested) {
+                if let Some(settings) = weak.upgrade() {
+                    let minimum = winit::dpi::LogicalSize::new(
+                        settings.get_minimum_window_width(),
+                        settings.get_minimum_window_height(),
+                    )
+                    .to_physical::<u32>(window.scale_factor() as f64);
+                    window.with_winit_window(|native| {
+                        let current = (native.id(), native.scale_factor(), minimum);
+                        if applied != Some(current) {
+                            native.set_min_inner_size(Some(minimum));
+                            applied = Some(current);
+                        }
+                    });
+                }
+            }
+            EventResult::Propagate
+        });
 }
 
 // Retain one settings window for the lifetime of the main window. All callback
@@ -81,38 +120,44 @@ impl ApplicationWindows {
         });
         crate::login_animation::attach(app)?;
         let settings = SettingsWindow::new()?;
-        sync_preferences(
-            app.global::<AppState>(),
-            settings.global::<AppState>(),
-            None,
-        );
+        // Each domain publishes only its own changes; window-local navigation and
+        // dialogs are never copied between top-level windows.
+        macro_rules! mirror_domain {
+            ($domain:ty, $changed:ident, $sync:ident) => {{
+                $sync(app.global::<$domain>(), settings.global::<$domain>(), None);
+                let weak_main = app.as_weak();
+                let weak_settings = settings.as_weak();
+                app.global::<$domain>().$changed(move |field| {
+                    if let (Some(main), Some(settings)) =
+                        (weak_main.upgrade(), weak_settings.upgrade())
+                    {
+                        $sync(
+                            main.global::<$domain>(),
+                            settings.global::<$domain>(),
+                            Some(field.as_str()),
+                        );
+                    }
+                });
+                let weak_main = app.as_weak();
+                let weak_settings = settings.as_weak();
+                settings.global::<$domain>().$changed(move |field| {
+                    if let (Some(main), Some(settings)) =
+                        (weak_main.upgrade(), weak_settings.upgrade())
+                    {
+                        $sync(
+                            settings.global::<$domain>(),
+                            main.global::<$domain>(),
+                            Some(field.as_str()),
+                        );
+                    }
+                });
+            }};
+        }
+        mirror_domain!(SettingsState, on_settings_changed, sync_settings);
+        mirror_domain!(AudioState, on_audio_changed, sync_audio);
+        mirror_domain!(RuntimeState, on_runtime_changed, sync_runtime);
         sync_theme(app.global::<Theme>(), settings.global::<Theme>(), None);
 
-        let weak_main = app.as_weak();
-        let weak_settings = settings.as_weak();
-        app.global::<AppState>().on_settings_changed(move |field| {
-            if let (Some(main), Some(settings)) = (weak_main.upgrade(), weak_settings.upgrade()) {
-                sync_preferences(
-                    main.global::<AppState>(),
-                    settings.global::<AppState>(),
-                    Some(field.as_str()),
-                );
-            }
-        });
-        let weak_main = app.as_weak();
-        let weak_settings = settings.as_weak();
-        settings
-            .global::<AppState>()
-            .on_settings_changed(move |field| {
-                if let (Some(main), Some(settings)) = (weak_main.upgrade(), weak_settings.upgrade())
-                {
-                    sync_preferences(
-                        settings.global::<AppState>(),
-                        main.global::<AppState>(),
-                        Some(field.as_str()),
-                    );
-                }
-            });
         let weak_main = app.as_weak();
         let weak_settings = settings.as_weak();
         app.global::<Theme>().on_theme_changed(move |field| {
@@ -137,24 +182,26 @@ impl ApplicationWindows {
         });
 
         let weak_settings = settings.as_weak();
-        app.global::<AppState>().on_open_settings_window(move || {
-            if let Some(settings) = weak_settings.upgrade() {
-                if !settings.window().is_visible() {
-                    settings
-                        .global::<AppState>()
-                        .set_settings_tab("general".into());
-                    if let Err(error) = settings.show() {
-                        eprintln!("无法打开设置窗口: {error}");
-                        return;
+        app.global::<SettingsState>()
+            .on_open_settings_window(move || {
+                if let Some(settings) = weak_settings.upgrade() {
+                    if !settings.window().is_visible() {
+                        install_settings_size_constraints(&settings);
+                        settings
+                            .global::<SettingsState>()
+                            .set_settings_tab("general".into());
+                        if let Err(error) = settings.show() {
+                            eprintln!("无法打开设置窗口: {error}");
+                            return;
+                        }
+                        settings.set_presented(true);
                     }
-                    settings.set_presented(true);
+                    settings.window().set_minimized(false);
+                    settings
+                        .window()
+                        .with_winit_window(|window| window.focus_window());
                 }
-                settings.window().set_minimized(false);
-                settings
-                    .window()
-                    .with_winit_window(|window| window.focus_window());
-            }
-        });
+            });
         let weak_settings = settings.as_weak();
         settings.on_close_settings(move || {
             if let Some(settings) = weak_settings.upgrade() {
@@ -170,14 +217,6 @@ impl ApplicationWindows {
                 settings.set_presented(false);
             }
             CloseRequestResponse::HideWindow
-        });
-        let weak_settings = settings.as_weak();
-        settings.on_drag_window(move || {
-            if let Some(settings) = weak_settings.upgrade() {
-                settings.window().with_winit_window(|window| {
-                    let _ = window.drag_window();
-                });
-            }
         });
         let weak_settings = settings.as_weak();
         app.window().on_close_requested(move || {

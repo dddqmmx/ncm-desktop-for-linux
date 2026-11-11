@@ -1,0 +1,85 @@
+
+import { FlowText } from "typography.slint";
+import { Theme } from "../theme.slint";
+import { DailySongItem } from "../models.slint";
+import { CoverRequest } from "common.slint";
+
+export component AlbumItem inherits Rectangle {
+    in property <DailySongItem> item;
+    in property <int> cover-size: 800;
+    CoverRequest { cover-id: root.item.id; pixel-size: root.cover-size; missing: root.item.cover.width == 0; }
+    in-out property <bool> force-hover: false;
+    callback clicked();
+
+    width: 176px;
+    height: album-content.preferred-height;
+
+    property <bool> is-hovered: item-ta.has-hover || root.force-hover;
+    property <length> item-offset-y: self.is-hovered ? -4px : 0px;
+    property <float> img-scale: self.is-hovered ? 1.06 : 1.0;
+
+    animate item-offset-y { duration: 300ms; easing: ease; }
+    animate img-scale { duration: 350ms; easing: ease; }
+
+    item-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    album-content := VerticalLayout {
+        x: 0px;
+        y: root.item-offset-y;
+        width: root.width;
+        spacing: 14px;
+
+        // 176x176 封面 (.album-cover: border-radius 28px, margin-bottom 14px)
+        album-cover := Rectangle {
+            height: self.width;
+            border-radius: 28px;
+            background: @linear-gradient(145deg, Theme.sys-surface-strong 0%, Theme.theme-color-soft 100%);
+            border-width: 1px;
+            border-color: Theme.sys-border;
+            drop-shadow-blur: root.is-hovered ? 32px : 22px;
+            drop-shadow-offset-y: root.is-hovered ? 12px : 8px;
+            drop-shadow-color: Theme.sys-shadow-soft;
+            clip: true;
+
+            album-cover-img := Image {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: parent.width * root.img-scale;
+                height: parent.height * root.img-scale;
+                source: root.item.cover;
+                image-fit: cover;
+            }
+
+            Rectangle {
+                width: 100%;
+                height: 100%;
+                background: @linear-gradient(180deg, rgba(16, 24, 40, 0.0) 42%, rgba(16, 24, 40, 0.16) 100%);
+            }
+        }
+
+        // 文字信息 (.album-info: y = 176 + 14 = 190px, padding 0 6px)
+        VerticalLayout {
+            padding-left: 6px;
+            padding-right: 6px;
+            spacing: 6px;
+
+            FlowText {
+                text: root.item.title;
+                font-size: 15px; line-height: 1.4;
+                font-weight: 700;
+                color: Theme.sys-text;
+                overflow: elide;
+            }
+
+            FlowText {
+                text: root.item.artist;
+                font-size: 13px; line-height: 1.4;
+                color: Theme.sys-text-secondary;
+                overflow: elide;
+            }
+        }
+    }
+}

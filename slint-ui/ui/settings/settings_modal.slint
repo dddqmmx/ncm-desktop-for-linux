@@ -1,212 +1,295 @@
+import { SettingsState } from "../state/settings.slint";
+import { AboutSettingsTab } from "about_tab.slint";
+import { DebugSettingsTab } from "debug_tab.slint";
+import { ShortcutsSettingsTab } from "shortcuts_tab.slint";
+import { CacheSettingsTab } from "cache_tab.slint";
+import { LibrarySettingsTab } from "library_tab.slint";
+import { AppearanceSettingsTab } from "appearance_tab.slint";
+import { AudioSettingsTab } from "audio_tab.slint";
+import { GeneralSettingsTab } from "general_tab.slint";
+import { SettingsText, SettingsNavBtn } from "controls.slint";
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
-import { AppState, AuxButtonItem } from "../state.slint";
-import { AppIcon, ModernSwitch, RangeSlider, VolumeRow, SegmentedSlider3 } from "../components/common.slint";
-import { Dropdown } from "../components/dropdown.slint";
 
-// CSS uses a 1.6 line height. Measure an unscaled font separately: querying
-// this Text's own metrics from line-height-factor would create a binding loop.
-component SettingsText inherits Text {
-    line-height-factor: self.font-size * 1.6 / (font-probe.font-metrics.ascent - font-probe.font-metrics.descent);
-    font-probe := Text {
-        visible: false;
-        font-family: root.font-family;
-        font-size: root.font-size;
-        font-weight: root.font-weight;
+import { AppIcon } from "../components/common.slint";
+
+component SettingsTabContent inherits Flickable {
+
+    content-width: self.width;
+    content-height: tab-col.preferred-height;
+    property <string> displayed-tab: SettingsState.settings-tab;
+    changed displayed-tab => { self.content-y = 0px; }
+
+    tab-col := VerticalLayout {
+        width: 100%;
+        padding-top: 16px;
+        padding-left: 40px;
+        padding-right: 40px;
+        padding-bottom: 48px;
+        spacing: 0px;
+
+        // 1. 通用 (GeneralSettingsTab.vue)
+        if SettingsState.settings-tab == "general" : GeneralSettingsTab { }
+
+        // 2. 音频输出 (AudioSettingsTab.vue)
+        if SettingsState.settings-tab == "audio" : AudioSettingsTab { }
+
+        // 3. 外观个性化 (AppearanceSettingsTab.vue)
+        if SettingsState.settings-tab == "appearance" : AppearanceSettingsTab { }
+
+        // 4. 曲库管理 (LibrarySettingsTab.vue)
+        if SettingsState.settings-tab == "library" : LibrarySettingsTab { }
+
+        // 5. 缓存 (CacheSettingsTab.vue)
+        if SettingsState.settings-tab == "cache" : CacheSettingsTab { }
+
+        // 6. 快捷键 (ShortcutsSettingsTab.vue)
+        if SettingsState.settings-tab == "shortcuts" : ShortcutsSettingsTab { }
+
+        // 7. 调试 (DebugSettingsTab.vue)
+        if SettingsState.settings-tab == "debug" : DebugSettingsTab { }
+
+        // 8. 关于软件 (AboutSettingsTab.vue)
+        if SettingsState.settings-tab == "about" : AboutSettingsTab { }
     }
 }
 
-component SettingsNavBtn inherits Rectangle {
-    in property <string> tab-id;
-    in property <string> label;
-    in property <image> icon;
-    in property <bool> active: false;
-    callback clicked();
+component SettingsHeader inherits Rectangle {
+    in property <string> active-tab-title;
+    callback close-settings();
 
-    height: 44px;
-    border-radius: 10px;
-    background: (!root.active && ta.has-hover) ? Theme.sys-control : transparent;
-    animate background { duration: 200ms; easing: ease; }
+    height: header-layout.preferred-height;
+    // Native moves may consume the release event. WindowMoveArea
+    // starts after the drag threshold without retaining a mouse grab.
+    WindowMoveArea { width: 100%; height: 100%; }
 
-    // 选中时图标弹性放大 1.15 倍 (SettingsSidebar.vue:158 transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1))
-    property <length> icon-dim: root.active ? 20.7px : 18px;
-    animate icon-dim { duration: 300ms; easing: cubic-bezier(0.34, 1.56, 0.64, 1.0); }
+    header-layout := HorizontalLayout {
+        padding-left: 40px;
+        padding-right: 40px;
+        padding-top: 28px;
+        padding-bottom: 16px;
+        spacing: 16px;
+        cross-axis-alignment: center;
+        settings-header-h2 := Rectangle {
 
-    ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
+            horizontal-stretch: 1;
+            height: header-title.preferred-height;
 
-    HorizontalLayout {
-        padding-left: 16px;
-        padding-right: 16px;
-        spacing: 12px;
-
-        Rectangle {
-            width: 18px;
-            height: 18px;
-            y: (parent.height - self.height) / 2;
-
-            settings-nav-icon := AppIcon {
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
-                source: root.icon;
-                icon-size: root.icon-dim;
-                tint: root.active
-                    ? Theme.theme-color-strong
-                    : (ta.has-hover ? Theme.sys-text-secondary : Theme.sys-text-tertiary);
-            }
-        }
-
-        SettingsText {
-            text: root.label;
-            font-size: 14px;
-            font-weight: 600;
-            color: root.active
-                ? Theme.theme-color-strong
-                : (ta.has-hover ? Theme.sys-text-secondary : Theme.sys-text-tertiary);
-            vertical-alignment: center;
-            animate color { duration: 200ms; easing: ease; }
-        }
-    }
-}
-
-component SettingGroupCard inherits VerticalLayout {
-    in property <string> title;
-    in property <string> tip: "";
-    in property <bool> no-card: false;
-
-    spacing: 0px;
-    padding-bottom: 32px;
-
-    if root.title != "" : VerticalLayout {
-        padding-left: 4px;
-        padding-bottom: 12px;
-        Rectangle {
-            height: 19.19px;
-            SettingsText {
+            header-title := SettingsText {
                 width: 100%;
                 height: 100%;
-                text: root.title;
-                font-size: 12px;
+                text: root.active-tab-title;
+                font-size: 28px;
                 font-weight: 700;
-                color: Theme.sys-text-tertiary;
-                vertical-alignment: center;
-            }
-        }
-    }
-
-    control-card-box := Rectangle {
-        border-radius: root.no-card ? 0px : 20px;
-        background: root.no-card ? transparent : Theme.sys-surface;
-        border-width: root.no-card ? 0px : 1px;
-        border-color: root.no-card ? transparent : Theme.sys-border;
-
-        VerticalLayout {
-            padding-top: root.no-card ? 0px : 9px;
-            padding-bottom: root.no-card ? 0px : 9px;
-            padding-left: root.no-card ? 0px : 21px;
-            padding-right: root.no-card ? 0px : 21px;
-            @children
-        }
-    }
-
-    if root.tip != "" : VerticalLayout {
-        padding-top: 10px;
-        padding-left: 4px;
-        SettingsText {
-            text: root.tip;
-            font-size: 11px;
-            color: Theme.sys-text-tertiary;
-            wrap: word-wrap;
-        }
-    }
-}
-
-// Measure the text at its available width, then size the row from both columns.
-// Each action owns its real width; a switch must not reserve a 280px column.
-component SettingRowItem inherits VerticalLayout {
-    in property <string> title;
-    in property <string> description: "";
-    in property <bool> show-divider: true;
-    in property <length> action-width: 44px;
-    in property <length> action-height: 31.6px;
-
-    spacing: 0px;
-    control-row-box := Rectangle {
-        height: Math.max(row-info.height, root.action-height) + 32px + (root.show-divider ? 1px : 0px);
-
-        row-info := Rectangle {
-            x: 0px;
-            y: (parent.height - (root.show-divider ? 1px : 0px) - self.height) / 2;
-            width: Math.max(0px, parent.width - root.action-width - 16px);
-            height: row-title.height + (root.description != "" ? 2px + row-description.height : 0px);
-
-            row-title := SettingsText {
-                y: 0px;
-                width: 100%;
-                height: 24px;
-                text: root.title;
-                font-size: 15px;
-                font-weight: 600;
                 color: Theme.sys-text;
                 vertical-alignment: center;
             }
-            row-description := SettingsText {
-                y: row-title.height + 2px;
-                width: 100%;
-                // Text measurement rounds up to device pixels; preserve CSS's
-                // fractional 19.2px line boxes when stacking multiple rows.
-                height: root.description != "" ? Math.max(1, Math.round(self.preferred-height / 19.2px)) * 19.2px : 0px;
-                text: root.description;
-                font-size: 12px;
+        }
+        settings-close-btn := Rectangle {
+            accessible-role: button;
+            accessible-label: "关闭设置";
+            accessible-action-default => { root.close-settings(); }
+
+            width: 36px;
+            height: 36px;
+            border-radius: 18px;
+            background: close-set-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
+            border-width: 1px;
+            border-color: Theme.sys-border;
+            animate background { duration: 300ms; easing: cubic-bezier(0.25, 0.8, 0.25, 1.0); }
+
+            close-set-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.close-settings(); }
+            }
+
+            AppIcon {
+                x: 9px;
+                y: 9px;
+                source: Icons.close;
+                icon-size: 18px;
+                tint: close-set-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
+            }
+        }
+    }
+}
+
+component SettingsSidebar inherits Rectangle {
+    in property <int> active-tab-index;
+
+    background: Theme.sys-surface-muted;
+
+    settings-brand := Rectangle {
+        x: 16px;
+        y: 32px;
+        width: parent.width - 32px;
+        height: brand-row.preferred-height + 32px;
+
+        brand-row := HorizontalLayout {
+            x: 16px;
+            width: parent.width - 32px;
+            spacing: 10px;
+            cross-axis-alignment: center;
+            Rectangle { width: 8px; height: 8px; border-radius: 4px; background: Theme.theme-color; }
+            SettingsText {
+
+                text: "SETTINGS";
+                font-size: 11px;
+                font-weight: 800;
                 color: Theme.sys-text-tertiary;
-                wrap: word-wrap;
+                vertical-alignment: center;
             }
         }
-        row-actions := Rectangle {
-            x: parent.width - root.action-width;
-            y: (parent.height - (root.show-divider ? 1px : 0px) - self.height) / 2;
-            width: root.action-width;
-            height: root.action-height;
-            HorizontalLayout {
-                alignment: end;
-                @children
-            }
-        }
-        if root.show-divider : Rectangle {
-            y: parent.height - 1px;
+    }
+
+    // 导航列表 + 滑动指示器 (.sidebar-nav: x = 1 + 16 = 17, y = 1 + 32 + 49.59 = 82.59, width = 240 - 1 - 32 = 207)
+    Rectangle {
+        x: 16px;
+        y: settings-brand.y + settings-brand.height;
+        width: parent.width - 32px - 1px;
+        height: parent.height - self.y - 32px;
+
+        // .nav-indicator (height 44px, step 52px, transition transform 0.4s cubic-bezier(0.2, 1, 0.3, 1))
+        settings-nav-indicator := Rectangle {
+            x: 0px;
+            y: root.active-tab-index * 52px;
             width: 100%;
-            height: 1px;
-            background: Theme.sys-border;
+            height: 44px;
+            border-radius: 10px;
+            background: Theme.sys-control-selected;
+            border-width: 1px;
+            border-color: Theme.sys-border;
+            animate y { duration: 400ms; easing: cubic-bezier(0.2, 1.0, 0.3, 1.0); }
+
+            Rectangle {
+                x: 4px;
+                y: 12px;
+                width: 4px;
+                height: 20px;
+                border-radius: 2px;
+                background: Theme.theme-color;
+            }
         }
+
+        VerticalLayout {
+            spacing: 8px;
+            alignment: start;
+
+            settings-nav-general := SettingsNavBtn {
+                tab-id: "general";
+                label: "通用";
+                icon: Icons.settings-general;
+                active: SettingsState.settings-tab == "general";
+                clicked => { SettingsState.settings-tab = "general"; }
+            }
+            settings-nav-audio := SettingsNavBtn {
+                tab-id: "audio";
+                label: "音频输出";
+                icon: Icons.settings-audio;
+                active: SettingsState.settings-tab == "audio";
+                clicked => { SettingsState.settings-tab = "audio"; }
+            }
+            settings-nav-appearance := SettingsNavBtn {
+                tab-id: "appearance";
+                label: "外观个性化";
+                icon: Icons.settings-appearance;
+                active: SettingsState.settings-tab == "appearance";
+                clicked => { SettingsState.settings-tab = "appearance"; }
+            }
+            settings-nav-library := SettingsNavBtn {
+                tab-id: "library";
+                label: "曲库管理";
+                icon: Icons.settings-library;
+                active: SettingsState.settings-tab == "library";
+                clicked => { SettingsState.settings-tab = "library"; }
+            }
+            settings-nav-cache := SettingsNavBtn {
+                tab-id: "cache";
+                label: "缓存";
+                icon: Icons.settings-cache;
+                active: SettingsState.settings-tab == "cache";
+                clicked => { SettingsState.settings-tab = "cache"; }
+            }
+            settings-nav-shortcuts := SettingsNavBtn {
+                tab-id: "shortcuts";
+                label: "快捷键";
+                icon: Icons.settings-shortcuts;
+                active: SettingsState.settings-tab == "shortcuts";
+                clicked => { SettingsState.settings-tab = "shortcuts"; }
+            }
+            settings-nav-debug := SettingsNavBtn {
+                tab-id: "debug";
+                label: "调试";
+                icon: Icons.settings-debug;
+                active: SettingsState.settings-tab == "debug";
+                clicked => { SettingsState.settings-tab = "debug"; }
+            }
+            settings-nav-about := SettingsNavBtn {
+                tab-id: "about";
+                label: "关于软件";
+                icon: Icons.settings-about;
+                active: SettingsState.settings-tab == "about";
+                clicked => { SettingsState.settings-tab = "about"; }
+            }
+        }
+    }
+
+    // 右边框分隔线
+    Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        height: 100%;
+        background: Theme.sys-border;
+    }
+}
+
+component SettingsMain inherits Rectangle {
+    in property <string> active-tab-title;
+    callback close-settings();
+
+    background: Theme.sys-surface;
+
+    // .main-header (x=241, y=1, width=1193, height=88.8, padding 28px 40px 16px)
+    settings-main-header := SettingsHeader {
+        x: 0px;
+        y: 0px;
+        width: 100%;
+        active-tab-title: root.active-tab-title;
+        close-settings => { root.close-settings(); }
+    }
+
+    // 内容滚动区 (.content-scroll: x=241, y=89.8, width=1193, height=909.2, padding 16px 40px 48px)
+    settings-content-scroll := SettingsTabContent {
+        x: 0px;
+        y: settings-main-header.height;
+        width: 100%;
+        height: parent.height - settings-main-header.height;
     }
 }
 
 export component SettingsModal inherits Rectangle {
     callback close-settings();
-    callback drag-window();
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.28);
 
     property <int> active-tab-index:
-        AppState.settings-tab == "general" ? 0 :
-        AppState.settings-tab == "audio" ? 1 :
-        AppState.settings-tab == "appearance" ? 2 :
-        AppState.settings-tab == "library" ? 3 :
-        AppState.settings-tab == "cache" ? 4 :
-        AppState.settings-tab == "shortcuts" ? 5 :
-        AppState.settings-tab == "debug" ? 6 : 7;
+        SettingsState.settings-tab == "general" ? 0 :
+        SettingsState.settings-tab == "audio" ? 1 :
+        SettingsState.settings-tab == "appearance" ? 2 :
+        SettingsState.settings-tab == "library" ? 3 :
+        SettingsState.settings-tab == "cache" ? 4 :
+        SettingsState.settings-tab == "shortcuts" ? 5 :
+        SettingsState.settings-tab == "debug" ? 6 : 7;
 
     property <string> active-tab-title:
-        AppState.settings-tab == "general" ? "通用" :
-        AppState.settings-tab == "audio" ? "音频输出" :
-        AppState.settings-tab == "appearance" ? "外观个性化" :
-        AppState.settings-tab == "library" ? "曲库管理" :
-        AppState.settings-tab == "cache" ? "缓存" :
-        AppState.settings-tab == "shortcuts" ? "快捷键" :
-        AppState.settings-tab == "debug" ? "调试" : "关于软件";
+        SettingsState.settings-tab == "general" ? "通用" :
+        SettingsState.settings-tab == "audio" ? "音频输出" :
+        SettingsState.settings-tab == "appearance" ? "外观个性化" :
+        SettingsState.settings-tab == "library" ? "曲库管理" :
+        SettingsState.settings-tab == "cache" ? "缓存" :
+        SettingsState.settings-tab == "shortcuts" ? "快捷键" :
+        SettingsState.settings-tab == "debug" ? "调试" : "关于软件";
 
     // .settings-window.liquid-glass (SettingsModal.vue:151 width: 100%, height: 100%, border-radius: 20px, border: 1px)
     settings-window := Rectangle {
@@ -230,1200 +313,22 @@ export component SettingsModal inherits Rectangle {
             height: parent.height - 2px;
 
             // 左侧侧边栏 (.settings-sidebar: x=1, y=1, width=240, height=998, padding 32px 16px, border-right 1px)
-            settings-sidebar := Rectangle {
+            settings-sidebar := SettingsSidebar {
                 x: 0px;
                 y: 0px;
                 width: 240px;
                 height: 100%;
-                background: Theme.sys-surface-muted;
-
-                // .app-brand (x=+16, y=+32, height 49.59px, padding 0 16px 32px, gap 10px)
-                Rectangle {
-                    x: 16px;
-                    y: 32px;
-                    width: 207px;
-                    height: 49.59px;
-
-                    Rectangle {
-                        x: 16px;
-                        y: 4.8px;
-                        width: 8px;
-                        height: 8px;
-                        border-radius: 2px;
-                        background: Theme.theme-color;
-                    }
-
-                    SettingsText {
-                        x: 34px;
-                        y: 0px;
-                        height: 17.59px;
-                        text: "SETTINGS";
-                        font-size: 11px;
-                        font-weight: 800;
-                        color: Theme.sys-text-tertiary;
-                        vertical-alignment: center;
-                    }
-                }
-
-                // 导航列表 + 滑动指示器 (.sidebar-nav: x = 1 + 16 = 17, y = 1 + 32 + 49.59 = 82.59, width = 240 - 1 - 32 = 207)
-                Rectangle {
-                    x: 16px;
-                    y: 81.59px;
-                    width: 207px;
-                    height: parent.height - 113.59px;
-
-                    // .nav-indicator (height 44px, step 52px, transition transform 0.4s cubic-bezier(0.2, 1, 0.3, 1))
-                    settings-nav-indicator := Rectangle {
-                        x: 0px;
-                        y: root.active-tab-index * 52px;
-                        width: 207px;
-                        height: 44px;
-                        border-radius: 10px;
-                        background: Theme.sys-control-selected;
-                        border-width: 1px;
-                        border-color: Theme.sys-border;
-                        animate y { duration: 400ms; easing: cubic-bezier(0.2, 1.0, 0.3, 1.0); }
-
-                        Rectangle {
-                            x: 4px;
-                            y: 12px;
-                            width: 4px;
-                            height: 20px;
-                            border-radius: 2px;
-                            background: Theme.theme-color;
-                        }
-                    }
-
-                    VerticalLayout {
-                        spacing: 8px;
-                        alignment: start;
-
-                        settings-nav-general := SettingsNavBtn {
-                            tab-id: "general";
-                            label: "通用";
-                            icon: Icons.settings-general;
-                            active: AppState.settings-tab == "general";
-                            clicked => { AppState.settings-tab = "general"; }
-                        }
-                        settings-nav-audio := SettingsNavBtn {
-                            tab-id: "audio";
-                            label: "音频输出";
-                            icon: Icons.settings-audio;
-                            active: AppState.settings-tab == "audio";
-                            clicked => { AppState.settings-tab = "audio"; }
-                        }
-                        settings-nav-appearance := SettingsNavBtn {
-                            tab-id: "appearance";
-                            label: "外观个性化";
-                            icon: Icons.settings-appearance;
-                            active: AppState.settings-tab == "appearance";
-                            clicked => { AppState.settings-tab = "appearance"; }
-                        }
-                        settings-nav-library := SettingsNavBtn {
-                            tab-id: "library";
-                            label: "曲库管理";
-                            icon: Icons.settings-library;
-                            active: AppState.settings-tab == "library";
-                            clicked => { AppState.settings-tab = "library"; }
-                        }
-                        settings-nav-cache := SettingsNavBtn {
-                            tab-id: "cache";
-                            label: "缓存";
-                            icon: Icons.settings-cache;
-                            active: AppState.settings-tab == "cache";
-                            clicked => { AppState.settings-tab = "cache"; }
-                        }
-                        settings-nav-shortcuts := SettingsNavBtn {
-                            tab-id: "shortcuts";
-                            label: "快捷键";
-                            icon: Icons.settings-shortcuts;
-                            active: AppState.settings-tab == "shortcuts";
-                            clicked => { AppState.settings-tab = "shortcuts"; }
-                        }
-                        settings-nav-debug := SettingsNavBtn {
-                            tab-id: "debug";
-                            label: "调试";
-                            icon: Icons.settings-debug;
-                            active: AppState.settings-tab == "debug";
-                            clicked => { AppState.settings-tab = "debug"; }
-                        }
-                        settings-nav-about := SettingsNavBtn {
-                            tab-id: "about";
-                            label: "关于软件";
-                            icon: Icons.settings-about;
-                            active: AppState.settings-tab == "about";
-                            clicked => { AppState.settings-tab = "about"; }
-                        }
-                    }
-                }
-
-                // 右边框分隔线
-                Rectangle {
-                    x: parent.width - 1px;
-                    width: 1px;
-                    height: 100%;
-                    background: Theme.sys-border;
-                }
+                active-tab-index: root.active-tab-index;
             }
 
             // 右侧主内容区 (.settings-main: x=241, y=1, width=1193, height=998)
-            Rectangle {
+            settings-main := SettingsMain {
                 x: 240px;
                 y: 0px;
                 width: parent.width - 240px;
                 height: 100%;
-                background: Theme.sys-surface;
-
-                // .main-header (x=241, y=1, width=1193, height=88.8, padding 28px 40px 16px)
-                settings-main-header := Rectangle {
-                    x: 0px;
-                    y: 0px;
-                    width: 100%;
-                    height: 88.8px;
-                    TouchArea {
-                        pointer-event(event) => {
-                            if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
-                                root.drag-window();
-                            }
-                        }
-                    }
-
-                    settings-header-h2 := Rectangle {
-                        x: 40px;
-                        y: 28px;
-                        width: 240px;
-                        height: 44.8px;
-
-                        SettingsText {
-                            width: 100%;
-                            height: 100%;
-                            text: root.active-tab-title;
-                            font-size: 28px;
-                            font-weight: 700;
-                            color: Theme.sys-text;
-                            vertical-alignment: center;
-                        }
-                    }
-
-                    // 36x36 苹果风圆形关闭按钮 (.close-btn: x = 1193 - 40 - 36 = 1117 -> window x = 241 + 1117 = 1358, y = 28 + 4.39 = 32.39 -> window y = 33.39, transition 0.3s cubic-bezier(0.25, 0.8, 0.25, 1))
-                    settings-close-btn := Rectangle {
-                        accessible-role: button;
-                        accessible-label: "关闭设置";
-                        accessible-action-default => { root.close-settings(); }
-                        x: parent.width - 40px - 36px;
-                        y: 32.39px;
-                        width: 36px;
-                        height: 36px;
-                        border-radius: 18px;
-                        background: close-set-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
-                        border-width: 1px;
-                        border-color: Theme.sys-border;
-                        animate background { duration: 300ms; easing: cubic-bezier(0.25, 0.8, 0.25, 1.0); }
-
-                        close-set-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.close-settings(); }
-                        }
-
-                        AppIcon {
-                            x: 9px;
-                            y: 9px;
-                            source: Icons.close;
-                            icon-size: 18px;
-                            tint: close-set-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
-                        }
-                    }
-                }
-
-                // 内容滚动区 (.content-scroll: x=241, y=89.8, width=1193, height=909.2, padding 16px 40px 48px)
-                settings-content-scroll := Flickable {
-                    x: 0px;
-                    y: 88.8px;
-                    width: 100%;
-                    height: parent.height - 88.8px;
-                    content-width: self.width;
-                    content-height: tab-col.preferred-height;
-                    property <string> displayed-tab: AppState.settings-tab;
-                    changed displayed-tab => { self.content-y = 0px; }
-
-                    tab-col := VerticalLayout {
-                        width: 100%;
-                        padding-top: 16px;
-                        padding-left: 40px;
-                        padding-right: 40px;
-                        padding-bottom: 48px;
-                        spacing: 0px;
-
-                        // 1. 通用 (GeneralSettingsTab.vue)
-                        if AppState.settings-tab == "general" : VerticalLayout {
-                            SettingGroupCard {
-                                title: "启动与运行";
-
-                                SettingRowItem {
-                                    title: "开机自启动";
-                                    description: "在登录系统时自动启动音乐播放器";
-                                    show-divider: true;
-
-                                    modern-switch-auto-launch := ModernSwitch {
-                                        y: 0px;
-                                        checked <=> AppState.setting-auto-launch;
-                                    }
-                                }
-
-                                SettingRowItem {
-                                    title: "最小化至托盘";
-                                    description: AppState.runtime-enabled ? "系统托盘尚未接入，关闭主窗口将退出应用" : "关闭主窗口时应用将继续在后台运行";
-                                    show-divider: false;
-
-                                    ModernSwitch {
-                                        y: 0px;
-                                        checked <=> AppState.setting-tray-minimize;
-                                        enabled: !AppState.runtime-enabled;
-                                    }
-                                }
-                            }
-                            SettingGroupCard {
-                                title: "界面渲染";
-                                tip: AppState.renderer-restart-required
-                                    ? "重启应用后将使用所选渲染方式。"
-                                    : "修改渲染方式后需重启应用。";
-
-                                SettingRowItem {
-                                    title: "渲染方式";
-                                    description: "默认使用 Vulkan；选择软件渲染可关闭 GPU 加速。";
-                                    action-width: 240px;
-                                    action-height: 36px;
-                                    show-divider: false;
-
-                                    renderer-select := Dropdown {
-                                        option-count: AppState.renderer-options.length;
-                                        option-label(index) => { return AppState.renderer-options[index].label; }
-                                        current-index: AppState.setting-renderer-index;
-                                        selected(index) => {
-                                            AppState.setting-renderer = AppState.renderer-options[index].value;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // 2. 音频输出 (AudioSettingsTab.vue)
-                        if AppState.settings-tab == "audio" : VerticalLayout {
-                            SettingGroupCard {
-                                title: "音频质量";
-
-                                SettingRowItem {
-                                    title: "默认播放音质";
-                                    action-width: 240px;
-                                    action-height: 36px;
-                                    description: "选择流媒体播放或下载的默认音质级别";
-                                    show-divider: false;
-
-                                    quality-select := Dropdown {
-                                        y: 0px;
-                                        option-count: AppState.sound-quality-options.length;
-                                        option-label(index) => { return AppState.sound-quality-options[index].label; }
-                                        current-index: AppState.setting-sound-quality-index;
-                                        popup-width: 280px;
-                                        selected(index) => {
-                                            AppState.setting-sound-quality = AppState.sound-quality-options[index].value;
-                                        }
-                                    }
-                                }
-                            }
-
-                            SettingGroupCard {
-                                title: "输出架构";
-                                no-card: true;
-                                tip: "Native 提供高性能原生输出；WebAPI 适合兼容性场景。当前设备切换由 Native 输出链路生效。";
-
-                                SegmentedSlider3 {
-                                    label-0: "Native";
-                                    value-0: "native";
-                                    label-1: "WebAPI";
-                                    value-1: "webapi";
-                                    label-2: "Auto";
-                                    value-2: "auto";
-                                    current-value <=> AppState.setting-audio-engine;
-                                    enabled: !AppState.runtime-enabled;
-                                }
-                            }
-
-                            SettingGroupCard {
-                                title: "音量控制";
-
-                                SettingRowItem {
-                                    title: "软件音量";
-                                    description: "允许应用进行数字音量调节；严格 BitPerfect 播放期间暂不可用（下一曲生效）";
-                                    show-divider: true;
-
-                                    ModernSwitch {
-                                        y: 0px;
-                                        checked <=> AppState.setting-software-volume;
-                                        toggled(v) => { AppState.can-adjust-volume = v && !AppState.setting-strict-bitperfect; }
-                                    }
-                                }
-
-                                SettingRowItem {
-                                    title: "应用音量";
-                                    action-width: 266px;
-                                    action-height: 20px;
-                                    description: "仅调节本应用的输出音量，不影响系统音量";
-                                    show-divider: false;
-
-                                    VolumeRow {
-                                        volume <=> AppState.volume-percent;
-                                        disabled: !AppState.setting-software-volume || AppState.setting-strict-bitperfect;
-                                        slider-width: 220px;
-                                    }
-                                }
-                            }
-
-                            SettingGroupCard {
-                                title: "设备选择";
-
-                                SettingRowItem {
-                                    title: "指定输出设备";
-                                    action-width: 330px;
-                                    action-height: 36px;
-                                    description: "选择系统默认输出或一个真实硬件端点";
-                                    show-divider: true;
-
-                                    HorizontalLayout {
-                                        spacing: 12px;
-
-                                        device-select := Dropdown {
-                                            y: 0px;
-                                            option-count: AppState.output-devices.length;
-                                            option-label(index) => { return AppState.output-devices[index].name; }
-                                            current-index: AppState.setting-output-device-index;
-                                            placeholder: AppState.setting-output-device-label;
-                                            popup-width: 320px;
-                                            selected(index) => {
-                                                if AppState.runtime-enabled {
-                                                    AppState.runtime-action("select-device", -1, AppState.output-devices[index].id);
-                                                } else {
-                                                    AppState.setting-output-device-index = index;
-                                                    AppState.setting-output-device-label = AppState.output-devices[index].name;
-                                                    AppState.setting-supports-exclusive = index == 0;
-                                                }
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            width: 78px;
-                                            height: 36px;
-                                            y: 0px;
-                                            border-radius: 10px;
-                                            background: ref-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
-
-                                            ref-ta := TouchArea { mouse-cursor: pointer; clicked => { AppState.runtime-action("devices", -1, ""); } }
-
-                                            SettingsText {
-                                                text: "刷新设备";
-                                                font-size: 13px;
-                                                font-weight: 600;
-                                                color: Theme.sys-text;
-                                                horizontal-alignment: center;
-                                                vertical-alignment: center;
-                                            }
-                                        }
-                                    }
-                                }
-
-                                SettingRowItem {
-                                    title: "当前设备";
-                                    action-width: Math.min(280px, dev-txt.preferred-width + 24px);
-                                    action-height: 32px;
-                                    description: "显示原生播放器当前正在使用的输出端点";
-                                    show-divider: true;
-
-                                    Rectangle {
-                                        height: 32px;
-                                        width: Math.min(280px, dev-txt.preferred-width + 24px);
-                                        y: 0px;
-                                        border-radius: 10px;
-                                        background: Theme.sys-surface-muted;
-
-                                        dev-txt := SettingsText {
-                                            x: 12px;
-                                            width: parent.width - 24px;
-                                            overflow: elide;
-                                            text: AppState.setting-output-device-label;
-                                            font-size: 12px;
-                                            font-weight: 600;
-                                            color: Theme.sys-text-secondary;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
-                                        }
-                                    }
-                                }
-
-                                SettingRowItem {
-                                    title: "独占输出模式";
-                                    description: AppState.setting-supports-exclusive
-                                        ? "仅 Native 输出可用；严格 BitPerfect 打开时会强制启用"
-                                        : "“系统默认输出”是混音服务器的虚拟端点，独占无从谈起；选择一个硬件端点后自动恢复";
-                                    show-divider: true;
-
-                                    ModernSwitch {
-                                        y: 0px;
-                                        checked: AppState.setting-strict-bitperfect || (AppState.setting-supports-exclusive && AppState.setting-exclusive-mode);
-                                        enabled: AppState.setting-supports-exclusive && !AppState.setting-strict-bitperfect && AppState.setting-audio-engine != "webapi";
-                                        toggled(v) => { AppState.setting-exclusive-mode = v; }
-                                    }
-                                }
-
-                                SettingRowItem {
-                                    title: "严格 BitPerfect";
-                                    description: AppState.setting-supports-exclusive
-                                        ? "仅 Native 输出可用；设备必须原生支持当前音源格式"
-                                        : "BitPerfect 必须直通 hw: 硬件端点，请先在上方选择具体的输出设备";
-                                    show-divider: false;
-
-                                    ModernSwitch {
-                                        y: 0px;
-                                        checked <=> AppState.setting-strict-bitperfect;
-                                        enabled: AppState.setting-supports-exclusive && AppState.setting-audio-engine != "webapi";
-                                        toggled(v) => {
-                                            AppState.session-volume-locked = v;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // 3. 外观个性化 (AppearanceSettingsTab.vue)
-                        if AppState.settings-tab == "appearance" : VerticalLayout {
-                            SettingGroupCard {
-                                title: "色彩模式";
-                                no-card: true;
-
-                                SegmentedSlider3 {
-                                    label-0: "浅色模式";
-                                    value-0: "light";
-                                    label-1: "深色模式";
-                                    value-1: "dark";
-                                    label-2: "跟随系统";
-                                    value-2: "adaptive";
-                                    current-value <=> Theme.theme-mode;
-                                    selected(mode) => {
-                                        Theme.is-dark = (mode == "dark");
-                                    }
-                                }
-                            }
-
-                            SettingGroupCard {
-                                title: "视觉效果";
-
-                                SettingRowItem {
-                                    title: "亚克力 / 云母效果";
-                                    description: "启用窗口半透明磨砂背景";
-                                    show-divider: true;
-
-                                    ModernSwitch {
-                                        y: 0px;
-                                        checked <=> AppState.setting-acrylic;
-                                    }
-                                }
-
-                                SettingRowItem {
-                                    title: "强调色";
-                                    action-width: 40px;
-                                    action-height: 26.6px;
-                                    description: "用于后续主题扩展和重点控件着色";
-                                    show-divider: false;
-
-                                    Rectangle {
-                                        width: 40px;
-                                        height: 24px;
-                                        y: 0px;
-                                        border-radius: 6px;
-                                        background: Theme.theme-color;
-                                        border-width: 2px;
-                                        border-color: Theme.sys-border-strong;
-
-                                        TouchArea {
-                                            mouse-cursor: pointer;
-                                            clicked => {
-                                                if (Theme.theme-color == #6366f1) {
-                                                    Theme.theme-color = #0e7490;
-                                                    Theme.theme-color-strong = #0e7490;
-                                                } else if (Theme.theme-color == #0e7490) {
-                                                    Theme.theme-color = #d9480f;
-                                                    Theme.theme-color-strong = #d9480f;
-                                                } else {
-                                                    Theme.theme-color = #6366f1;
-                                                    Theme.theme-color-strong = #5154c5;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            SettingGroupCard {
-                                title: "全屏播放页";
-
-                                VerticalLayout {
-                                    padding-top: 18px;
-                                    padding-bottom: 6px;
-                                    spacing: 12px;
-
-                                    Rectangle {
-                                        height: 76px;
-                                        border-radius: 18px;
-                                        background: Theme.sys-bg-muted;
-                                        border-width: 1px;
-                                        border-color: Theme.sys-border;
-
-                                        HorizontalLayout {
-                                            padding-left: 20px;
-                                            padding-right: 20px;
-                                            spacing: 20px;
-
-                                            HorizontalLayout {
-                                                horizontal-stretch: 1;
-                                                alignment: end;
-                                                spacing: 14px;
-
-                                                for item[idx] in AppState.fullscreen-aux-left : Rectangle {
-                                                    width: 34px;
-                                                    height: 34px;
-                                                    y: (parent.height - self.height) / 2;
-                                                    border-radius: 17px;
-                                                    background: aux-l-ta.has-hover ? Theme.sys-control-hover : transparent;
-                                                    border-width: item.visible ? 0px : 1px;
-                                                    border-color: Theme.sys-border-strong;
-                                                    opacity: item.visible ? 1.0 : 0.34;
-                                                    animate opacity, background { duration: 200ms; easing: ease; }
-
-                                                    aux-l-ta := TouchArea {
-                                                        mouse-cursor: pointer;
-                                                        clicked => {
-                                                            AppState.fullscreen-aux-left[idx].visible = !item.visible;
-                                                        }
-                                                    }
-
-                                                    AppIcon {
-                                                        x: 8px;
-                                                        y: 8px;
-                                                        source: item.id == "favorite" ? Icons.heart : Icons.comment;
-                                                        icon-size: 18px;
-                                                        tint: Theme.sys-text;
-                                                    }
-                                                }
-                                            }
-
-                                            HorizontalLayout {
-                                                spacing: 18px;
-                                                alignment: center;
-
-                                                AppIcon {
-                                                    y: (parent.height - self.height) / 2;
-                                                    source: Icons.prev;
-                                                    icon-size: 20px;
-                                                    tint: Theme.sys-text;
-                                                    opacity: 0.55;
-                                                }
-
-                                                Rectangle {
-                                                    width: 40px;
-                                                    height: 40px;
-                                                    y: (parent.height - self.height) / 2;
-                                                    border-radius: 20px;
-                                                    background: Theme.sys-text;
-
-                                                    AppIcon {
-                                                        x: 11px;
-                                                        y: 11px;
-                                                        source: Icons.play;
-                                                        icon-size: 18px;
-                                                        tint: Theme.sys-bg;
-                                                    }
-                                                }
-
-                                                AppIcon {
-                                                    y: (parent.height - self.height) / 2;
-                                                    source: Icons.next;
-                                                    icon-size: 20px;
-                                                    tint: Theme.sys-text;
-                                                    opacity: 0.55;
-                                                }
-                                            }
-
-                                            HorizontalLayout {
-                                                horizontal-stretch: 1;
-                                                alignment: start;
-                                                spacing: 14px;
-
-                                                for item[idx] in AppState.fullscreen-aux-right : Rectangle {
-                                                    width: 34px;
-                                                    height: 34px;
-                                                    y: (parent.height - self.height) / 2;
-                                                    border-radius: 17px;
-                                                    background: aux-r-ta.has-hover ? Theme.sys-control-hover : transparent;
-                                                    border-width: item.visible ? 0px : 1px;
-                                                    border-color: Theme.sys-border-strong;
-                                                    opacity: item.visible ? 1.0 : 0.34;
-                                                    animate opacity, background { duration: 200ms; easing: ease; }
-
-                                                    aux-r-ta := TouchArea {
-                                                        mouse-cursor: pointer;
-                                                        clicked => {
-                                                            AppState.fullscreen-aux-right[idx].visible = !item.visible;
-                                                        }
-                                                    }
-
-                                                    AppIcon {
-                                                        x: 8px;
-                                                        y: 8px;
-                                                        source: item.id == "playMode" ? Icons.loop : Icons.volume;
-                                                        icon-size: 18px;
-                                                        tint: Theme.sys-text;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    SettingsText {
-                                        text: "拖动按钮可跨左右两侧移动并调整顺序，点击按钮切换显示 / 隐藏；虚线圈表示当前已隐藏。音量按钮仅在开启软件音量后出现。";
-                                        font-size: 11px;
-                                        color: Theme.sys-text-tertiary;
-                                        wrap: word-wrap;
-                                    }
-                                }
-                            }
-                        }
-
-                        // 4. 曲库管理 (LibrarySettingsTab.vue)
-                        if AppState.settings-tab == "library" : VerticalLayout {
-                            SettingGroupCard {
-                                title: "本地文件夹";
-                                no-card: true;
-                                tip: "添加文件夹后会自动递归扫描音频并加入本地音乐列表；移除文件夹会同步清理对应歌曲。";
-
-                                VerticalLayout {
-                                    spacing: 8px;
-
-                                    for path in AppState.setting-lib-paths : library-path-row := Rectangle {
-                                        height: 61px;
-                                        border-radius: 12px;
-                                        background: Theme.sys-surface-muted;
-
-                                        HorizontalLayout {
-                                            padding-left: 16px;
-                                            padding-right: 16px;
-                                            spacing: 12px;
-
-                                            AppIcon {
-                                                y: (parent.height - self.height) / 2;
-                                                source: Icons.folder;
-                                                icon-size: 16px;
-                                                tint: Theme.sys-text-secondary;
-                                            }
-
-                                            SettingsText {
-                                                horizontal-stretch: 1;
-                                                text: path;
-                                                font-size: 13px;
-                                                color: Theme.sys-text;
-                                                vertical-alignment: center;
-                                                overflow: elide;
-                                            }
-
-                                            Rectangle {
-                                                width: 78px;
-                                                height: 32px;
-                                                y: (parent.height - self.height) / 2;
-                                                border-radius: 10px;
-                                                background: rs-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
-                                                border-width: 1px;
-                                                border-color: rs-ta.has-hover ? Theme.sys-border-strong : Theme.sys-border;
-
-                                                rs-ta := TouchArea { mouse-cursor: pointer; clicked => { AppState.runtime-action("local", -1, "scan"); } }
-
-                                                SettingsText {
-                                                    text: "重新扫描";
-                                                    font-size: 13px;
-                                                    font-weight: 700;
-                                                    color: rs-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
-                                                    horizontal-alignment: center;
-                                                    vertical-alignment: center;
-                                                }
-                                            }
-
-                                            Rectangle {
-                                                width: 54px;
-                                                height: 32px;
-                                                y: (parent.height - self.height) / 2;
-                                                border-radius: 10px;
-                                                background: rm-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
-                                                border-width: 1px;
-                                                border-color: rm-ta.has-hover ? Theme.sys-border-strong : Theme.sys-border;
-
-                                                rm-ta := TouchArea { mouse-cursor: pointer; clicked => { AppState.runtime-action("remove-folder", -1, path); } }
-
-                                                SettingsText {
-                                                    text: "移除";
-                                                    font-size: 13px;
-                                                    font-weight: 700;
-                                                    color: rm-ta.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
-                                                    horizontal-alignment: center;
-                                                    vertical-alignment: center;
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        height: 44px;
-                                        border-radius: 10px;
-                                        background: add-dir-ta.has-hover ? Theme.sys-control-hover : Theme.sys-surface-muted;
-                                        border-width: 2px;
-                                        border-color: Theme.sys-border-strong;
-
-                                        add-dir-ta := TouchArea { mouse-cursor: pointer; clicked => { AppState.runtime-action("local", -1, "add"); } }
-
-                                        SettingsText {
-                                            text: "+ 添加文件夹";
-                                            font-size: 13px;
-                                            font-weight: 700;
-                                            color: add-dir-ta.has-hover ? Theme.sys-text-secondary : Theme.sys-text-tertiary;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // 5. 缓存 (CacheSettingsTab.vue)
-                        if AppState.settings-tab == "cache" : VerticalLayout {
-                            SettingGroupCard {
-                                title: "本地缓存";
-                                no-card: true;
-                                tip: "native 缓存会维护歌曲、歌手/用户信息、封面和歌词并在超限时自动回收冷数据。";
-
-                                cache-card := Rectangle {
-                                    border-radius: 18px;
-                                    background: Theme.sys-surface-muted;
-
-                                    VerticalLayout {
-                                        padding: 20px;
-                                        spacing: 18px;
-
-                                        HorizontalLayout {
-                                            alignment: space-between;
-
-                                            VerticalLayout {
-                                                spacing: 6px;
-                                                SettingsText {
-                                                    text: "当前占用";
-                                                    font-size: 12px;
-                                                    color: Theme.sys-text-tertiary;
-                                                }
-                                                SettingsText {
-                                                    text: AppState.setting-cache-usage-text;
-                                                    font-size: 24px;
-                                                    font-weight: 800;
-                                                    color: Theme.sys-text;
-                                                }
-                                            }
-
-                                            Rectangle {
-                                                width: 84px;
-                                                height: 36px;
-                                                border-radius: 10px;
-                                                background: clr-cache-ta.has-hover ? Theme.sys-control-hover : Theme.sys-control;
-
-                                                clr-cache-ta := TouchArea {
-                                                    mouse-cursor: pointer;
-                                                    clicked => {
-                                                        if AppState.runtime-enabled { AppState.runtime-action("clear-cache", -1, ""); } else {
-                                                            AppState.setting-cache-usage-percent = 0.0;
-                                                            AppState.setting-cache-usage-text = "0 B / 2.00 GB";
-                                                        }
-                                                    }
-                                                }
-
-                                                SettingsText {
-                                                    text: "清理缓存";
-                                                    font-size: 13px;
-                                                    font-weight: 600;
-                                                    color: Theme.sys-text;
-                                                    horizontal-alignment: center;
-                                                    vertical-alignment: center;
-                                                }
-                                            }
-                                        }
-
-                                        // .cache-progress (height 10px, fill transition width 0.25s ease)
-                                        Rectangle {
-                                            height: 10px;
-                                            border-radius: 5px;
-                                            background: Theme.sys-control;
-                                            clip: true;
-
-                                            Rectangle {
-                                                x: 0px;
-                                                y: 0px;
-                                                width: parent.width * (AppState.setting-cache-usage-percent / 100.0);
-                                                height: 100%;
-                                                border-radius: 5px;
-                                                background: @linear-gradient(90deg, Theme.theme-color 0%, Theme.theme-color-strong 100%);
-                                                animate width { duration: 250ms; easing: ease; }
-                                            }
-                                        }
-
-                                        VerticalLayout {
-                                            spacing: 10px;
-                                            SettingsText {
-                                                text: "最大缓存占用";
-                                                font-size: 13px;
-                                                font-weight: 700;
-                                                color: Theme.sys-text-secondary;
-                                            }
-
-                                            HorizontalLayout {
-                                                spacing: 12px;
-
-                                                RangeSlider {
-                                                    horizontal-stretch: 1;
-                                                    y: (parent.height - self.height) / 2;
-                                                    value <=> AppState.setting-cache-limit-mb;
-                                                    minimum: 128.0;
-                                                    maximum: 8192.0;
-                                                }
-
-                                                Rectangle {
-                                                    width: 96px;
-                                                    height: 36px;
-                                                    border-radius: 10px;
-                                                    background: Theme.sys-surface-strong;
-                                                    border-width: 1px;
-                                                    border-color: Theme.sys-border-strong;
-
-                                                    SettingsText {
-                                                        text: Math.round(AppState.setting-cache-limit-mb);
-                                                        font-size: 13px;
-                                                        font-weight: 600;
-                                                        color: Theme.sys-text;
-                                                        horizontal-alignment: center;
-                                                        vertical-alignment: center;
-                                                    }
-                                                }
-
-                                                SettingsText {
-                                                    text: "MB";
-                                                    font-size: 12px;
-                                                    font-weight: 700;
-                                                    color: Theme.sys-text-tertiary;
-                                                    vertical-alignment: center;
-                                                }
-
-                                                Rectangle {
-                                                    width: 60px;
-                                                    height: 36px;
-                                                    border-radius: 10px;
-                                                    background: Theme.theme-color;
-
-                                                    TouchArea { mouse-cursor: pointer; clicked => { AppState.runtime-action("apply-cache", -1, ""); } }
-
-                                                    SettingsText {
-                                                        text: "应用";
-                                                        font-size: 13px;
-                                                        font-weight: 700;
-                                                        color: #ffffff;
-                                                        horizontal-alignment: center;
-                                                        vertical-alignment: center;
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        VerticalLayout {
-                                            spacing: 10px;
-                                            SettingsText {
-                                                text: "最大预下载大小";
-                                                font-size: 13px;
-                                                font-weight: 700;
-                                                color: Theme.sys-text-secondary;
-                                            }
-
-                                            HorizontalLayout {
-                                                spacing: 12px;
-
-                                                RangeSlider {
-                                                    horizontal-stretch: 1;
-                                                    y: (parent.height - self.height) / 2;
-                                                    value <=> AppState.setting-cache-ahead-mb;
-                                                    minimum: 1.0;
-                                                    maximum: 128.0;
-                                                }
-
-                                                Rectangle {
-                                                    width: 96px;
-                                                    height: 36px;
-                                                    border-radius: 10px;
-                                                    background: Theme.sys-surface-strong;
-                                                    border-width: 1px;
-                                                    border-color: Theme.sys-border-strong;
-
-                                                    SettingsText {
-                                                        text: Math.round(AppState.setting-cache-ahead-mb);
-                                                        font-size: 13px;
-                                                        font-weight: 600;
-                                                        color: Theme.sys-text;
-                                                        horizontal-alignment: center;
-                                                        vertical-alignment: center;
-                                                    }
-                                                }
-
-                                                SettingsText {
-                                                    text: "MB";
-                                                    font-size: 12px;
-                                                    font-weight: 700;
-                                                    color: Theme.sys-text-tertiary;
-                                                    vertical-alignment: center;
-                                                }
-
-                                                Rectangle {
-                                                    width: 60px;
-                                                    height: 36px;
-                                                    border-radius: 10px;
-                                                    background: Theme.theme-color;
-
-                                                    TouchArea { mouse-cursor: pointer; clicked => { AppState.runtime-action("apply-cache", -1, ""); } }
-
-                                                    SettingsText {
-                                                        text: "应用";
-                                                        font-size: 13px;
-                                                        font-weight: 700;
-                                                        color: #ffffff;
-                                                        horizontal-alignment: center;
-                                                        vertical-alignment: center;
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        VerticalLayout {
-                                            spacing: 12px;
-
-                                            HorizontalLayout {
-                                                spacing: 12px;
-
-                                                Rectangle {
-                                                    horizontal-stretch: 1;
-                                                    min-width: 0px;
-                                                    preferred-width: 0px;
-                                                    height: 100px;
-                                                    border-radius: 14px;
-                                                    background: Theme.sys-surface-muted;
-
-                                                    VerticalLayout {
-                                                        padding-top: 14px;
-                                                        padding-bottom: 14px;
-                                                        padding-left: 16px;
-                                                        padding-right: 16px;
-                                                        spacing: 4px;
-
-                                                        SettingsText { text: "歌曲"; font-size: 12px; font-weight: 700; color: Theme.sys-text-secondary; }
-                                                        SettingsText { text: AppState.setting-cache-details[0]; font-size: 16px; font-weight: 700; color: Theme.sys-text; }
-                                                        SettingsText { text: AppState.setting-cache-details[1]; font-size: 12px; color: Theme.sys-text-tertiary; }
-                                                    }
-                                                }
-
-                                                Rectangle {
-                                                    horizontal-stretch: 1;
-                                                    min-width: 0px;
-                                                    preferred-width: 0px;
-                                                    height: 100px;
-                                                    border-radius: 14px;
-                                                    background: Theme.sys-surface-muted;
-
-                                                    VerticalLayout {
-                                                        padding-top: 14px;
-                                                        padding-bottom: 14px;
-                                                        padding-left: 16px;
-                                                        padding-right: 16px;
-                                                        spacing: 4px;
-
-                                                        SettingsText { text: "歌手 / 用户头像"; font-size: 12px; font-weight: 700; color: Theme.sys-text-secondary; }
-                                                        SettingsText { text: AppState.setting-cache-details[2]; font-size: 16px; font-weight: 700; color: Theme.sys-text; }
-                                                        SettingsText { text: AppState.setting-cache-details[3]; font-size: 12px; color: Theme.sys-text-tertiary; }
-                                                    }
-                                                }
-                                            }
-
-                                            HorizontalLayout {
-                                                spacing: 12px;
-
-                                                Rectangle {
-                                                    horizontal-stretch: 1;
-                                                    min-width: 0px;
-                                                    preferred-width: 0px;
-                                                    height: 100px;
-                                                    border-radius: 14px;
-                                                    background: Theme.sys-surface-muted;
-
-                                                    VerticalLayout {
-                                                        padding-top: 14px;
-                                                        padding-bottom: 14px;
-                                                        padding-left: 16px;
-                                                        padding-right: 16px;
-                                                        spacing: 4px;
-
-                                                        SettingsText { text: "封面"; font-size: 12px; font-weight: 700; color: Theme.sys-text-secondary; }
-                                                        SettingsText { text: AppState.setting-cache-details[4]; font-size: 16px; font-weight: 700; color: Theme.sys-text; }
-                                                        SettingsText { text: AppState.setting-cache-details[5]; font-size: 12px; color: Theme.sys-text-tertiary; }
-                                                    }
-                                                }
-
-                                                Rectangle {
-                                                    horizontal-stretch: 1;
-                                                    min-width: 0px;
-                                                    preferred-width: 0px;
-                                                    height: 100px;
-                                                    border-radius: 14px;
-                                                    background: Theme.sys-surface-muted;
-
-                                                    VerticalLayout {
-                                                        padding-top: 14px;
-                                                        padding-bottom: 14px;
-                                                        padding-left: 16px;
-                                                        padding-right: 16px;
-                                                        spacing: 4px;
-
-                                                        SettingsText { text: "歌词"; font-size: 12px; font-weight: 700; color: Theme.sys-text-secondary; }
-                                                        SettingsText { text: AppState.setting-cache-details[6]; font-size: 16px; font-weight: 700; color: Theme.sys-text; }
-                                                        SettingsText { text: AppState.setting-cache-details[7]; font-size: 12px; color: Theme.sys-text-tertiary; }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // 6. 快捷键 (ShortcutsSettingsTab.vue)
-                        if AppState.settings-tab == "shortcuts" : VerticalLayout {
-                            SettingGroupCard {
-                                title: "快捷键";
-                                no-card: true;
-
-                                Rectangle {
-                                    border-radius: 16px;
-                                    background: Theme.sys-surface-muted;
-                                    height: sc-txt.preferred-height + 36px;
-
-                                    sc-txt := SettingsText {
-                                        x: 20px;
-                                        y: 18px;
-                                        width: parent.width - 40px;
-                                        text: "快捷键配置还没有接入实际绑定逻辑。现在先把这个分区单独拆出来，后续可以在这里统一管理播放/暂停、上一首、下一首等全局快捷键。";
-                                        font-size: 13px;
-                                        color: Theme.sys-text-secondary;
-                                        wrap: word-wrap;
-                                    }
-                                }
-                            }
-                        }
-
-                        // 7. 调试 (DebugSettingsTab.vue)
-                        if AppState.settings-tab == "debug" : VerticalLayout {
-                            SettingGroupCard {
-                                title: "调试";
-
-                                SettingRowItem {
-                                    title: "歌词 debug";
-                                    description: "显示歌词同步调试面板并输出相关调试日志";
-                                    show-divider: false;
-
-                                    ModernSwitch {
-                                        y: 0px;
-                                        checked <=> AppState.setting-lyric-debug;
-                                    }
-                                }
-                            }
-                        }
-
-                        // 8. 关于软件 (AboutSettingsTab.vue)
-                        if AppState.settings-tab == "about" : VerticalLayout {
-                            VerticalLayout {
-                                padding-top: 20px;
-                                padding-bottom: 40px;
-                                alignment: center;
-                                spacing: 0px;
-
-                                Rectangle {
-                                    width: 80px;
-                                    height: 80px;
-                                    x: (parent.width - self.width) / 2;
-
-                                    Image {
-                                        width: 80px;
-                                        height: 80px;
-                                        source: Icons.app-logo;
-                                        image-fit: contain;
-                                    }
-                                }
-
-                                Rectangle { height: 20px; }
-
-                                SettingsText {
-                                    text: "NCM Desktop for Linux";
-                                    font-size: 20px;
-                                    font-weight: 700;
-                                    color: Theme.sys-text;
-                                    horizontal-alignment: center;
-                                }
-
-                                Rectangle { height: 8px; }
-
-                                SettingsText {
-                                    text: "Version 1.0.0";
-                                    font-size: 13px;
-                                    color: Theme.sys-text-tertiary;
-                                    horizontal-alignment: center;
-                                }
-                            }
-
-                            SettingGroupCard {
-                                title: "";
-
-                                SettingRowItem {
-                                    title: "检查更新";
-                                    action-width: 88px;
-                                    action-height: 36px;
-                                    show-divider: false;
-
-                                    Rectangle {
-                                        width: 88px;
-                                        height: 36px;
-                                        y: 0px;
-                                        border-radius: 10px;
-                                        background: Theme.theme-color;
-
-                                        TouchArea { mouse-cursor: pointer; }
-
-                                        SettingsText {
-                                            text: "检查更新";
-                                            font-size: 13px;
-                                            font-weight: 700;
-                                            color: #ffffff;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                active-tab-title: root.active-tab-title;
+                close-settings => { root.close-settings(); }
             }
         }
     }

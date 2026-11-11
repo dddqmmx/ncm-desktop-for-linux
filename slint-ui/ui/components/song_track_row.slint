@@ -1,0 +1,240 @@
+import { RuntimeState } from "../state/runtime.slint";
+import { NavigationState } from "../state/navigation.slint";
+import { PlayerState } from "../state/player.slint";
+import { DialogState } from "../state/dialog.slint";
+import { SongMenuState } from "../state/song_menu.slint";
+import { DetailState } from "../state/detail.slint";
+import { SongMetrics } from "song_metrics.slint";
+import { FlowText } from "typography.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { TrackItem } from "../models.slint";
+import { AppIcon, RoundedCover } from "common.slint";
+
+component SongRowActions inherits HorizontalLayout {
+    out property <bool> hovered: fav-ta.has-hover || more-ta.has-hover;
+    function open-menu() {
+        if (root.is-local-variant) {
+            DialogState.request-local-remove(root.track.id, root.track.name);
+        } else {
+            if (SongMenuState.open-menu-song-id == root.track.id) {
+                SongMenuState.open-menu-song-id = -1;
+            } else {
+                SongMenuState.open-menu-anchor-right = more-ta.absolute-position.x + more-ta.width;
+                SongMenuState.open-menu-anchor-top = more-ta.absolute-position.y;
+                SongMenuState.open-menu-anchor-bottom = more-ta.absolute-position.y + more-ta.height;
+                SongMenuState.open-menu-song-id = root.track.id;
+                SongMenuState.open-menu-song-name = root.track.name;
+                SongMenuState.open-menu-show-remove = root.show-remove-from-playlist;
+                SongMenuState.open-menu-submenu = false;
+            }
+        }
+    }
+
+    in property <TrackItem> track;
+    in property <bool> is-local-variant;
+    in property <bool> is-hovered;
+    in property <bool> show-remove-from-playlist;
+    width: 116px;
+    alignment: end;
+    spacing: 10px;
+
+    Rectangle {
+        width: root.is-local-variant ? 0px : 28px;
+        height: 28px;
+        visible: !root.is-local-variant;
+        y: (parent.height - self.height) / 2;
+        border-radius: 14px;
+        background: fav-ta.has-hover ? Theme.sys-control-hover : transparent;
+        opacity: (root.track.is-favorite || root.is-hovered) ? 1.0 : 0.0;
+        animate opacity, background { duration: 200ms; easing: ease; }
+
+        fav-ta := TouchArea {
+            enabled: !root.is-local-variant;
+            mouse-cursor: pointer;
+            clicked => {
+                if RuntimeState.runtime-enabled { PlayerState.toggle-favorite(root.track.id); } else if (PlayerState.current-song-id == root.track.id) {
+                    PlayerState.toggle-favorite(PlayerState.current-song-id);
+                }
+            }
+        }
+
+        AppIcon {
+            x: 6px;
+            y: 6px;
+            source: root.track.is-favorite ? Icons.heart-fill : Icons.heart;
+            icon-size: 16px;
+            tint: (root.track.is-favorite || fav-ta.has-hover) ? Theme.theme-color-strong : Theme.sys-text-disabled;
+        }
+    }
+
+    song-duration := Text {
+        width: 40px;
+        text: root.track.duration;
+        font-size: 12px;
+        color: Theme.sys-text-tertiary;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    Rectangle {
+        width: root.is-local-variant ? 30px : 28px;
+        height: root.is-local-variant ? 30px : 28px;
+        y: (parent.height - self.height) / 2;
+        border-radius: 15px;
+        background: more-ta.has-hover ? Theme.sys-control-hover : transparent;
+        opacity: (root.is-hovered || SongMenuState.open-menu-song-id == root.track.id) ? 1.0 : 0.0;
+        animate opacity, background { duration: 200ms; easing: ease; }
+
+        more-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.open-menu(); }
+        }
+
+        AppIcon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            source: root.is-local-variant ? Icons.close-fill : Icons.more-dots;
+            icon-size: 16px;
+            tint: more-ta.has-hover ? Theme.sys-text : Theme.sys-text-disabled;
+        }
+    }
+}
+
+export component SongTrackRow inherits Rectangle {
+    function open-album() {
+        if (!root.is-local-variant) {
+            DetailState.album-title = root.track.album;
+            DetailState.album-cover = root.track.cover;
+            if RuntimeState.runtime-enabled { RuntimeState.runtime-action("song-album", root.track.id, ""); } else { NavigationState.current-route = "album"; }
+        }
+    }
+
+    metrics := SongMetrics { }
+    in property <TrackItem> track;
+    in property <bool> is-local-variant: false;
+    in property <bool> show-remove-from-playlist: false;
+    in property <length> title-column-width;
+    in property <length> album-column-width;
+
+    property <bool> is-active: PlayerState.current-song-id == root.track.id;
+    property <bool> is-hovered: row-ta.has-hover || time-column.hovered || album-ta.has-hover;
+    property <bool> show-album-col: root.album-column-width > 0px;
+
+    height: metrics.row-height;
+    border-radius: 10px;
+    background: root.is-active
+        ? Theme.sys-control-active
+        : (root.is-hovered ? Theme.sys-control : transparent);
+    animate background { duration: 200ms; easing: ease; }
+
+    row-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            PlayerState.play-song(root.track.id, root.track.name, root.track.artist, root.track.cover, root.track.is-local, root.track.has-cover);
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 0px;
+
+        // .col-index (40px)
+        index-column := Rectangle {
+            width: 40px;
+
+            if !root.is-hovered : song-index := Text {
+                x: 0px;
+                width: 100%;
+                text: root.track.index-str;
+                font-size: 13px;
+                color: Theme.sys-text-disabled;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            if root.is-hovered : AppIcon {
+                x: 0px;
+                y: (parent.height - self.height) / 2;
+                source: Icons.play;
+                icon-size: 14px;
+                tint: Theme.theme-color-strong;
+            }
+        }
+
+        // .col-title (flex 3, gap 14px)
+        title-column := HorizontalLayout {
+            width: root.title-column-width;
+            padding-right: 16px;
+            spacing: 14px;
+
+            mini-cover := RoundedCover {
+                cover-id: root.track.id;
+                width: 40px;
+                height: 40px;
+                y: (parent.height - self.height) / 2;
+                radius: 6px;
+                source: root.track.cover;
+                is-local-fallback: root.track.is-local && !root.track.has-cover;
+                fallback-icon-size: 20px;
+            }
+
+            VerticalLayout {
+                min-width: 0px;
+                alignment: center;
+                spacing: 0px;
+                horizontal-stretch: 1;
+
+                song-title := FlowText {
+                    min-width: 0px;
+                    text: root.track.name;
+                    font-size: 14px;
+                    font-weight: 500;
+                    color: root.is-active ? Theme.theme-color-strong : Theme.sys-text;
+                    overflow: elide;
+                }
+
+                song-artist := FlowText {
+                    min-width: 0px;
+                    text: root.track.artist;
+                    font-size: 12px;
+                    color: Theme.sys-text-tertiary;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // .col-album (flex 2, @media max-width 900px 隐藏)
+        album-column := Rectangle {
+            width: root.album-column-width;
+            visible: root.show-album-col;
+
+            album-ta := TouchArea {
+                enabled: !root.is-local-variant && root.show-album-col;
+                mouse-cursor: root.is-local-variant ? default : pointer;
+                clicked => { root.open-album(); }
+            }
+
+            album-name := Text {
+                x: 0px;
+                width: Math.max(0px, parent.width - 16px);
+                height: 100%;
+                text: root.track.album;
+                font-size: 13px;
+                color: (!root.is-local-variant && album-ta.has-hover) ? Theme.sys-text : Theme.sys-text-tertiary;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        // .col-time (width 116px, justify-content flex-end, gap 10px)
+        time-column := SongRowActions {
+            track: root.track;
+            is-local-variant: root.is-local-variant;
+            is-hovered: root.is-hovered;
+            show-remove-from-playlist: root.show-remove-from-playlist;
+        }
+    }
+}

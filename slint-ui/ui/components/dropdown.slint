@@ -4,6 +4,101 @@ import { Icons } from "../icons.slint";
 
 // The caller owns the selection and maps indices to its own values/model.
 // Opening, navigating or dismissing the menu never commits a selection.
+component DropdownOption inherits Rectangle {
+    in property <int> index;
+    in property <int> current-index;
+    in property <int> active-index;
+    in property <string> label;
+    callback choose(int);
+
+    border-radius: 6px;
+    background: option-touch.has-hover || root.active-index == index
+        ? Theme.sys-control-hover : transparent;
+    accessible-role: list-item;
+    accessible-label: root.label;
+    accessible-item-selectable: true;
+    accessible-item-selected: root.current-index == index;
+    accessible-item-index: index;
+    accessible-action-default => { root.choose(index); }
+    option-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.choose(index); }
+    }
+    Text {
+        x: 10px; width: parent.width - 40px; height: 100%;
+        text: root.label;
+        font-size: 13px;
+        color: root.current-index == index ? Theme.theme-color-strong : Theme.sys-text;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    Image {
+        x: parent.width - 24px; y: (parent.height - self.height) / 2;
+        width: 14px; height: 14px;
+        source: Icons.check;
+        colorize: Theme.theme-color-strong;
+        visible: root.current-index == index;
+    }
+}
+
+component DropdownMenu inherits Rectangle {
+    in property <int> option-count;
+    in property <int> current-index;
+    in property <int> active-index;
+    in property <length> row-height;
+    in-out property <length> scroll-y;
+    pure callback option-label(int) -> string;
+    callback choose(int);
+    callback navigate(int);
+    callback dismiss();
+    forward-focus: menu-focus;
+    border-radius: 10px;
+    background: Theme.sys-bg-elevated;
+    border-width: 1px;
+    border-color: Theme.sys-border-strong;
+    menu-focus := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.dismiss();
+                return accept;
+            } else if event.text == Key.Return || event.text == " " {
+                root.choose(root.active-index);
+                return accept;
+            } else if event.text == Key.UpArrow {
+                root.navigate(root.active-index - 1);
+                return accept;
+            } else if event.text == Key.DownArrow {
+                root.navigate(root.active-index + 1);
+                return accept;
+            } else if event.text == Key.Home {
+                root.navigate(0);
+                return accept;
+            } else if event.text == Key.End {
+                root.navigate(root.option-count - 1);
+                return accept;
+            } else if event.text == Key.Tab || event.text == Key.Backtab {
+                root.dismiss();
+                return reject;
+            }
+            return reject;
+        }
+        ListView {
+            x: 4px; y: 4px;
+            width: parent.width - 8px;
+            height: parent.height - 8px;
+            content-y <=> root.scroll-y;
+            for index in root.option-count : option := DropdownOption {
+                height: root.row-height;
+                index: index;
+                current-index: root.current-index;
+                active-index: root.active-index;
+                label: root.option-label(index);
+                choose(index) => { root.choose(index); }
+            }
+        }
+    }
+}
+
 export component Dropdown inherits Rectangle {
     in property <int> option-count;
     pure callback option-label(int) -> string;
@@ -107,77 +202,18 @@ export component Dropdown inherits Rectangle {
         width: Math.max(root.width, root.popup-width);
         height: root.menu-height + 8px;
         close-policy: close-on-click-outside;
-        forward-focus: menu-focus;
+        forward-focus: menu;
 
-        Rectangle {
-            border-radius: 10px;
-            background: Theme.sys-bg-elevated;
-            border-width: 1px;
-            border-color: Theme.sys-border-strong;
-            menu-focus := FocusScope {
-                key-pressed(event) => {
-                    if event.text == Key.Escape {
-                        root.dismiss();
-                        return accept;
-                    } else if event.text == Key.Return || event.text == " " {
-                        root.choose(root.active-index);
-                        return accept;
-                    } else if event.text == Key.UpArrow {
-                        root.navigate(root.active-index - 1);
-                        return accept;
-                    } else if event.text == Key.DownArrow {
-                        root.navigate(root.active-index + 1);
-                        return accept;
-                    } else if event.text == Key.Home {
-                        root.navigate(0);
-                        return accept;
-                    } else if event.text == Key.End {
-                        root.navigate(root.option-count - 1);
-                        return accept;
-                    } else if event.text == Key.Tab || event.text == Key.Backtab {
-                        root.dismiss();
-                        return reject;
-                    }
-                    return reject;
-                }
-                ListView {
-                    x: 4px; y: 4px;
-                    width: parent.width - 8px;
-                    height: parent.height - 8px;
-                    content-y <=> root.scroll-y;
-                    for index in root.option-count : option := Rectangle {
-                        height: root.row-height;
-                        border-radius: 6px;
-                        background: option-touch.has-hover || root.active-index == index
-                            ? Theme.sys-control-hover : transparent;
-                        accessible-role: list-item;
-                        accessible-label: root.option-label(index);
-                        accessible-item-selectable: true;
-                        accessible-item-selected: root.current-index == index;
-                        accessible-item-index: index;
-                        accessible-action-default => { root.choose(index); }
-                        option-touch := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.choose(index); }
-                        }
-                        Text {
-                            x: 10px; width: parent.width - 40px; height: 100%;
-                            text: root.option-label(index);
-                            font-size: 13px;
-                            color: root.current-index == index ? Theme.theme-color-strong : Theme.sys-text;
-                            vertical-alignment: center;
-                            overflow: elide;
-                        }
-                        Image {
-                            x: parent.width - 24px; y: (parent.height - self.height) / 2;
-                            width: 14px; height: 14px;
-                            source: Icons.check;
-                            colorize: Theme.theme-color-strong;
-                            visible: root.current-index == index;
-                        }
-                    }
-                }
-            }
+        menu := DropdownMenu {
+            option-count: root.option-count;
+            current-index: root.current-index;
+            active-index: root.active-index;
+            row-height: root.row-height;
+            scroll-y <=> root.scroll-y;
+            option-label(index) => { return root.option-label(index); }
+            choose(index) => { root.choose(index); }
+            navigate(index) => { root.navigate(index); }
+            dismiss => { root.dismiss(); }
         }
     }
 }

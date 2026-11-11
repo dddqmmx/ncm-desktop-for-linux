@@ -1,0 +1,16 @@
+import { QueueSongItem } from "../models.slint";
+import { RuntimeState } from "runtime.slint";
+import { DemoPlayer } from "../fixtures/player.slint";
+
+// Queue model and controller dispatch; list edits stay in Rust.
+export global QueueState {
+    in-out property <bool> is-playlist-open: false;
+    in-out property <[QueueSongItem]> queue-songs: DemoPlayer.queue-songs;
+
+    callback demo-queue-action(string, int);
+
+    public function queue-action(action: string, id: int) {
+        if RuntimeState.runtime-enabled { RuntimeState.runtime-action(action, id, ""); }
+        else { self.demo-queue-action(action, id); }
+    }
+}
