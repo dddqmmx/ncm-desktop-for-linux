@@ -4,6 +4,12 @@ import { ref, onMounted, reactive } from 'vue'
 import { useUserStore } from '@renderer/stores/userStore'
 import type { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist'
 import type { PlaylistDetail } from '@renderer/types/playlistDetail'
+import {
+  apiErrorMessage,
+  isApiSuccess,
+  isDuplicateTrackResult,
+  type ServiceResult
+} from '@renderer/utils/api'
 
 const props = defineProps<{
   songId: number
@@ -68,13 +74,23 @@ const addToPlaylist = async (pl: Playlist): Promise<void> => {
   addingToPlaylist.value = pl.id
 
   try {
-    await window.api.playlist_track_add({
+    const res = (await window.api.playlist_track_add({
       pid: pl.id,
       ids: `[${props.songId}]`,
       cookie: userStore.cookie
-    })
+    })) as ServiceResult
+
+    const duplicated = isDuplicateTrackResult(res)
+    if (!isApiSuccess(res) && !duplicated) {
+      feedback.value = { message: apiErrorMessage(res, '添加失败，请重试'), type: 'error' }
+      return
+    }
+
     containsStatus[pl.id] = true
-    feedback.value = { message: `已添加到「${pl.name}」`, type: 'success' }
+    feedback.value = {
+      message: duplicated ? `「${pl.name}」里已经有这首歌了` : `已添加到「${pl.name}」`,
+      type: duplicated ? 'error' : 'success'
+    }
     setTimeout(() => emit('close'), 1000)
   } catch {
     feedback.value = { message: '添加失败，请重试', type: 'error' }
@@ -126,18 +142,16 @@ const formatCount = (num: number): string => {
             :class="{
               loading: addingToPlaylist === pl.id,
               'already-added': isPlaylistContains(pl.id) === true,
-              'checking': isPlaylistContains(pl.id) === null
+              checking: isPlaylistContains(pl.id) === null
             }"
             @click="isPlaylistContains(pl.id) !== true && addToPlaylist(pl)"
           >
-            <img
-              :src="`${pl.coverImgUrl}?param=80y80`"
-              class="playlist-cover"
-              alt=""
-            />
+            <img :src="`${pl.coverImgUrl}?param=80y80`" class="playlist-cover" alt="" />
             <div class="playlist-info">
               <div class="playlist-name">{{ pl.name }}</div>
-              <div class="playlist-meta">{{ pl.trackCount }}首 · 播放{{ formatCount(pl.playCount) }}</div>
+              <div class="playlist-meta">
+                {{ pl.trackCount }}首 · 播放{{ formatCount(pl.playCount) }}
+              </div>
             </div>
             <div v-if="addingToPlaylist === pl.id" class="adding-spinner"></div>
             <div v-else-if="isPlaylistContains(pl.id) === null" class="checking-spinner"></div>
@@ -181,11 +195,15 @@ const formatCount = (num: number): string => {
 }
 
 .glass-morphism-heavy {
-  background: var(--sys-surface);
+  background: var(--glass-fill);
   backdrop-filter: var(--sys-glass-blur);
   -webkit-backdrop-filter: var(--sys-glass-blur);
-  border: 0.5px solid var(--sys-border);
-  box-shadow: var(--sys-shadow-elevated);
+  border: var(--glass-border-width-hairline) solid var(--glass-border);
+  box-shadow:
+    var(--glass-shadow-elevated),
+    inset 0 2px 1px var(--glass-highlight),
+    inset 0 -1.5px 1px var(--glass-shade),
+    var(--glass-glow);
   border-radius: 28px;
 }
 

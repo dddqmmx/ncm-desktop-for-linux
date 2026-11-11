@@ -18,7 +18,11 @@ import {
   MAX_SONG_MAX_CACHE_AHEAD_MB,
   MIN_SONG_MAX_CACHE_AHEAD_MB,
   MAX_VOLUME_PERCENT,
-  MIN_VOLUME_PERCENT
+  MIN_VOLUME_PERCENT,
+  FULLSCREEN_AUX_BUTTON_IDS,
+  DEFAULT_FULLSCREEN_AUX_LAYOUT,
+  FullscreenAuxButtonId,
+  FullscreenAuxButtonState
 } from './types'
 
 export function isSoundQuality(value: unknown): value is SoundQualityType {
@@ -89,12 +93,90 @@ export function normalizeSongMaxCacheAheadMb(value: unknown): number {
   )
 }
 
+function isFullscreenAuxButtonId(value: unknown): value is FullscreenAuxButtonId {
+  return FULLSCREEN_AUX_BUTTON_IDS.includes(value as FullscreenAuxButtonId)
+}
+
+function normalizeAuxList(value: unknown): FullscreenAuxButtonState[] {
+  if (!Array.isArray(value)) return []
+
+  const result: FullscreenAuxButtonState[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const raw = item as { id?: unknown; visible?: unknown }
+    if (!isFullscreenAuxButtonId(raw.id)) continue
+    if (result.some((entry) => entry.id === raw.id)) continue
+    result.push({ id: raw.id, visible: typeof raw.visible === 'boolean' ? raw.visible : true })
+  }
+  return result
+}
+
+export interface FullscreenAuxLayout {
+  left: FullscreenAuxButtonState[]
+  right: FullscreenAuxButtonState[]
+}
+
+/**
+ * 把持久化的按钮布局归一成左右两列。除了过滤掉非法/重复 id，还要把缺失的按钮
+ * 补回它默认所在的那一侧——新版本新增按钮、或某次写入只留下部分列表时，不能让
+ * 用户的按钮凭空消失。
+ */
+export function normalizeFullscreenAuxLayout(value: unknown): FullscreenAuxLayout {
+  const saved = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  const left = normalizeAuxList(saved.left)
+  const right = normalizeAuxList(saved.right).filter(
+    (entry) => !left.some((kept) => kept.id === entry.id)
+  )
+
+  const known = new Set<FullscreenAuxButtonId>([...left, ...right].map((entry) => entry.id))
+  for (const side of ['left', 'right'] as const) {
+    for (const fallback of DEFAULT_FULLSCREEN_AUX_LAYOUT[side]) {
+      if (known.has(fallback.id)) continue
+      known.add(fallback.id)
+      ;(side === 'left' ? left : right).push({ ...fallback })
+    }
+  }
+
+  return { left, right }
+}
+
 export function normalizeVolumePercent(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return DEFAULT_SETTINGS.volumePercent
   }
 
   return Math.min(MAX_VOLUME_PERCENT, Math.max(MIN_VOLUME_PERCENT, Math.round(value)))
+}
+
+type LegacyFullscreenFlags = Partial<
+  Record<
+    | 'fullscreenShowFavorite'
+    | 'fullscreenShowPlayMode'
+    | 'fullscreenShowComment'
+    | 'fullscreenShowVolume',
+    unknown
+  >
+>
+
+function legacyFullscreenAuxLayout(parsed: LegacyFullscreenFlags): FullscreenAuxLayout | undefined {
+  const flags: Record<FullscreenAuxButtonId, unknown> = {
+    favorite: parsed.fullscreenShowFavorite,
+    comment: parsed.fullscreenShowComment,
+    playMode: parsed.fullscreenShowPlayMode,
+    volume: parsed.fullscreenShowVolume
+  }
+  // 四个键都不存在时返回 undefined，让调用方走默认布局
+  if (Object.values(flags).every((flag) => typeof flag !== 'boolean')) return undefined
+
+  const withVisibility = (entry: FullscreenAuxButtonState): FullscreenAuxButtonState => ({
+    id: entry.id,
+    visible: typeof flags[entry.id] === 'boolean' ? (flags[entry.id] as boolean) : entry.visible
+  })
+
+  return {
+    left: DEFAULT_FULLSCREEN_AUX_LAYOUT.left.map(withVisibility),
+    right: DEFAULT_FULLSCREEN_AUX_LAYOUT.right.map(withVisibility)
+  }
 }
 
 export function loadSettings(): PersistedSettings {
@@ -109,11 +191,19 @@ export function loadSettings(): PersistedSettings {
   }
 
   try {
-    const parsed = JSON.parse(rawSettings) as Partial<PersistedSettings>
+    const parsed = JSON.parse(rawSettings) as Partial<PersistedSettings> & LegacyFullscreenFlags
     const outputDeviceId = normalizeOutputDeviceId(
       parsed.outputDeviceId,
       fallbackSettings.outputDeviceId
     )
+    // 旧版四个布尔开关没有顺序信息，先迁移成默认布局再归一化
+    const auxLayout =
+      parsed.fullscreenAuxLeft || parsed.fullscreenAuxRight
+        ? normalizeFullscreenAuxLayout({
+            left: parsed.fullscreenAuxLeft,
+            right: parsed.fullscreenAuxRight
+          })
+        : (legacyFullscreenAuxLayout(parsed) ?? normalizeFullscreenAuxLayout(null))
 
     return {
       soundQuality: isSoundQuality(parsed.soundQuality)
@@ -144,14 +234,8 @@ export function loadSettings(): PersistedSettings {
           : fallbackSettings.softwareVolume,
       volumePercent: normalizeVolumePercent(parsed.volumePercent),
       theme: isThemeMode(parsed.theme) ? parsed.theme : fallbackSettings.theme,
-      fullscreenShowFavorite:
-        typeof parsed.fullscreenShowFavorite === 'boolean'
-          ? parsed.fullscreenShowFavorite
-          : fallbackSettings.fullscreenShowFavorite,
-      fullscreenShowPlayMode:
-        typeof parsed.fullscreenShowPlayMode === 'boolean'
-          ? parsed.fullscreenShowPlayMode
-          : fallbackSettings.fullscreenShowPlayMode,
+      fullscreenAuxLeft: auxLayout.left,
+      fullscreenAuxRight: auxLayout.right,
       acrylic: typeof parsed.acrylic === 'boolean' ? parsed.acrylic : fallbackSettings.acrylic,
       accentColor:
         typeof parsed.accentColor === 'string' && parsed.accentColor.trim().length > 0

@@ -93,7 +93,7 @@ const playSong = (song: Song): void => {
 
 const removeSong = (id: number): void => {
   localMusicStore.removeSong(id)
-  playerStore.playlist = playerStore.playlist.filter((song) => song.id !== id)
+  playerStore.removeFromPlaylist(id)
 }
 
 const clearLibrary = async (): Promise<void> => {
@@ -105,9 +105,9 @@ const clearLibrary = async (): Promise<void> => {
   })
   if (!confirmed) return
 
-  const localIds = new Set(localMusicStore.songs.map((song) => song.id))
+  const localIds = localMusicStore.songs.map((song) => song.id)
   localMusicStore.clear()
-  playerStore.playlist = playerStore.playlist.filter((song) => !localIds.has(song.id))
+  playerStore.removeSongs(localIds)
 }
 
 onMounted(() => {

@@ -263,12 +263,16 @@ onBeforeUnmount(() => {
   width: calc(100% - 40px);
   max-width: 820px;
   height: 96px;
-  background: var(--sys-surface);
+  background: var(--glass-fill);
   backdrop-filter: var(--sys-glass-blur);
   -webkit-backdrop-filter: var(--sys-glass-blur);
   border-radius: 36px;
-  border: 0.5px solid var(--sys-border);
-  box-shadow: var(--sys-shadow-elevated);
+  border: var(--glass-border-width-hairline) solid var(--glass-border);
+  box-shadow:
+    var(--glass-shadow-elevated),
+    inset 0 2px 1px var(--glass-highlight),
+    inset 0 -1.5px 1px var(--glass-shade),
+    var(--glass-glow);
   padding: 0 24px;
   display: flex;
   align-items: center;
@@ -503,10 +507,12 @@ onBeforeUnmount(() => {
   padding: 10px 14px;
   /* 处于 .glass-morphism（自身有 backdrop-filter，构成 Backdrop Root）内部，
      子元素的 backdrop-filter 采样不到页面内容，因此用高不透明度表面代替毛玻璃 */
-  background: var(--sys-surface-strong);
-  border: 0.5px solid var(--sys-border);
+  background: var(--glass-fill-strong);
+  border: var(--glass-border-width-hairline) solid var(--glass-border);
   border-radius: 14px;
-  box-shadow: var(--sys-shadow-elevated);
+  box-shadow:
+    var(--glass-shadow-elevated),
+    inset 0 1px 0 var(--glass-highlight);
   white-space: nowrap;
 }
 

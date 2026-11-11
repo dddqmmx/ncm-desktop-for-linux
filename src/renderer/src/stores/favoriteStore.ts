@@ -2,14 +2,9 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { CurrentSong } from '@renderer/types/player'
 import type { Song, SongDetailResult } from '@renderer/types/songDetail'
+import { apiErrorMessage, isApiSuccess, type ServiceResult } from '@renderer/utils/api'
 import { createCurrentSongArtists, normalizeCurrentSong } from './player/utils'
 import { useUserStore } from './userStore'
-
-interface ServiceResult<T> {
-  status: number
-  body?: T | null
-  error?: string
-}
 
 interface LikelistResult {
   ids?: unknown[]
@@ -18,11 +13,6 @@ interface LikelistResult {
 
 interface LikeResult {
   code?: number
-}
-
-const isSuccess = <T>(res: ServiceResult<T>): boolean => {
-  const code = (res.body as { code?: number } | null | undefined)?.code
-  return res.status >= 200 && res.status < 300 && (code === undefined || code === 200)
 }
 
 const mapSongToCurrentSong = (song: Song): CurrentSong => ({
@@ -91,8 +81,8 @@ export const useFavoriteStore = defineStore('favorites', () => {
         cookie: userStore.cookie
       })) as ServiceResult<LikelistResult>
 
-      if (!isSuccess(likeListRes)) {
-        throw new Error(likeListRes.error || '获取喜欢的音乐失败')
+      if (!isApiSuccess(likeListRes)) {
+        throw new Error(apiErrorMessage(likeListRes, '获取喜欢的音乐失败'))
       }
 
       const ids = (likeListRes.body?.ids || [])
@@ -112,8 +102,8 @@ export const useFavoriteStore = defineStore('favorites', () => {
         cookie: userStore.cookie
       })) as ServiceResult<SongDetailResult>
 
-      if (!isSuccess(detailRes) || !detailRes.body?.songs) {
-        throw new Error(detailRes.error || '获取喜欢的音乐详情失败')
+      if (!isApiSuccess(detailRes) || !detailRes.body?.songs) {
+        throw new Error(apiErrorMessage(detailRes, '获取喜欢的音乐详情失败'))
       }
 
       favoriteSongs.value = detailRes.body.songs.map(mapSongToCurrentSong)
@@ -156,8 +146,8 @@ export const useFavoriteStore = defineStore('favorites', () => {
         cookie: userStore.cookie
       })) as ServiceResult<LikeResult>
 
-      if (!isSuccess(res)) {
-        throw new Error(res.error || (like ? '喜欢歌曲失败' : '取消喜欢失败'))
+      if (!isApiSuccess(res)) {
+        throw new Error(apiErrorMessage(res, like ? '喜欢歌曲失败' : '取消喜欢失败'))
       }
     } catch (error) {
       favoriteSongs.value = previousSongs

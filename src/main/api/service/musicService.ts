@@ -12,6 +12,7 @@ import {
   user_account,
   song_url as song_url_legacy,
   song_url_v1,
+  song_download_url_v1,
   playlist_catlist,
   user_playlist,
   playlist_detail,
@@ -26,11 +27,26 @@ import {
   captcha_sent,
   like,
   likelist,
-  playlist_track_add,
-  playlist_track_delete
+  comment_music,
+  playlist_tracks,
+  playlist_create,
+  playlist_delete,
+  batch
 } from '@neteasecloudmusicapienhanced/api'
 import { createRequire } from 'node:module'
 import { CacheService } from './cacheService'
+import {
+  normalizePlaylistTracksError,
+  normalizeTrackIds,
+  unwrapPlaylistTracksResponse,
+  type PlaylistTrackMutationResult,
+  type PlaylistTrackOp
+} from './playlistTracks'
+import {
+  normalizePlaylistUpdateResult,
+  playlistUpdateRequest,
+  type PlaylistUpdateParams
+} from './playlistMetadata'
 
 type ServiceResult<T = APIBaseResponse> = {
   status: number
@@ -135,11 +151,26 @@ const responseHandler = <T = APIBaseResponse>(
       body: res.body,
       cookie: res.cookie
     }))
-    .catch((e: Error) => ({
+    .catch((e: unknown) => ({
       status: 500,
       body: null,
-      error: e.message
+      error: describeRequestFailure(e)
     }))
+}
+
+/**
+ * 请求失败时库抛出的是 `{ status, body }`（业务错误）或 axios 错误，
+ * 只有 Error 实例才带 message；直接读 e.message 会把真实原因丢成 undefined。
+ */
+function describeRequestFailure(error: unknown): string {
+  if (error instanceof Error) return error.message
+
+  const rejected = error as { body?: { message?: unknown; msg?: unknown } } | null
+  for (const candidate of [rejected?.body?.message, rejected?.body?.msg]) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim()
+  }
+
+  return typeof error === 'string' ? error : '请求失败'
 }
 
 // 线性退避步长：失败后立即重试只会在网络抖动或服务端限流时雪上加霜
@@ -163,6 +194,43 @@ const retry = <T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> => {
 
 const createMethod = <P, T>(fn: (params: P) => Promise<Response<T>>) => {
   return (params: P) => responseHandler(() => fn(params))
+}
+
+/**
+ * 歌单曲目增删。
+ *
+ * 不能用库里的 playlist_track_add / playlist_track_delete：
+ * - add 走的是已下线的 `/api/playlist/track/add`，服务端一律回 401「无权限操作歌单」，
+ *   哪怕歌单是自己建的、曲目已经在里面（与曲目本身、cookie 是否有效都无关）；
+ * - delete 读的是 `query.id`，而调用方传的是 `pid`，歌单 id 根本传不进去。
+ *
+ * 两者都改走 `/api/playlist/manipulate/tracks`（库里的 playlist_tracks），
+ * 也就是网页版增删/拖动曲目用的接口。
+ */
+const mutatePlaylistTracks = (op: PlaylistTrackOp) => {
+  return async (params: {
+    pid: number | string
+    ids: string | number | (string | number)[]
+    cookie?: string
+  }): Promise<PlaylistTrackMutationResult> => {
+    const trackIds = normalizeTrackIds(params.ids)
+    if (trackIds.length === 0) {
+      return { status: 400, body: null, error: '缺少要操作的歌曲' }
+    }
+
+    try {
+      return unwrapPlaylistTracksResponse(
+        await playlist_tracks({
+          ...(params.cookie ? { cookie: params.cookie } : {}),
+          pid: Number(params.pid),
+          tracks: trackIds.join(','),
+          op
+        })
+      )
+    } catch (error) {
+      return normalizePlaylistTracksError(error)
+    }
+  }
 }
 
 function cacheKey(scope: string, params: Record<string, unknown>): string {
@@ -231,6 +299,9 @@ export const MusicService = {
     createMethod(user_account)
   ),
   song_url: createMethod(fetchSongUrl),
+  song_download_url: createMethod(song_download_url_v1),
+  // 下载权限会随账号、会员和购买状态变化，不能复用按歌曲 ID 缓存的详情。
+  song_download_detail: createMethod(song_detail),
   playlist_catlist: createMethod(playlist_catlist),
   user_playlist: createMethod(user_playlist),
   playlist_detail: createMethod(playlist_detail),
@@ -243,8 +314,15 @@ export const MusicService = {
   recommend_songs: createMethod(recommend_songs),
   like: createMethod(like),
   likelist: createMethod(likelist),
-  playlist_track_add: createMethod(playlist_track_add),
-  playlist_track_delete: createMethod(playlist_track_delete),
+  comment_music: createMethod(comment_music),
+  playlist_track_add: mutatePlaylistTracks('add'),
+  playlist_track_delete: mutatePlaylistTracks('del'),
+  playlist_create: createMethod(playlist_create),
+  playlist_update: async (params: PlaylistUpdateParams) =>
+    normalizePlaylistUpdateResult(
+      await responseHandler(() => batch(playlistUpdateRequest(params)))
+    ),
+  playlist_delete: createMethod(playlist_delete),
   artist_detail: createCachedMethod(
     'entity',
     (params: { id: number | string }) => cacheKey('artist_detail', { id: params.id }),

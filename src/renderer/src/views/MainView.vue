@@ -74,8 +74,7 @@ onMounted(async () => {
 .app-background {
   width: 100vw;
   height: 100vh;
-  background:
-    radial-gradient(circle at top left, var(--theme-color-soft), transparent 32%), var(--sys-bg);
+  background: var(--app-background);
   position: relative;
   overflow: hidden;
   font-family:

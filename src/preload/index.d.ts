@@ -1,4 +1,10 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
+import type {
+  SongDownloadRequest,
+  SongDownloadResult,
+  SongDownloadOptionsRequest,
+  SongDownloadOptionsResult
+} from '../shared/download'
 
 interface CustomApi {
   // 网易云api操作
@@ -13,6 +19,10 @@ interface CustomApi {
   login_qr_check: (p: unknown) => Promise<unknown>
   user_account: (p: unknown) => Promise<unknown>
   song_url: (p: unknown) => Promise<unknown>
+  download_song: (payload: SongDownloadRequest) => Promise<SongDownloadResult>
+  download_song_qualities: (
+    payload: SongDownloadOptionsRequest
+  ) => Promise<SongDownloadOptionsResult>
   playlist_catlist: (p: unknown) => Promise<unknown>
   user_playlist: (p: unknown) => Promise<unknown>
   playlist_detail: (p: unknown) => Promise<unknown>
@@ -21,8 +31,17 @@ interface CustomApi {
   recommend_songs: (p: unknown) => Promise<unknown>
   like: (p: unknown) => Promise<unknown>
   likelist: (p: unknown) => Promise<unknown>
+  comment_music: (p: unknown) => Promise<unknown>
   playlist_track_add: (p: unknown) => Promise<unknown>
   playlist_track_delete: (p: unknown) => Promise<unknown>
+  playlist_create: (p: unknown) => Promise<unknown>
+  playlist_update: (p: {
+    id: number
+    name: string
+    desc: string
+    cookie?: string
+  }) => Promise<unknown>
+  playlist_delete: (p: { id: number; cookie?: string }) => Promise<unknown>
   artist_detail: (p: unknown) => Promise<unknown>
   artist_top_song: (p: unknown) => Promise<unknown>
   artist_album: (p: unknown) => Promise<unknown>

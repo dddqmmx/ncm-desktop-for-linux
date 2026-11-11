@@ -322,8 +322,7 @@ const openMenuSongId = ref<number | null>(null)
                 </button>
                 <SongContextMenu
                   v-if="openMenuSongId === song.id"
-                  :song-id="song.id"
-                  :song-name="song.name"
+                  :song="mapSearchSongToCurrentSong(song)"
                   @close="openMenuSongId = null"
                 />
               </div>
@@ -427,11 +426,13 @@ const openMenuSongId = ref<number | null>(null)
 
 .search-header.is-floating .search-input {
   /* 液态玻璃效果 */
-  background: var(--sys-surface);
+  background: var(--glass-fill);
   backdrop-filter: var(--sys-glass-blur);
   -webkit-backdrop-filter: var(--sys-glass-blur);
-  border: 1px solid var(--sys-border);
-  box-shadow: var(--sys-shadow-soft);
+  border: var(--glass-border-width) solid var(--glass-border);
+  box-shadow:
+    var(--glass-shadow),
+    inset 0 1px 0 var(--glass-highlight);
   border-radius: 24px; /* 更加圆润 */
 }
 

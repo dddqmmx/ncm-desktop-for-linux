@@ -1,7 +1,9 @@
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, disposePinia, setActivePinia } from 'pinia'
+import { nextTick } from 'vue'
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { useConfigStore } from '../configStore'
 import { usePlaybackStore } from '../player/playback'
+import { usePlaylistStore } from '../player/playlist'
 import { usePlayerStore } from '../playerStore'
 import type { CurrentSong } from '@renderer/types/player'
 
@@ -37,19 +39,54 @@ const SETTINGS_KEY = 'app_settings'
 
 describe('playerStore device switch sequencing', () => {
   let storage: MemoryStorage
+  let pinia: ReturnType<typeof createPinia>
+  const pendingTimeouts = new Set<ReturnType<typeof setTimeout>>()
 
   beforeEach(() => {
+    const scheduleTimeout = globalThis.setTimeout
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => {
+      const timer = scheduleTimeout(callback, delay, ...args)
+      pendingTimeouts.add(timer)
+      return timer
+    })
     storage = new MemoryStorage()
     vi.stubGlobal('localStorage', storage)
     vi.stubGlobal('document', { cookie: '' } as Document)
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    setActivePinia(createPinia())
+    pinia = createPinia()
+    setActivePinia(pinia)
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    // 先停止 store 监听并清理音量节流等延迟任务，再移除 window API mock。
+    await nextTick()
+    disposePinia(pinia)
+    pendingTimeouts.forEach((timer) => clearTimeout(timer))
+    pendingTimeouts.clear()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it('shares current selection synchronously and centralizes clear-and-stop', async () => {
+    vi.stubGlobal('window', { api: { stop: vi.fn(async () => undefined) } })
+    const player = usePlayerStore()
+    const playlist = usePlaylistStore()
+    const playback = usePlaybackStore()
+    playlist.selectSong(42)
+    expect(playback.currentSongId).toBe(42)
+    expect(player.currentSongId).toBe(42)
+    player.currentSongId = 43
+    expect(playlist.currentSongId).toBe(43)
+    await nextTick()
+    expect(storage.getItem('currentSongId')).toBe('43')
+    await player.clearAndStop()
+    expect(playlist.playlist).toEqual([])
+    expect(playlist.currentSongId).toBeNull()
+    expect(playback.currentSongId).toBeNull()
+    expect(player.isPlaying).toBe(false)
+    await nextTick()
+    expect(storage.getItem('currentSongId')).toBeNull()
   })
 
   it('stops the previous playback before trying to reacquire the configured output device for a new song', async () => {

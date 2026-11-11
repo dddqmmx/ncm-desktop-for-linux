@@ -52,8 +52,7 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem('app_user_info')
 
     // 清除播放列表并停止播放
-    playerStore.clearPlaylist()
-    playerStore.stopMusic()
+    void playerStore.clearAndStop()
   }
 
   return {

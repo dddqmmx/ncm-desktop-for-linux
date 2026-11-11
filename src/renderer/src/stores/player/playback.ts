@@ -30,8 +30,12 @@ function loadPersistedCurrentSong(): CurrentSong | null {
 }
 
 export const usePlaybackStore = defineStore('playback', () => {
+  const playlistStore = usePlaylistStore()
   const currentSong = ref<CurrentSong | null>(loadPersistedCurrentSong())
-  const currentSongId = ref<number | null>(Number(localStorage.getItem('currentSongId')) || null)
+  const currentSongId = computed({
+    get: () => playlistStore.currentSongId,
+    set: playlistStore.selectSong
+  })
   const currentTime = ref(Number(localStorage.getItem('currentTime') || 0))
   const isPlaying = ref(false)
   const isSeeking = ref(false)
@@ -57,7 +61,6 @@ export const usePlaybackStore = defineStore('playback', () => {
   const userStore = useUserStore()
   const configStore = useConfigStore()
   const dialogStore = useDialogStore()
-  const playlistStore = usePlaylistStore()
 
   let progressTimer: ReturnType<typeof setInterval> | null = null
   let progressAnimationFrame: number | null = null
@@ -565,14 +568,12 @@ export const usePlaybackStore = defineStore('playback', () => {
       duration: song.dt
     }
     currentSongId.value = song.id
-    playlistStore.currentSongId = song.id
     isPlaying.value = playing
   }
 
   const setLocalPlayerData = (song: LocalSong, playing: boolean = true): void => {
     currentSong.value = song
     currentSongId.value = song.id
-    playlistStore.currentSongId = song.id
     isPlaying.value = playing
   }
 
@@ -584,9 +585,7 @@ export const usePlaybackStore = defineStore('playback', () => {
       if (!Number.isFinite(duration) || duration <= 0) return song
 
       const resolved = { ...song, duration }
-      playlistStore.playlist = playlistStore.playlist.map((item) =>
-        item.id === song.id && isLocalSong(item) ? resolved : item
-      )
+      playlistStore.updateSong(resolved)
       return resolved
     } catch (error) {
       console.warn('读取本地音乐时长失败:', error)
@@ -1365,16 +1364,6 @@ export const usePlaybackStore = defineStore('playback', () => {
       localStorage.setItem('currentSong', JSON.stringify(song))
     } else {
       localStorage.removeItem('currentSong')
-    }
-  })
-
-  watch(currentSongId, (id) => {
-    if (id !== null) {
-      localStorage.setItem('currentSongId', id.toString())
-      playlistStore.currentSongId = id
-    } else {
-      localStorage.removeItem('currentSongId')
-      playlistStore.currentSongId = null
     }
   })
 

@@ -1,17 +1,23 @@
 <script setup lang="ts">
 import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { computed, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useRouter } from 'vue-router'
 import LoginModal from '@renderer/components/overlays/LoginModal.vue'
+import CreatePlaylistModal from '@renderer/components/overlays/CreatePlaylistModal.vue'
 import { useUserStore } from '@renderer/stores/userStore'
 import { useFavoriteStore } from '@renderer/stores/favoriteStore'
-import { Playlist, PlaylistResponse } from '@renderer/types/userPlaylist'
+import { usePlaylistStore } from '@renderer/stores/playlistStore'
 import SongCover from '@renderer/components/media/SongCover.vue'
 import UserAvatar from '@renderer/components/media/UserAvatar.vue'
 
 const userStore = useUserStore()
 const favoriteStore = useFavoriteStore()
+const router = useRouter()
 const showLoginModal = ref(false)
-const createdPlaylists = ref<Playlist[]>([])
+const showCreatePlaylistModal = ref(false)
+const playlistStore = usePlaylistStore()
+const { playlists: createdPlaylists } = storeToRefs(playlistStore)
 
 const toggleLoginModal = (): void => {
   if (!userStore.userInfo) {
@@ -29,28 +35,22 @@ const handleLogout = (): void => {
   // 假设 store 中有 logout 方法，没有的话请根据实际情况清除状态
   userStore.logout()
   favoriteStore.clearFavorites()
-  createdPlaylists.value = []
+  playlistStore.clearPlaylists()
 }
 
-// 获取歌单的方法
-const fetchPlaylists = async (): Promise<void> => {
-  const uid = userStore.userInfo?.account.id
-  if (!uid) {
-    createdPlaylists.value = []
+const openCreatePlaylistModal = (): void => {
+  if (!userStore.userInfo) {
+    showLoginModal.value = true
     return
   }
+  showCreatePlaylistModal.value = true
+}
 
-  try {
-    const res = (await window.api.user_playlist({
-      uid: uid
-    })) as { body?: PlaylistResponse }
-
-    if (res.body && res.body.playlist) {
-      createdPlaylists.value = res.body.playlist
-    }
-  } catch (error) {
-    console.error('获取歌单失败:', error)
-  }
+// 新建成功后：重新拉一次歌单列表，并直接跳到新歌单
+const handlePlaylistCreated = async (playlistId: number): Promise<void> => {
+  showCreatePlaylistModal.value = false
+  await playlistStore.fetchPlaylists()
+  void router.push(`/playlist/${playlistId}`)
 }
 
 const uid = computed(() => userStore.userInfo?.account.id)
@@ -59,7 +59,7 @@ watch(
   uid,
   (newUid, oldUid) => {
     if (newUid !== oldUid) {
-      fetchPlaylists()
+      void playlistStore.fetchPlaylists()
     }
   },
   { immediate: true }
@@ -87,6 +87,12 @@ const openSettingsWindow = (): void => {
     />
   </Transition>
 
+  <CreatePlaylistModal
+    v-if="showCreatePlaylistModal"
+    @close="showCreatePlaylistModal = false"
+    @created="handlePlaylistCreated"
+  />
+
   <aside class="sidebar-floating glass-panel">
     <div class="sidebar-content">
       <!-- 导航区 -->
@@ -104,8 +110,19 @@ const openSettingsWindow = (): void => {
       </nav>
 
       <!-- 创建的歌单 -->
-      <div v-if="createdPlaylists.length" class="nav-group-title">创建的歌单</div>
-      <nav class="nav-section">
+      <div v-if="userStore.userInfo" class="nav-group-header">
+        <span class="nav-group-title">创建的歌单</span>
+        <button
+          class="nav-group-action"
+          type="button"
+          title="新建歌单"
+          aria-label="新建歌单"
+          @click="openCreatePlaylistModal"
+        >
+          <AppIcon name="plus" :size="16" />
+        </button>
+      </div>
+      <nav v-if="createdPlaylists.length" class="nav-section">
         <RouterLink
           v-for="item in createdPlaylists"
           :key="item.id"
@@ -119,6 +136,7 @@ const openSettingsWindow = (): void => {
           <span class="playlist-name">{{ item.name }}</span>
         </RouterLink>
       </nav>
+      <p v-else-if="userStore.userInfo" class="playlist-empty-hint">还没有歌单，点上面的 + 新建</p>
     </div>
 
     <!-- 用户信息气泡容器 -->
@@ -166,10 +184,15 @@ const openSettingsWindow = (): void => {
   border-radius: 16px;
   height: calc(100% - 16px);
   min-height: 0;
-  background: var(--sys-surface);
+  background: var(--glass-fill);
   backdrop-filter: var(--sys-glass-blur);
-  border: 1px solid var(--sys-border);
-  box-shadow: var(--sys-shadow-soft);
+  -webkit-backdrop-filter: var(--sys-glass-blur);
+  border: var(--glass-border-width) solid var(--glass-border);
+  box-shadow:
+    var(--glass-shadow),
+    inset 0 2px 1px var(--glass-highlight),
+    inset 0 -1.5px 1px var(--glass-shade),
+    var(--glass-glow);
   overflow: hidden;
   -webkit-app-region: drag;
 }
@@ -188,13 +211,50 @@ const openSettingsWindow = (): void => {
   margin-bottom: 24px;
   -webkit-app-region: no-drag;
 }
+.nav-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0 12px;
+  -webkit-app-region: no-drag;
+}
+
 .nav-group-title {
   font-size: 12px;
   color: var(--sys-text-tertiary);
   font-weight: 600;
-  margin-bottom: 8px;
-  padding-left: 12px;
   text-transform: uppercase;
+}
+
+.nav-group-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sys-text-tertiary);
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.nav-group-action:hover {
+  background: var(--sys-control-hover);
+  color: var(--sys-text);
+}
+
+.playlist-empty-hint {
+  margin: 0 0 24px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--sys-text-disabled);
 }
 
 .nav-item {
@@ -203,29 +263,40 @@ const openSettingsWindow = (): void => {
   gap: 12px;
   padding: 10px 12px;
   border-radius: 12px;
-  color: var(--sys-text-secondary);
+  /* 默认就用主题色（降饱和后仍可读），不再是一味的中性灰 */
+  color: var(--nav-item-fg);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease;
   text-decoration: none;
 }
 .nav-item:hover {
   background-color: var(--sys-control-hover);
+  color: var(--nav-item-fg-hover);
 }
+/* 选中态：主题色原色 + 略粗的字重，比默认/悬浮都更亮 */
 .nav-item.active {
   background-color: var(--sys-control-selected);
-  color: var(--theme-color-strong);
+  color: var(--nav-item-fg-active);
+  font-weight: 600;
   box-shadow: var(--sys-shadow-soft);
 }
 
 .nav-icon {
   width: 20px;
   height: 20px;
-  opacity: 0.7;
+  /* 图标跟随 currentColor，色相由导航项统一控制 */
+  opacity: 1;
   flex-shrink: 0;
   border-radius: 6px;
   object-fit: cover;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.nav-item.active .nav-icon {
+  transform: scale(1.08);
 }
 
 .nav-icon-wrapper {
@@ -355,9 +426,15 @@ const openSettingsWindow = (): void => {
   }
   .nav-group-title,
   .playlist-name,
+  .playlist-empty-hint,
   .username,
   .bubble-menu {
     display: none;
+  }
+  /* 收窄后标题隐藏，+ 仍要能点到，所以居中摆放 */
+  .nav-group-header {
+    justify-content: center;
+    padding-left: 0;
   }
   .user-section {
     padding: 15px 10px;

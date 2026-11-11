@@ -3,6 +3,15 @@ import { SoundQualityType } from '@renderer/types/song'
 export type AudioEngineType = 'native' | 'webapi' | 'auto'
 export type ThemeMode = 'light' | 'dark' | 'adaptive'
 
+/** 全屏播放页走带行两侧的可配置按钮 */
+export type FullscreenAuxButtonId = 'favorite' | 'comment' | 'playMode' | 'volume'
+export type FullscreenAuxButtonSide = 'left' | 'right'
+
+export interface FullscreenAuxButtonState {
+  id: FullscreenAuxButtonId
+  visible: boolean
+}
+
 export interface PersistedSettings {
   soundQuality: SoundQualityType
   autoLaunch: boolean
@@ -15,8 +24,10 @@ export interface PersistedSettings {
   softwareVolume: boolean
   volumePercent: number
   theme: ThemeMode
-  fullscreenShowFavorite: boolean
-  fullscreenShowPlayMode: boolean
+  /** 走带三键左侧的辅助按钮，数组顺序即显示顺序 */
+  fullscreenAuxLeft: FullscreenAuxButtonState[]
+  /** 走带三键右侧的辅助按钮，数组顺序即显示顺序 */
+  fullscreenAuxRight: FullscreenAuxButtonState[]
   acrylic: boolean
   accentColor: string
   libPaths: string[]
@@ -50,6 +61,29 @@ export const SOUND_QUALITIES: SoundQualityType[] = [
 ]
 export const AUDIO_ENGINES: AudioEngineType[] = ['native', 'webapi', 'auto']
 export const THEMES: ThemeMode[] = ['light', 'dark', 'adaptive']
+export const FULLSCREEN_AUX_BUTTON_IDS: FullscreenAuxButtonId[] = [
+  'favorite',
+  'comment',
+  'playMode',
+  'volume'
+]
+export const DEFAULT_FULLSCREEN_AUX_LAYOUT: Record<
+  FullscreenAuxButtonSide,
+  FullscreenAuxButtonState[]
+> = {
+  left: [
+    { id: 'favorite', visible: true },
+    { id: 'comment', visible: true }
+  ],
+  right: [
+    { id: 'playMode', visible: true },
+    { id: 'volume', visible: true }
+  ]
+}
+
+function cloneAuxButtons(list: FullscreenAuxButtonState[]): FullscreenAuxButtonState[] {
+  return list.map((item) => ({ ...item }))
+}
 
 export const DEFAULT_SETTINGS: PersistedSettings = {
   soundQuality: 'hires',
@@ -63,8 +97,8 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
   softwareVolume: false,
   volumePercent: DEFAULT_VOLUME_PERCENT,
   theme: 'adaptive',
-  fullscreenShowFavorite: true,
-  fullscreenShowPlayMode: true,
+  fullscreenAuxLeft: cloneAuxButtons(DEFAULT_FULLSCREEN_AUX_LAYOUT.left),
+  fullscreenAuxRight: cloneAuxButtons(DEFAULT_FULLSCREEN_AUX_LAYOUT.right),
   acrylic: true,
   accentColor: '#6366f1',
   libPaths: [],

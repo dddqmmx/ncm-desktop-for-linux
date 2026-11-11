@@ -5,6 +5,11 @@
   --theme-color-muted: rgba(99, 102, 241, 0.2);
   --theme-color-strong: #5154c5;
   --theme-color-tint: #e0e0fd;
+  /* 侧边导航：默认用降饱和的主题色，hover 更亮，选中时回到主题色原色。
+     三个 token 都从 --theme-color 与既有语义文本色派生，不引入新色相。 */
+  --nav-item-fg: color-mix(in srgb, var(--theme-color) 62%, var(--sys-text-secondary));
+  --nav-item-fg-hover: color-mix(in srgb, var(--theme-color) 78%, var(--sys-text-secondary));
+  --nav-item-fg-active: var(--theme-color);
 
   --sys-bg: #eef1f6;
   --sys-bg-elevated: #ffffff;
@@ -43,7 +48,36 @@
   --sys-category-mint: #34d399;
   --sys-category-rose: #fb7185;
   --sys-category-ink: #0f172a;
-  --sys-glass-blur: blur(40px) saturate(180%);
+  --sys-glass-blur: blur(38px) saturate(145%) brightness(1.06);
+  /* 液态玻璃材质 token。浅色背景本身接近白色，面板若也用高不透明度白会糊成一块，
+     磨砂随之"消失"；因此填充只保留半透明白，让背景的明暗能透过模糊被看见，
+     再用擦边高光、底部暗边、内侧微光和柔和投影勾出玻璃的厚度。
+     色值只用白/黑与既有语义色，不引入新色相。 */
+  --glass-fill: linear-gradient(
+    157deg,
+    rgba(255, 255, 255, 0.74) 0%,
+    rgba(255, 255, 255, 0.56) 42%,
+    rgba(255, 255, 255, 0.5) 66%,
+    rgba(255, 255, 255, 0.64) 100%
+  );
+  --glass-fill-strong: linear-gradient(
+    157deg,
+    rgba(255, 255, 255, 0.88) 0%,
+    rgba(255, 255, 255, 0.68) 100%
+  );
+  --glass-border: rgba(255, 255, 255, 0.98);
+  --glass-border-width: 1px;
+  --glass-border-width-hairline: 1px;
+  /* 应用底色：浅色下需要一层明暗，玻璃背后的模糊才看得出来 */
+  --app-background:
+    radial-gradient(circle at 6% -4%, var(--theme-color-soft), transparent 42%),
+    radial-gradient(circle at 98% 102%, var(--theme-color-soft), transparent 40%),
+    linear-gradient(168deg, var(--sys-bg) 0%, var(--sys-bg-muted) 100%);
+  --glass-highlight: rgba(255, 255, 255, 1);
+  --glass-shade: rgba(23, 25, 31, 0.08);
+  --glass-glow: inset 1px 0 1px rgba(255, 255, 255, 0.55), inset 0 0 34px rgba(255, 255, 255, 0.2);
+  --glass-shadow: 0 22px 46px rgba(25, 32, 46, 0.16), 0 2px 6px rgba(25, 32, 46, 0.05);
+  --glass-shadow-elevated: 0 26px 54px rgba(25, 32, 46, 0.18), 0 3px 8px rgba(25, 32, 46, 0.06);
 
   --ev-c-gray-2: #d9dee8;
   --ev-c-gray-3: #eef1f6;
@@ -74,11 +108,30 @@
   --sys-control: rgba(248, 250, 252, 0.08);
   --sys-control-hover: rgba(248, 250, 252, 0.13);
   --sys-control-active: rgba(var(--theme-color-rgb), 0.24);
+  /* 深色背景上「更亮」= 掺入更多浅色文本色，三档按亮度递增 */
+  --nav-item-fg: color-mix(in srgb, var(--theme-color) 82%, var(--sys-text-secondary));
+  --nav-item-fg-hover: color-mix(in srgb, var(--theme-color) 70%, var(--sys-text-secondary));
+  --nav-item-fg-active: color-mix(in srgb, var(--theme-color) 58%, var(--sys-text));
   --sys-control-selected: rgba(248, 250, 252, 0.14);
   --sys-shadow-soft: 0 12px 36px rgba(0, 0, 0, 0.22);
   --sys-shadow-elevated: 0 28px 64px rgba(0, 0, 0, 0.34);
   --sys-scrollbar-thumb: rgba(248, 250, 252, 0.24);
   --sys-scrollbar-thumb-hover: rgba(248, 250, 252, 0.38);
+
+  /* 深色沿用原有材质与数值，保持观感不变 */
+  --sys-glass-blur: blur(40px) saturate(180%);
+  --glass-fill: var(--sys-surface);
+  --glass-fill-strong: var(--sys-surface-strong);
+  --glass-border: var(--sys-border);
+  --glass-border-width: 1px;
+  --glass-border-width-hairline: 0.5px;
+  --app-background:
+    radial-gradient(circle at top left, var(--theme-color-soft), transparent 32%), var(--sys-bg);
+  --glass-highlight: transparent;
+  --glass-shade: transparent;
+  --glass-glow: inset 0 0 0 rgba(0, 0, 0, 0);
+  --glass-shadow: var(--sys-shadow-soft);
+  --glass-shadow-elevated: var(--sys-shadow-elevated);
 
   --ev-c-gray-2: #323846;
   --ev-c-gray-3: #252a35;

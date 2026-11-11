@@ -30,8 +30,8 @@ export const useConfigStore = defineStore('config', () => {
     softwareVolume: audio.softwareVolume,
     volumePercent: audio.volumePercent,
     theme: appearance.theme,
-    fullscreenShowFavorite: appearance.fullscreenShowFavorite,
-    fullscreenShowPlayMode: appearance.fullscreenShowPlayMode,
+    fullscreenAuxLeft: appearance.fullscreenAuxLeft.map((item) => ({ ...item })),
+    fullscreenAuxRight: appearance.fullscreenAuxRight.map((item) => ({ ...item })),
     acrylic: appearance.acrylic,
     accentColor: appearance.accentColor,
     libPaths: [...cache.libPaths],
@@ -62,8 +62,8 @@ export const useConfigStore = defineStore('config', () => {
     audio.setSoftwareVolume(settings.softwareVolume)
     audio.setVolumePercent(settings.volumePercent)
     appearance.theme = settings.theme
-    appearance.fullscreenShowFavorite = settings.fullscreenShowFavorite
-    appearance.fullscreenShowPlayMode = settings.fullscreenShowPlayMode
+    appearance.setFullscreenAuxSide('left', settings.fullscreenAuxLeft)
+    appearance.setFullscreenAuxSide('right', settings.fullscreenAuxRight)
     appearance.acrylic = settings.acrylic
     appearance.accentColor = settings.accentColor
     cache.libPaths = [...settings.libPaths]
@@ -111,8 +111,8 @@ export const useConfigStore = defineStore('config', () => {
       () => audio.softwareVolume,
       () => audio.volumePercent,
       () => appearance.theme,
-      () => appearance.fullscreenShowFavorite,
-      () => appearance.fullscreenShowPlayMode,
+      () => appearance.fullscreenAuxLeft,
+      () => appearance.fullscreenAuxRight,
       () => appearance.acrylic,
       () => appearance.accentColor,
       () => cache.libPaths,
@@ -253,14 +253,16 @@ export const useConfigStore = defineStore('config', () => {
       get: () => appearance.accentColor,
       set: (val) => (appearance.accentColor = val)
     }),
-    fullscreenShowFavorite: computed({
-      get: () => appearance.fullscreenShowFavorite,
-      set: (val) => (appearance.fullscreenShowFavorite = val)
+    fullscreenAuxLeft: computed({
+      get: () => appearance.fullscreenAuxLeft,
+      set: (val) => appearance.setFullscreenAuxSide('left', val)
     }),
-    fullscreenShowPlayMode: computed({
-      get: () => appearance.fullscreenShowPlayMode,
-      set: (val) => (appearance.fullscreenShowPlayMode = val)
+    fullscreenAuxRight: computed({
+      get: () => appearance.fullscreenAuxRight,
+      set: (val) => appearance.setFullscreenAuxSide('right', val)
     }),
+
+    setFullscreenAuxVisible: appearance.setFullscreenAuxVisible,
 
     // General
     autoLaunch: computed({

@@ -446,25 +446,97 @@ describe('configStore output device handling', () => {
     expect(readPersistedSettings(storage).volumePercent).toBe(55)
   })
 
-  it('defaults fullscreen favorite/play-mode buttons to visible and persists toggles', async () => {
+  it('defaults the fullscreen aux buttons to the documented layout, all visible', () => {
     const store = useConfigStore()
 
-    expect(store.fullscreenShowFavorite).toBe(true)
-    expect(store.fullscreenShowPlayMode).toBe(true)
+    expect(store.fullscreenAuxLeft).toEqual([
+      { id: 'favorite', visible: true },
+      { id: 'comment', visible: true }
+    ])
+    expect(store.fullscreenAuxRight).toEqual([
+      { id: 'playMode', visible: true },
+      { id: 'volume', visible: true }
+    ])
+  })
 
-    store.fullscreenShowFavorite = false
-    store.fullscreenShowPlayMode = false
+  it('persists button order and visibility for both docks', async () => {
+    const store = useConfigStore()
+
+    store.fullscreenAuxLeft = [
+      { id: 'comment', visible: true },
+      { id: 'favorite', visible: false }
+    ]
+    store.fullscreenAuxRight = [
+      { id: 'volume', visible: false },
+      { id: 'playMode', visible: true }
+    ]
     await flushPersistedSettings()
 
     expect(readPersistedSettings(storage)).toMatchObject({
-      fullscreenShowFavorite: false,
-      fullscreenShowPlayMode: false
+      fullscreenAuxLeft: [
+        { id: 'comment', visible: true },
+        { id: 'favorite', visible: false }
+      ],
+      fullscreenAuxRight: [
+        { id: 'volume', visible: false },
+        { id: 'playMode', visible: true }
+      ]
     })
 
     setActivePinia(createPinia())
     const reloaded = useConfigStore()
-    expect(reloaded.fullscreenShowFavorite).toBe(false)
-    expect(reloaded.fullscreenShowPlayMode).toBe(false)
+    expect(reloaded.fullscreenAuxLeft).toEqual([
+      { id: 'comment', visible: true },
+      { id: 'favorite', visible: false }
+    ])
+    expect(reloaded.fullscreenAuxRight).toEqual([
+      { id: 'volume', visible: false },
+      { id: 'playMode', visible: true }
+    ])
+  })
+
+  it('toggles visibility without disturbing the saved order', async () => {
+    const store = useConfigStore()
+
+    store.setFullscreenAuxVisible('favorite', false)
+    await flushPersistedSettings()
+
+    expect(store.fullscreenAuxLeft).toEqual([
+      { id: 'favorite', visible: false },
+      { id: 'comment', visible: true }
+    ])
+  })
+
+  it('migrates the legacy per-button booleans into the dock layout', () => {
+    writePersistedSettings(storage, {
+      fullscreenShowFavorite: false,
+      fullscreenShowPlayMode: true,
+      fullscreenShowComment: false,
+      fullscreenShowVolume: false
+    })
+    setActivePinia(createPinia())
+
+    const store = useConfigStore()
+    expect(store.fullscreenAuxLeft).toEqual([
+      { id: 'favorite', visible: false },
+      { id: 'comment', visible: false }
+    ])
+    expect(store.fullscreenAuxRight).toEqual([
+      { id: 'playMode', visible: true },
+      { id: 'volume', visible: false }
+    ])
+  })
+
+  it('restores buttons missing from a saved layout instead of dropping them', () => {
+    writePersistedSettings(storage, {
+      fullscreenAuxLeft: [{ id: 'comment', visible: false }],
+      fullscreenAuxRight: []
+    })
+    setActivePinia(createPinia())
+
+    const store = useConfigStore()
+    expect(store.fullscreenAuxLeft.map((item) => item.id)).toEqual(['comment', 'favorite'])
+    expect(store.fullscreenAuxRight.map((item) => item.id)).toEqual(['playMode', 'volume'])
   })
 
   it('defaults lyric debug to disabled and persists explicit changes', async () => {

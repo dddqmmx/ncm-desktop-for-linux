@@ -132,8 +132,7 @@ const toggleFavorite = (song: Song): void => {
             </button>
             <SongContextMenu
               v-if="openMenuSongId === track.id"
-              :song-id="track.id"
-              :song-name="track.name"
+              :song="mapSongToCurrentSong(track)"
               :playlist-id="playlistId"
               :show-remove="playlistId !== undefined"
               @close="openMenuSongId = null"

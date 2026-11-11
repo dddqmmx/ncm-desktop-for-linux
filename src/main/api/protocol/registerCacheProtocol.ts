@@ -11,10 +11,15 @@ const MIME_TYPES: Record<string, string> = {
   '.mp3': 'audio/mpeg',
   '.flac': 'audio/flac',
   '.ogg': 'audio/ogg',
+  // Opus 单流文件就是 Ogg 容器；Web API 引擎的 <audio> 靠 Content-Type 选解码器，
+  // 落到 application/octet-stream 会被拒。
+  '.opus': 'audio/ogg',
   '.m4a': 'audio/mp4',
   '.aac': 'audio/aac',
   '.wav': 'audio/wav',
-  '.weba': 'audio/webm'
+  '.weba': 'audio/webm',
+  // 本地导入的 Opus 音频常封装在 WebM 里（.webm/.weba），同样是 <audio> 的类型来源。
+  '.webm': 'audio/webm'
 }
 
 function getMimeType(filePath: string): string {

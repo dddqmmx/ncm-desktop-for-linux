@@ -13,13 +13,40 @@ export const usePlaylistStore = defineStore('playlist', () => {
   })
 
   const setPlaylist = (list: CurrentSong[]): void => {
+    const seen = new Set<number>()
     playlist.value = list
       .map((song) => normalizeCurrentSong(song))
       .filter((song): song is CurrentSong => song !== null)
+      .filter((song) => {
+        if (seen.has(song.id)) return false
+        seen.add(song.id)
+        return true
+      })
   }
 
   const clearPlaylist = (): void => {
     playlist.value = []
+  }
+
+  const removeSongs = (ids: readonly number[]): number => {
+    const removedIds = new Set(ids)
+    const previousCount = playlist.value.length
+    playlist.value = playlist.value.filter((song) => !removedIds.has(song.id))
+    return previousCount - playlist.value.length
+  }
+
+  const removeFromPlaylist = (id: number): boolean => removeSongs([id]) > 0
+
+  const updateSong = (song: CurrentSong): void => {
+    const normalizedSong = normalizeCurrentSong(song)
+    if (!normalizedSong) return
+    playlist.value = playlist.value.map((item) =>
+      item.id === normalizedSong.id ? normalizedSong : item
+    )
+  }
+
+  const selectSong = (id: number | null): void => {
+    currentSongId.value = id
   }
 
   const addToPlaylist = (song: CurrentSong): void => {
@@ -31,6 +58,17 @@ export const usePlaylistStore = defineStore('playlist', () => {
     }
   }
 
+  const addNext = (song: CurrentSong): boolean => {
+    const normalizedSong = normalizeCurrentSong(song)
+    if (!normalizedSong || normalizedSong.id === currentSongId.value) return false
+
+    const remaining = playlist.value.filter((item) => item.id !== normalizedSong.id)
+    const playingIndex = remaining.findIndex((item) => item.id === currentSongId.value)
+    remaining.splice(playingIndex + 1, 0, normalizedSong)
+    playlist.value = remaining
+    return true
+  }
+
   const togglePlayMode = (): void => {
     const modes: PlayMode[] = ['loop', 'random', 'single']
     const nextIdx = (modes.indexOf(playMode.value) + 1) % modes.length
@@ -40,7 +78,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
   const getNextSongId = (isAuto = false): number | null => {
     if (playlist.value.length === 0) return null
 
-    if (isAuto && playMode.value === 'single' && currentSongId.value) {
+    if (isAuto && playMode.value === 'single' && currentIndex.value >= 0) {
       return currentSongId.value
     }
 
@@ -85,6 +123,11 @@ export const usePlaylistStore = defineStore('playlist', () => {
     localStorage.setItem('playMode', newMode)
   })
 
+  watch(currentSongId, (id) => {
+    if (id === null) localStorage.removeItem('currentSongId')
+    else localStorage.setItem('currentSongId', id.toString())
+  })
+
   return {
     playlist,
     playMode,
@@ -92,7 +135,12 @@ export const usePlaylistStore = defineStore('playlist', () => {
     currentIndex,
     setPlaylist,
     clearPlaylist,
+    removeFromPlaylist,
+    removeSongs,
+    updateSong,
+    selectSong,
     addToPlaylist,
+    addNext,
     togglePlayMode,
     getNextSongId,
     getPrevSongId

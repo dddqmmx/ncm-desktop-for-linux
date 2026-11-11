@@ -1,21 +1,20 @@
 <script setup lang="ts">
 import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { formatCurrentSongArtists, isLocalSong, usePlayerStore } from '@renderer/stores/playerStore'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import LyricPanel from './LyricPanel.vue'
+import CommentPanel from './CommentPanel.vue'
+import FullscreenAuxButton from './FullscreenAuxButton.vue'
 import { colord } from 'colord'
 import { extractColors } from 'extract-colors'
 import { useResolvedMediaUrl } from '@renderer/composables/useResolvedMediaUrl'
 import { useSeekControl } from '@renderer/composables/useSeekControl'
 import SongCover from '@renderer/components/media/SongCover.vue'
-import VolumeRow from '@renderer/components/common/VolumeRow.vue'
-import { useConfigStore } from '@renderer/stores/configStore'
-import { useFavoriteStore } from '@renderer/stores/favoriteStore'
+import { useConfigStore, type FullscreenAuxButtonState } from '@renderer/stores/configStore'
 
 const playerStore = usePlayerStore()
 const configStore = useConfigStore()
-const favoriteStore = useFavoriteStore()
 const router = useRouter()
 const imgRef = ref<HTMLImageElement | null>(null)
 const lyricPanelRef = ref<InstanceType<typeof LyricPanel> | null>(null)
@@ -51,62 +50,44 @@ const currentArtists = computed(() => playerStore.currentSong?.artists ?? [])
 const isCurrentSongLocal = computed(() => isLocalSong(playerStore.currentSong))
 const hasCurrentSongCover = computed(() => Boolean(playerStore.currentSong?.cover?.trim()))
 
+// --- 右侧面板：歌词 / 评论 二选一 ---
+// 本地歌曲没有云音乐评论，按钮置灰而不是隐藏，避免顶栏按钮忽有忽无。
+const isCommentPanelVisible = ref(false)
+const canShowComments = computed(
+  () => Boolean(playerStore.currentSong) && !isCurrentSongLocal.value
+)
+const isCommentPanelOpen = computed(() => isCommentPanelVisible.value && canShowComments.value)
+
+const toggleCommentPanel = (): void => {
+  if (!canShowComments.value) return
+  isCommentPanelVisible.value = !isCommentPanelVisible.value
+}
+
+// 评论面板开着时切到本地歌曲（或停止播放）：面板不再有内容，回到歌词视图，
+// 免得按钮显示为开启却什么也不展示
+watch(canShowComments, (canShow) => {
+  if (!canShow) isCommentPanelVisible.value = false
+})
+
 // 进度条拖拽 seek（与 PlayerBar 共用同一套交互逻辑）
 const { handleInput, handleSeek } = useSeekControl('FULLSCREEN')
 
-// --- 喜欢 / 播放顺序按钮（是否展示由设置控制） ---
-const isCurrentSongFavorite = computed(() => favoriteStore.isFavorite(playerStore.currentSongId))
+// --- 走带行两侧的辅助按钮：顺序与显隐都由设置决定 ---
+// 音量键额外受“软件音量是否可用”约束，否则会露出一个点了也没反应的按钮。
+const visibleAux = (list: FullscreenAuxButtonState[]): FullscreenAuxButtonState[] =>
+  list.filter((item) => item.visible && (item.id !== 'volume' || playerStore.canAdjustVolume))
+const auxLeft = computed(() => visibleAux(configStore.fullscreenAuxLeft))
+const auxRight = computed(() => visibleAux(configStore.fullscreenAuxRight))
 
-// --- 应用级软件音量 ---
-const isVolumePanelVisible = ref(false)
-const volumeControlRef = ref<HTMLElement | null>(null)
-
-const volumeTitle = computed(() => {
-  if (playerStore.sessionVolumeLocked) {
-    return 'BitPerfect 直通中，音量将在下一曲生效'
-  }
-  return `音量 ${Math.round(playerStore.volumePercent)}%`
-})
-
-const toggleVolumePanel = (): void => {
-  isVolumePanelVisible.value = !isVolumePanelVisible.value
-}
-
-const handleDocumentClick = (event: MouseEvent): void => {
-  if (!isVolumePanelVisible.value) return
-  if (volumeControlRef.value && !volumeControlRef.value.contains(event.target as Node)) {
-    isVolumePanelVisible.value = false
-  }
-}
-
-onMounted(() => {
-  document.addEventListener('click', handleDocumentClick)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('click', handleDocumentClick)
-})
-
-const favoriteTitle = computed(() => {
-  if (isCurrentSongLocal.value) return '本地音乐'
-  return isCurrentSongFavorite.value ? '取消喜欢' : '喜欢'
-})
-
-const toggleCurrentFavorite = (): void => {
-  if (!playerStore.currentSong || isCurrentSongLocal.value) return
-  void favoriteStore.toggleFavorite(playerStore.currentSong)
-}
-
-const playModeIcon = computed(() => {
-  if (playerStore.playMode === 'random') return 'shuffle'
-  if (playerStore.playMode === 'single') return 'single'
-  return 'loop'
-})
-
-const playModeTitle = computed(() => {
-  if (playerStore.playMode === 'random') return '随机播放'
-  if (playerStore.playMode === 'single') return '单曲循环'
-  return '列表循环'
+// 评论按钮被关掉（或拖到另一侧后又被关掉）时，已展开的面板不能失去入口，
+// 一并退回歌词——按钮在哪一侧都要检查
+const isCommentButtonVisible = computed(() =>
+  [...configStore.fullscreenAuxLeft, ...configStore.fullscreenAuxRight].some(
+    (item) => item.id === 'comment' && item.visible
+  )
+)
+watch(isCommentButtonVisible, (visible) => {
+  if (!visible) isCommentPanelVisible.value = false
 })
 
 // 播放按钮状态机：三态互斥，保证加载图标与播放/暂停图标永不重叠。
@@ -288,16 +269,13 @@ const onImageLoad = (): void => {
                  音量、喜欢、播放模式这些开关会让行宽变化，居中的播放键随之被挤偏。 -->
             <div class="btns-row">
               <div class="btns-side btns-side-left">
-                <button
-                  v-if="configStore.fullscreenShowFavorite"
-                  class="icon-btn secondary aux-btn favorite-btn"
-                  :class="{ active: isCurrentSongFavorite }"
-                  :disabled="!playerStore.currentSong || isCurrentSongLocal"
-                  :title="favoriteTitle"
-                  @click="toggleCurrentFavorite"
-                >
-                  <AppIcon :name="isCurrentSongFavorite ? 'heart-fill' : 'heart'" :size="20" />
-                </button>
+                <FullscreenAuxButton
+                  v-for="item in auxLeft"
+                  :id="item.id"
+                  :key="item.id"
+                  :comment-open="isCommentPanelOpen"
+                  @toggle-comment="toggleCommentPanel"
+                />
               </div>
 
               <div class="btns-transport">
@@ -322,50 +300,26 @@ const onImageLoad = (): void => {
               </div>
 
               <div class="btns-side btns-side-right">
-                <button
-                  v-if="configStore.fullscreenShowPlayMode"
-                  class="icon-btn secondary aux-btn"
-                  :title="playModeTitle"
-                  @click="playerStore.togglePlayMode()"
-                >
-                  <AppIcon :name="playModeIcon" :size="20" />
-                </button>
-
-                <!-- 应用级软件音量：全屏同样可达，否则退出全屏前音量完全不可调 -->
-                <div
-                  v-if="playerStore.canAdjustVolume"
-                  ref="volumeControlRef"
-                  class="volume-control"
-                >
-                  <Transition name="volume-fade">
-                    <div v-if="isVolumePanelVisible" class="volume-popup">
-                      <VolumeRow
-                        v-model="playerStore.volumePercent"
-                        :disabled="playerStore.sessionVolumeLocked"
-                        locked-hint="BitPerfect 直通中，音量将在下一曲生效"
-                      />
-                    </div>
-                  </Transition>
-                  <button
-                    class="icon-btn secondary aux-btn"
-                    :class="{ active: isVolumePanelVisible }"
-                    :title="volumeTitle"
-                    @click.stop="toggleVolumePanel"
-                  >
-                    <AppIcon
-                      :name="playerStore.volumePercent <= 0 ? 'volume-mute' : 'volume'"
-                      :size="20"
-                    />
-                  </button>
-                </div>
+                <FullscreenAuxButton
+                  v-for="item in auxRight"
+                  :id="item.id"
+                  :key="item.id"
+                  :comment-open="isCommentPanelOpen"
+                  @toggle-comment="toggleCommentPanel"
+                />
               </div>
             </div>
           </div>
         </section>
 
-        <!-- 右侧：歌词面板 -->
+        <!-- 右侧：歌词 / 评论面板（同一块区域，互斥展示） -->
+        <CommentPanel
+          v-if="isCommentPanelOpen"
+          :song-id="playerStore.currentSong?.id"
+          :is-dark="theme.isDark"
+        />
         <LyricPanel
-          v-if="!isCurrentSongLocal"
+          v-else-if="!isCurrentSongLocal"
           ref="lyricPanelRef"
           :song-id="playerStore.currentSong?.id"
           :is-dark="theme.isDark"
@@ -711,68 +665,6 @@ const onImageLoad = (): void => {
 }
 .icon-btn:hover {
   opacity: 1;
-}
-
-.aux-btn {
-  opacity: 0.55;
-}
-
-.aux-btn:disabled {
-  opacity: 0.25;
-  cursor: default;
-}
-
-/* 音量控制（按钮与全屏按钮排同款风格，弹层对齐主题色变量） */
-.volume-control {
-  position: relative;
-  display: flex;
-  align-items: center;
-  -webkit-app-region: no-drag;
-}
-
-.volume-control .icon-btn.active {
-  opacity: 1;
-}
-
-.volume-popup {
-  position: absolute;
-  bottom: calc(100% + 14px);
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  padding: 10px 14px;
-  background: var(--contrast-color);
-  border: 0.5px solid rgba(255, 255, 255, 0.12);
-  border-radius: 14px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  white-space: nowrap;
-  -webkit-app-region: no-drag;
-}
-
-.volume-popup :deep(.volume-value) {
-  color: var(--text-color);
-}
-
-.volume-fade-enter-active,
-.volume-fade-leave-active {
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
-}
-
-.volume-fade-enter-from,
-.volume-fade-leave-to {
-  opacity: 0;
-  transform: translateX(-50%) translateY(6px);
-}
-
-.favorite-btn.active {
-  opacity: 1;
-}
-
-.favorite-btn.active :deep(svg) {
-  fill: currentColor;
 }
 
 /* 响应式 */

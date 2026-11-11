@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import AppIcon from '@renderer/components/common/AppIcon.vue'
 import { formatCurrentSongArtists, isLocalSong, usePlayerStore } from '@renderer/stores/playerStore'
-import { ref, nextTick, watch, onBeforeUnmount } from 'vue'
+import { computed, ref, nextTick, watch, onBeforeUnmount } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import SongCover from '@renderer/components/media/SongCover.vue'
 
 const playerStore = usePlayerStore()
+const orderedSongs = computed({
+  get: () => playerStore.playlist.slice(),
+  set: playerStore.setPlaylist
+})
 const listRef = ref<HTMLElement | null>(null)
 let scrollFrame = 0
 let scrollFrameAfterLayout = 0
@@ -52,31 +56,6 @@ const scrollToActive = (): void => {
     inline: 'nearest'
   })
 }
-
-/**
- * 移除单曲
- */
-const removeSong = (id: string | number): void => {
-  const index = playerStore.playlist.findIndex((item) => item.id === id)
-  if (index !== -1) {
-    playerStore.playlist.splice(index, 1)
-  }
-}
-
-/**
- * 清空列表并停止播放
- */
-const handleClear = (): void => {
-  playerStore.clearPlaylist()
-  playerStore.stopMusic()
-}
-
-/**
- * 拖拽结束回调
- */
-const onDragEnd = (): void => {
-  console.log('新播放顺序已同步')
-}
 </script>
 
 <template>
@@ -86,7 +65,7 @@ const onDragEnd = (): void => {
       <div class="header-content">
         <span class="title">待播清单</span>
         <span class="count">{{ playerStore.playlist?.length || 0 }} 首歌曲</span>
-        <button class="clear-btn" @click="handleClear">清空</button>
+        <button class="clear-btn" @click="playerStore.clearAndStop">清空</button>
       </div>
     </div>
 
@@ -95,13 +74,12 @@ const onDragEnd = (): void => {
       target=".playlist-content" 指向实际产生滚动条的容器
     -->
     <VueDraggable
-      v-model="playerStore.playlist"
+      v-model="orderedSongs"
       target=".playlist-content"
       :animation="300"
       ghost-class="drag-ghost"
       drag-class="drag-active"
       class="draggable-container"
-      @end="onDragEnd"
     >
       <div ref="listRef" class="playlist-scroll">
         <TransitionGroup type="transition" name="list-anim" tag="div" class="playlist-content">
@@ -136,7 +114,10 @@ const onDragEnd = (): void => {
             </div>
 
             <div class="item-actions">
-              <button class="action-btn remove" @click.stop="removeSong(song.id)">
+              <button
+                class="action-btn remove"
+                @click.stop="playerStore.removeFromPlaylist(song.id)"
+              >
                 <AppIcon name="close-fill" :size="16" />
               </button>
             </div>
@@ -187,11 +168,15 @@ const onDragEnd = (): void => {
 /* --- 样式美化 --- */
 /* --- 基础卡片样式 --- */
 .glass-morphism-heavy {
-  background: var(--sys-surface);
+  background: var(--glass-fill);
   backdrop-filter: var(--sys-glass-blur);
   -webkit-backdrop-filter: var(--sys-glass-blur);
-  border: 0.5px solid var(--sys-border);
-  box-shadow: var(--sys-shadow-elevated);
+  border: var(--glass-border-width-hairline) solid var(--glass-border);
+  box-shadow:
+    var(--glass-shadow-elevated),
+    inset 0 2px 1px var(--glass-highlight),
+    inset 0 -1.5px 1px var(--glass-shade),
+    var(--glass-glow);
   border-radius: 28px;
 }
 

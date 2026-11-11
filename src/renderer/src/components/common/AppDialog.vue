@@ -51,11 +51,14 @@ const { isOpen, title, message, mode, confirmText, cancelText } = storeToRefs(di
   align-items: stretch;
   gap: 16px;
   padding: 22px;
-  border: 1px solid var(--sys-border);
+  border: var(--glass-border-width) solid var(--glass-border);
   border-radius: 20px;
-  background: var(--sys-surface-strong);
+  background: var(--glass-fill-strong);
   color: var(--sys-text);
-  box-shadow: var(--sys-shadow-elevated);
+  box-shadow:
+    var(--glass-shadow-elevated),
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 -1px 0 var(--glass-shade);
   backdrop-filter: var(--sys-glass-blur);
   -webkit-backdrop-filter: var(--sys-glass-blur);
 }

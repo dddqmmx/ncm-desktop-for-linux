@@ -1,5 +1,7 @@
-import { ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import { MusicService } from '../service/musicService'
+import { DownloadService } from '../service/downloadService'
+import type { SongDownloadRequest, SongDownloadOptionsRequest } from '../../../shared/download'
 
 type MusicApiHandler = (params: unknown) => Promise<unknown>
 
@@ -23,8 +25,12 @@ export function registerMusicApi(): void {
     'music:recommendSongs': MusicService.recommend_songs,
     'music:like': MusicService.like,
     'music:likelist': MusicService.likelist,
+    'music:commentMusic': MusicService.comment_music,
     'music:playlistTrackAdd': MusicService.playlist_track_add,
     'music:playlistTrackDelete': MusicService.playlist_track_delete,
+    'music:playlistCreate': MusicService.playlist_create,
+    'music:playlistUpdate': MusicService.playlist_update,
+    'music:playlistDelete': MusicService.playlist_delete,
     'music:songUrl': MusicService.song_url,
     'music:artistDetail': MusicService.artist_detail,
     'music:artistTopSong': MusicService.artist_top_song,
@@ -41,6 +47,13 @@ export function registerMusicApi(): void {
 
   // 2. 特殊逻辑单独处理 (参数结构转换)
   ipcMain.handle('music:banner', (_event, type) => MusicService.getBanner({ type }))
+
+  ipcMain.handle('music:downloadSong', (event, payload: SongDownloadRequest) =>
+    DownloadService.downloadSong(payload, BrowserWindow.fromWebContents(event.sender))
+  )
+  ipcMain.handle('music:downloadSongQualities', (_event, payload: SongDownloadOptionsRequest) =>
+    DownloadService.getQualityOptions(payload)
+  )
 
   console.log('Netease Music API registered successfully.')
 }

@@ -5,7 +5,9 @@ import chevron_right from './chevron-right.svg?raw'
 import clock from './clock.svg?raw'
 import close from './close.svg?raw'
 import close_fill from './close-fill.svg?raw'
+import comment from './comment.svg?raw'
 import download from './download.svg?raw'
+import edit from './edit.svg?raw'
 import equalizer from './equalizer.svg?raw'
 import flask from './flask.svg?raw'
 import folder from './folder.svg?raw'
@@ -13,6 +15,7 @@ import heart from './heart.svg?raw'
 import heart_fill from './heart-fill.svg?raw'
 import home from './home.svg?raw'
 import image_placeholder from './image-placeholder.svg?raw'
+import like from './like.svg?raw'
 import lock from './lock.svg?raw'
 import loop from './loop.svg?raw'
 import monitor from './monitor.svg?raw'
@@ -59,7 +62,9 @@ export const iconSvgMap = {
   clock: clock,
   close: close,
   'close-fill': close_fill,
+  comment: comment,
   download: download,
+  edit,
   equalizer: equalizer,
   flask: flask,
   folder: folder,
@@ -67,6 +72,7 @@ export const iconSvgMap = {
   'heart-fill': heart_fill,
   home: home,
   'image-placeholder': image_placeholder,
+  like: like,
   lock: lock,
   loop: loop,
   monitor: monitor,

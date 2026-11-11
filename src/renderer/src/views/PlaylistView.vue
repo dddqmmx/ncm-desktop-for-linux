@@ -1,23 +1,35 @@
 <script setup lang="ts">
 import AppIcon from '@renderer/components/common/AppIcon.vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ref, computed, watch } from 'vue'
 import { PlaylistDetail, Track } from '@renderer/types/playlistDetail'
 import { Song } from '@renderer/types/songDetail'
 import { CurrentSong, createCurrentSongArtists, usePlayerStore } from '@renderer/stores/playerStore'
 import { useUserStore } from '@renderer/stores/userStore'
+import { useDialogStore } from '@renderer/stores/dialogStore'
+import { usePlaylistStore, type PlaylistMetadata } from '@renderer/stores/playlistStore'
+import { apiErrorMessage, isApiSuccess, type ServiceResult } from '@renderer/utils/api'
 import MediaDetailLayout from '@renderer/components/media/MediaDetailLayout.vue'
 import SongList from '@renderer/components/media/SongList.vue'
 import UserAvatar from '@renderer/components/media/UserAvatar.vue'
+import EditPlaylistModal from '@renderer/components/overlays/EditPlaylistModal.vue'
+import PlaylistActions from '@renderer/components/media/PlaylistActions.vue'
 
 const route = useRoute()
+const router = useRouter()
 const playerStore = usePlayerStore()
 const userStore = useUserStore()
+const playlistStore = usePlaylistStore()
+const dialogStore = useDialogStore()
 
 // --- 响应式数据 ---
 const detail = ref<PlaylistDetail | null>(null)
 const loading = ref(true)
 const searchQuery = ref('')
+const showEditPlaylist = ref(false)
+const deleting = ref(false)
+const errorMessage = ref('')
+let detailRequestId = 0
 
 // --- 格式化工具 ---
 const formatCount = (num: number): string => {
@@ -33,16 +45,26 @@ const formatDate = (timestamp: number): string => {
 
 // --- 数据获取 ---
 const fetchPlaylistDetail = async (playlistId: string | string[]): Promise<void> => {
+  const requestId = ++detailRequestId
+  detail.value = null
+  errorMessage.value = ''
   try {
     loading.value = true
-    const res = (await window.api.playlist_detail({ id: playlistId })) as { body?: PlaylistDetail }
-    if (res.body) {
-      detail.value = res.body
+    const res = (await window.api.playlist_detail({
+      id: playlistId,
+      cookie: userStore.cookie
+    })) as ServiceResult<PlaylistDetail>
+    if (requestId !== detailRequestId) return
+    if (!isApiSuccess(res) || !res.body?.playlist) {
+      throw new Error(apiErrorMessage(res, '获取歌单详情失败'))
     }
+    detail.value = res.body
   } catch (error) {
-    console.error('Failed to fetch playlist detail:', error)
+    if (requestId === detailRequestId) {
+      errorMessage.value = error instanceof Error ? error.message : '获取歌单详情失败'
+    }
   } finally {
-    loading.value = false
+    if (requestId === detailRequestId) loading.value = false
   }
 }
 
@@ -72,11 +94,48 @@ const handleTrackRemoved = (songId: number): void => {
   detail.value.playlist.trackCount -= 1
 }
 
+const handlePlaylistSaved = (playlistId: number, metadata: PlaylistMetadata): void => {
+  if (detail.value?.playlist.id !== playlistId) return
+  Object.assign(detail.value.playlist, metadata)
+  showEditPlaylist.value = false
+}
+
+const handleDeletePlaylist = async (): Promise<void> => {
+  const target = playlist.value
+  if (!target || !canManagePlaylist.value || deleting.value) return
+  deleting.value = true
+  errorMessage.value = ''
+
+  try {
+    const confirmed = await dialogStore.open({
+      title: '删除歌单',
+      message: `确定删除「${target.name}」吗？删除后无法恢复。`,
+      mode: 'confirm-cancel',
+      confirmText: '删除',
+      cancelText: '取消'
+    })
+    if (!confirmed || playlist.value?.id !== target.id) return
+
+    await playlistStore.deletePlaylist(target)
+    if (route.name === 'playlist' && String(route.params.id) === String(target.id)) {
+      await router.replace('/home')
+    }
+  } catch (error) {
+    if (playlist.value?.id === target.id) {
+      errorMessage.value = error instanceof Error ? error.message : '删除歌单失败，请重试'
+    }
+  } finally {
+    deleting.value = false
+  }
+}
+
 watch(
   () => route.params.id,
   (playlistId) => {
+    showEditPlaylist.value = false
+    searchQuery.value = ''
     if (!playlistId) return
-    fetchPlaylistDetail(playlistId)
+    void fetchPlaylistDetail(playlistId)
   },
   { immediate: true }
 )
@@ -87,6 +146,13 @@ const isOwnPlaylist = computed(
   () => !!playlist.value && playlist.value.creator.userId === userStore.userInfo?.account.id
 )
 const ownPlaylistId = computed(() => (isOwnPlaylist.value ? playlist.value?.id : undefined))
+const canManagePlaylist = computed(
+  () => !!playlist.value && playlistStore.canManagePlaylist(playlist.value)
+)
+
+watch(canManagePlaylist, (canManage) => {
+  if (!canManage) showEditPlaylist.value = false
+})
 
 const filteredTracks = computed(() => {
   if (!searchQuery.value.trim()) {
@@ -106,7 +172,10 @@ const filteredTracks = computed(() => {
 <template>
   <MediaDetailLayout
     v-model:search-query="searchQuery"
+    class="playlist-view"
     :loading="loading"
+    :show-more="false"
+    :play-disabled="!tracks.length"
     :cover-url="playlist?.coverImgUrl"
     :title="playlist?.name"
     :description="playlist?.description"
@@ -132,13 +201,19 @@ const filteredTracks = computed(() => {
     </template>
 
     <template #actions>
-      <!-- 将创建时间放到 meta 里，或者通过 slot 调整 -->
-      <button v-if="playlist" class="secondary-btn">
+      <span v-if="playlist" class="subscriber-count" title="收藏人数">
         <AppIcon name="heart" :size="18" />
         {{ formatCount(playlist.subscribedCount) }}
-      </button>
+      </span>
+      <PlaylistActions
+        v-if="canManagePlaylist"
+        :disabled="deleting"
+        @edit="showEditPlaylist = true"
+        @delete="handleDeletePlaylist"
+      />
     </template>
 
+    <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
     <SongList
       :songs="filteredTracks"
       :search-query="searchQuery"
@@ -148,6 +223,15 @@ const filteredTracks = computed(() => {
       @removed="handleTrackRemoved"
     />
   </MediaDetailLayout>
+  <EditPlaylistModal
+    v-if="showEditPlaylist && playlist && canManagePlaylist"
+    :key="playlist.id"
+    :playlist="playlist"
+    :cover-url="playlist.coverImgUrl"
+    :track-count="playlist.trackCount"
+    @close="showEditPlaylist = false"
+    @saved="handlePlaylistSaved"
+  />
 </template>
 
 <style scoped>
@@ -174,18 +258,38 @@ const filteredTracks = computed(() => {
   font-weight: 500;
 }
 
-.secondary-btn {
-  background: var(--sys-control);
-  border: 1px solid var(--sys-border);
+.subscriber-count {
   color: var(--sys-text-secondary);
-  padding: 0 16px;
+  padding: 0 4px;
   height: var(--sys-control-height);
-  border-radius: 100px;
   display: flex;
   align-items: center;
   gap: 6px;
-  cursor: pointer;
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.error-message {
+  color: var(--sys-danger);
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--sys-danger-soft);
+}
+
+.playlist-view :deep(.action-bar) {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.playlist-view :deep(.play-main-btn) {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.playlist-view :deep(.search-box-container) {
+  flex: 1 1 150px;
+  min-width: 120px;
+  max-width: 240px;
 }
 </style>

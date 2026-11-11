@@ -4,6 +4,7 @@ import { usePlaylistStore } from './player/playlist'
 import { usePlaybackStore } from './player/playback'
 import { usePlayerUiStore } from './player/ui'
 import { useConfigStore } from './configStore'
+import type { CurrentSong } from '@renderer/types/player'
 
 export * from '@renderer/types/player'
 export * from './player/utils'
@@ -45,10 +46,7 @@ export const usePlayerStore = defineStore('player', () => {
     progressPercent: computed(() => playbackStore.progressPercent),
 
     // Playlist State
-    playlist: computed({
-      get: () => playlistStore.playlist,
-      set: (val) => (playlistStore.playlist = val)
-    }),
+    playlist: computed<readonly CurrentSong[]>(() => playlistStore.playlist),
     playMode: computed({
       get: () => playlistStore.playMode,
       set: (val) => (playlistStore.playMode = val)
@@ -82,7 +80,14 @@ export const usePlayerStore = defineStore('player', () => {
     playPrev: playbackStore.playPrev,
     setPlaylist: playlistStore.setPlaylist,
     clearPlaylist: playlistStore.clearPlaylist,
+    clearAndStop: async (): Promise<void> => {
+      playlistStore.clearPlaylist()
+      await playbackStore.stop()
+    },
+    removeFromPlaylist: playlistStore.removeFromPlaylist,
+    removeSongs: playlistStore.removeSongs,
     addToPlaylist: playlistStore.addToPlaylist,
+    addNext: playlistStore.addNext,
     togglePlayMode: playlistStore.togglePlayMode
   }
 })
