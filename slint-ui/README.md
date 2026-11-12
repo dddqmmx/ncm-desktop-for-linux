@@ -3,11 +3,7 @@
 Slint 是仓库的首选客户端，`electron/` 中的 Electron + Vue 界面为二级保留。默认启动真实 Rust 运行时；`--demo` 保留原来的离线演示和像素回归数据。
 
 ```sh
-# 仓库根目录：npm run dev 等价于 dev:slint，npm run build / test 同理
-npm run dev
-npm run build
-npm run test
-# 或直接用 cargo（开发模式，保存 .slint 时热加载）
+# 开发模式，保存 .slint 时热加载
 cargo run --manifest-path slint-ui/Cargo.toml --locked --features hot-reload
 # 普通运行，不启用热加载
 cargo run --manifest-path slint-ui/Cargo.toml --locked
@@ -15,13 +11,13 @@ cargo run --manifest-path slint-ui/Cargo.toml --locked
 cargo run --manifest-path slint-ui/Cargo.toml --locked --features hot-reload -- --demo
 ```
 
-`npm run dev:slint` 默认启用 Slint 的应用内热加载，也可使用 `npm run dev:slint -- --demo` 运行离线演示。修改并保存 `ui/` 下的 `.slint` 文件后，运行中的界面会重新加载，无需重新编译 Rust 或重启应用。`hot-reload` feature 同时开启 Slint 的 `live-preview` 运行时和对应的代码生成，不必另外设置 `SLINT_LIVE_PREVIEW`。
+上面的 `--features hot-reload` 启用 Slint 的应用内热加载；加 `-- --demo` 可运行离线演示。修改并保存 `ui/` 下的 `.slint` 文件后，运行中的界面会重新加载，无需重新编译 Rust 或重启应用。`hot-reload` feature 同时开启 Slint 的 `live-preview` 运行时和对应的代码生成，不必另外设置 `SLINT_LIVE_PREVIEW`。
 
 刷新会重新创建 UI 组件，恢复 Rust 设置的属性、回调和数据模型，后台运行时继续工作；纯 UI 内部的状态（例如滚动位置、焦点和部分弹窗状态）可能重置。语法错误会输出到启动终端并保留上一次有效界面，修正保存后继续刷新。
 
 支持普通覆盖保存和编辑器的原子替换保存。开发模式会监听 `ui/`、`assets/` 的创建/重命名事件，仅更新替换后文件的修改时间来补足 Slint 1.18.1 漏掉的通知，不修改文件内容；启动终端会提示热加载已启用，每次成功刷新会输出 `Reloaded component ...`。
 
-热加载用于布局、样式和 UI 逻辑迭代。Rust 代码以及 Rust 使用的属性、回调、结构体接口发生变化时，仍需停止并重新运行开发命令。开发模式通过解释器读取源码，启动和刷新速度、内存占用与正式构建不同；性能测量使用普通构建。`cargo run`、`cargo test` 和 `npm run build:slint` 默认仍使用编译后的 UI，不依赖运行时源码。
+热加载用于布局、样式和 UI 逻辑迭代。Rust 代码以及 Rust 使用的属性、回调、结构体接口发生变化时，仍需停止并重新运行开发命令。开发模式通过解释器读取源码，启动和刷新速度、内存占用与正式构建不同；性能测量使用普通构建。`cargo run`、`cargo test` 和 release 构建默认仍使用编译后的 UI，不依赖运行时源码。
 
 默认构建包含 Vulkan、OpenGL 和软件渲染。首次运行及旧配置缺少渲染字段时使用 Vulkan，不再需要额外的启动参数。在「设置 → 通用 → 界面渲染」中使用通用下拉菜单选择：
 
@@ -53,7 +49,7 @@ UI 主线程只提交运行时命令、接收结果并更新模型，禁止发�
 
 界面共享状态按业务拆分到 `ui/state/`，演示数据位于 `ui/fixtures/`。`ui/state.slint` 只导出 Rust 绑定；模块职责、跨窗口同步与依赖规则见 [状态模块说明](ui/state/README.md)。
 
-Electron 客户端位于 [electron/](../electron/)，与本目录共用 `native/` crate；从仓库根目录用 `npm run dev:electron` / `npm run build:electron` 调用，打包和基准采集命令见本文末尾。
+Electron 客户端位于 [electron/](../electron/)，与本目录共用 `native/` crate；在该目录中执行 `npm install` 后用 `npm run dev` / `npm run build` 等脚本；打包和基准采集命令见本文末尾。
 
 ## 配置与数据
 
@@ -131,7 +127,7 @@ timeout 60s cargo test --manifest-path slint-ui/Cargo.toml --locked real_login_w
 重新采集歌单基准（本地模拟 IPC，不使用真实账户）：
 
 ```sh
-npm run build:electron
+npm --prefix electron run build
 npx electron --no-sandbox slint-ui/scripts/extract-electron-metrics.cjs --playlist-management
 ```
 

@@ -5,12 +5,11 @@ Linux 桌面上的第三方网易云音乐客户端。仓库里有一份共享�
 
 | 目录 | 客户端 | 状态 |
 | --- | --- | --- |
-| [`slint-ui/`](slint-ui/) | Slint + Rust 原生界面 | **首选**，根目录默认构建 |
+| [`slint-ui/`](slint-ui/) | Slint + Rust 原生界面 | **首选**，用 Cargo 构建 |
 | [`electron/`](electron/) | Electron + Vue + TypeScript | 二级，保留旧界面 |
 | [`native/`](native/) | 两者共用的音频、缓存、下载核心 | — |
 
-根目录的 `npm run dev` / `build` / `test` 全部指向 Slint；Electron 的脚本留在 `electron/` 内部，
-通过 `npm run dev:electron` / `npm run build:electron` 从根目录调用。
+Slint 客户端完全用 Cargo 构建和运行，不需要 npm；Electron 的 npm 脚本都在 `electron/` 内部。
 
 ## Slint 客户端（首选）
 
@@ -31,20 +30,17 @@ sudo apt install pkg-config libasound2-dev cmake libvulkan-dev \
 ### 构建与运行
 
 ```bash
-npm run dev     # = dev:slint，热加载：保存 ui/ 下的 .slint 后界面就地刷新
-npm run build   # = build:slint，release 产物在 slint-ui/target/release/ncm-slint-ui
-npm run test    # = test:slint
-npm run check:slint   # 界面结构/体积/嵌套/导入依赖检查
-```
-
-不用 npm 的话，等价命令是：
-
-```bash
+# 开发（热加载：保存 ui/ 下的 .slint 后界面就地刷新）
 cargo run   --manifest-path slint-ui/Cargo.toml --locked --features hot-reload
+
+# release 产物：slint-ui/target/release/ncm-slint-ui
 cargo build --manifest-path slint-ui/Cargo.toml --release --locked
+
 cargo test  --manifest-path slint-ui/Cargo.toml --locked
-python3 slint-ui/scripts/check_ui_quality.py
+python3 slint-ui/scripts/check_ui_quality.py   # 界面结构/体积/嵌套/导入依赖检查
 ```
+
+在 `slint-ui/` 目录里可以省略 `--manifest-path`。
 
 `--demo` 用离线演示数据运行，不启动 API、不读真实会话：
 
@@ -82,7 +78,7 @@ Electron + Vue 界面完整保留在 [`electron/`](electron/)，依赖、vite/el
 
 ```bash
 cd electron
-npm install
+npm install            # Electron 的依赖只装在这里
 npm run dev            # 构建 native 并启动 electron-vite dev
 npm run build          # typecheck + native release + electron-vite build
 npm run build:linux    # electron-builder 打包 AppImage
@@ -92,10 +88,10 @@ npm run test:web
 
 细节见 [electron/README.md](electron/README.md)。
 
-## 其它
+## native 回归
 
 ```bash
-npm run test:native-seek   # native 播放/拖动回归：cargo test + 真实 NAPI 播放探针
+node scripts/native-seek-regression.cjs   # native 播放/拖动回归：cargo test + 真实 NAPI 播放探针
 ```
 
 ## 当前边界

@@ -32,4 +32,4 @@ npm run build:win
 npm run build:mac
 ```
 
-从仓库根目录可以用 `npm run build:electron`（等价于 `npm --prefix electron run build`）和 `npm run dev:electron`。
+仓库根目录不再有 package.json，Electron 的 npm 脚本只在这里运行。
