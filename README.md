@@ -30,22 +30,20 @@ sudo apt install pkg-config libasound2-dev cmake libvulkan-dev \
 ### 构建与运行
 
 ```bash
-# 开发（热加载：保存 ui/ 下的 .slint 后界面就地刷新）
-cargo run   --manifest-path slint-ui/Cargo.toml --locked --features hot-reload
+# 直接在仓库根目录：根 Cargo.toml 是包含 slint-ui 和 native 的工作区
+cargo run --locked --features hot-reload     # 开发，保存 ui/ 下的 .slint 后界面就地刷新
+cargo build --locked --release               # release 产物：target/release/ncm-slint-ui
+cargo test --locked                          # 两个 crate 的测试
 
-# release 产物：slint-ui/target/release/ncm-slint-ui
-cargo build --manifest-path slint-ui/Cargo.toml --release --locked
-
-cargo test  --manifest-path slint-ui/Cargo.toml --locked
-python3 slint-ui/scripts/check_ui_quality.py   # 界面结构/体积/嵌套/导入依赖检查
+python3 slint-ui/scripts/check_ui_quality.py # 界面结构/体积/嵌套/导入依赖检查
 ```
 
-在 `slint-ui/` 目录里可以省略 `--manifest-path`。
+只想构建 Slint 的话用 `-p ncm-slint-ui`，例如 `cargo build -p ncm-slint-ui --release`。
 
 `--demo` 用离线演示数据运行，不启动 API、不读真实会话：
 
 ```bash
-cargo run --manifest-path slint-ui/Cargo.toml --locked --features hot-reload -- --demo
+cargo run --locked --features hot-reload -- --demo
 ```
 
 ### 功能

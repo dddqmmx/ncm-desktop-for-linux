@@ -15,5 +15,5 @@ yarn.lock
 native-seek-regression-report.json
 # 参考用的第三方仓库（独立 git 仓库，不属于本项目）
 spotifast/
-# Slint 首选构建产物
-slint-ui/target/
+# 首选客户端的 Cargo 工作区构建产物
+/target/

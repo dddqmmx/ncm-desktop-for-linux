@@ -104,9 +104,9 @@ python3 scripts/profile-memory.py <PID> --samples 3 --output /tmp/ncm-live.json
 
 # 正式 release 程序：隔离配置、空首页、本地模拟 API，依次测三个渲染器
 cargo build --release --locked
-python3 scripts/profile-memory-fixture.py target/release/ncm-slint-ui --output /tmp/ncm-release.json
+python3 scripts/profile-memory-fixture.py ../../target/release/ncm-slint-ui --output /tmp/ncm-release.json
 
-# 先从仓库根目录运行 npm run build:electron，再回到 slint-ui
+# 先在 electron/ 中 npm run build，再回到 slint-ui
 python3 scripts/profile-memory-fixture.py ../electron/node_modules/electron/dist/electron --electron --output /tmp/ncm-electron.json
 
 # 分阶段窗口/封面/登录测量，替换 renderer 为 opengl 或 software

@@ -32,24 +32,24 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            slint-ui/target/
+            target/
             native/target/
-          key: ${{ runner.os }}-slint-cargo-${{ hashFiles('slint-ui/Cargo.lock', 'native/Cargo.lock') }}
+          key: ${{ runner.os }}-slint-cargo-${{ hashFiles('Cargo.lock', 'native/Cargo.lock') }}
 
       - name: Check Slint UI structure
         run: python3 slint-ui/scripts/check_ui_quality.py
 
       - name: Test
-        run: cargo test --manifest-path slint-ui/Cargo.toml --locked
+        run: cargo test --locked
 
       - name: Build
-        run: cargo build --manifest-path slint-ui/Cargo.toml --release --locked
+        run: cargo build --locked --release
 
       - name: Upload Slint binary
         uses: actions/upload-artifact@v4
         with:
           name: ncm-slint-ui-linux-x64
-          path: slint-ui/target/release/ncm-slint-ui
+          path: target/release/ncm-slint-ui
           retention-days: 5
 
   # 二级客户端：Electron，沿用 electron-builder 的 AppImage 打包与发布

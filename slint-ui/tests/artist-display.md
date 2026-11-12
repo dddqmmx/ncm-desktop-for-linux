@@ -9,7 +9,7 @@ Slint 歌手页按 `src/renderer/src/views/ArtistView.vue` 的内容布局：主
 重新采集（从仓库根目录运行，使用模拟 IPC）：
 
 ```sh
-npm run build:electron
+(cd electron && npm run build)
 NCM_ELECTRON_SCREENSHOT_DIR=/tmp/ncm-artist-reference electron/node_modules/.bin/electron --no-sandbox slint-ui/scripts/extract-electron-metrics.cjs --artist-view
 ```
 

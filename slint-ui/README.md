@@ -4,11 +4,11 @@ Slint 是仓库的首选客户端，`electron/` 中的 Electron + Vue 界面为�
 
 ```sh
 # 开发模式，保存 .slint 时热加载
-cargo run --manifest-path slint-ui/Cargo.toml --locked --features hot-reload
+cargo run --locked --features hot-reload
 # 普通运行，不启用热加载
-cargo run --manifest-path slint-ui/Cargo.toml --locked
+cargo run --locked
 # 离线演示，不启动 API / native 运行时，不读取真实会话
-cargo run --manifest-path slint-ui/Cargo.toml --locked --features hot-reload -- --demo
+cargo run --locked --features hot-reload -- --demo
 ```
 
 上面的 `--features hot-reload` 启用 Slint 的应用内热加载；加 `-- --demo` 可运行离线演示。修改并保存 `ui/` 下的 `.slint` 文件后，运行中的界面会重新加载，无需重新编译 Rust 或重启应用。`hot-reload` feature 同时开启 Slint 的 `live-preview` 运行时和对应的代码生成，不必另外设置 `SLINT_LIVE_PREVIEW`。
@@ -27,7 +27,7 @@ cargo run --manifest-path slint-ui/Cargo.toml --locked --features hot-reload -- 
 
 选择保存到 `preferences.json` 的 `renderer` 字段，值分别为 `vulkan`、`opengl`、`software`。修改后重启应用生效；启动在创建任何窗口之前读取此字段，主窗口、设置窗口和登录动画的离屏窗口共用该渲染方式。刚修改就退出也会在关闭运行时前提交保存。示例：`"renderer":"software"` 可在无法打开界面时手动关闭应用自身的 GPU 渲染；系统桌面合成器的渲染方式由操作系统管理。
 
-在 `slint-ui` 目录中可省略 `--manifest-path slint-ui/Cargo.toml`。Vulkan 首次构建需要下载 Skia 原生库；使用 Vulkan 需要可用的 Vulkan 驱动。后端选择集中在 `src/rendering.rs`，真实窗口回归使用同一配置，软件布局测试不依赖显卡。渲染器更换不能替代列表绑定、布局和图片处理的性能优化。
+以上命令在仓库根目录执行；`slint-ui` 是根 Cargo 工作区的成员。Vulkan 首次构建需要下载 Skia 原生库；使用 Vulkan 需要可用的 Vulkan 驱动。后端选择集中在 `src/rendering.rs`，真实窗口回归使用同一配置，软件布局测试不依赖显卡。渲染器更换不能替代列表绑定、布局和图片处理的性能优化。
 
 设备确认、真实窗口检查和滚动测量见 [Vulkan 渲染验证](tests/vulkan-rendering.md)。
 
@@ -89,7 +89,7 @@ python3 -m unittest discover -s slint-ui/tests -p test_ui_quality.py -v
 ```
 
 ```sh
-cargo test --manifest-path slint-ui/Cargo.toml --locked
+cargo test --locked
 cargo test --manifest-path native/Cargo.toml --no-default-features --locked
 cargo check --manifest-path native/Cargo.toml --locked
 ```
@@ -99,7 +99,7 @@ cargo check --manifest-path native/Cargo.toml --locked
 可选公开接口检查（需要网络，不使用账号、不发送短信）：
 
 ```sh
-cargo test --manifest-path slint-ui/Cargo.toml --locked live_native_api_smoke -- --ignored --nocapture
+cargo test --locked live_native_api_smoke -- --ignored --nocapture
 ```
 
 歌单滚动的真实 OpenGL 窗口测量、封面更新的离线测量及验证边界见 [性能记录](tests/playlist-performance.md)。滚动回归还限制跨行时的模型读取次数，检查复用行的点击和数据更新。
@@ -113,9 +113,9 @@ cargo test --manifest-path slint-ui/Cargo.toml --locked live_native_api_smoke --
 真实窗口响应测试需连接 Wayland/X11 桌面，单独运行。默认用延迟 API 和本地大图测试网络等待、图片解码期间的导航点击、设置窗口和偏好同步；设置 `NCM_SLINT_TEST_LIVE_API=1` 使用真实 API。测试使用独立临时配置，检查封面确实加载、事件循环间隔小于 500ms，并输出截图目录。外部超时用于检测事件循环完全卡死的情况。
 
 ```sh
-timeout 60s cargo test --manifest-path slint-ui/Cargo.toml --locked real_window_stays_responsive -- --ignored --nocapture
-NCM_SLINT_TEST_LIVE_API=1 timeout 60s cargo test --manifest-path slint-ui/Cargo.toml --locked real_window_stays_responsive -- --ignored --nocapture
-timeout 60s cargo test --manifest-path slint-ui/Cargo.toml --locked real_login_window_matches_electron_behavior -- --ignored --nocapture
+timeout 60s cargo test --locked real_window_stays_responsive -- --ignored --nocapture
+NCM_SLINT_TEST_LIVE_API=1 timeout 60s cargo test --locked real_window_stays_responsive -- --ignored --nocapture
+timeout 60s cargo test --locked real_login_window_matches_electron_behavior -- --ignored --nocapture
 ```
 
 登录回归检查默认、错误和重新打开时的内容布局、控件边界，以及独立表单、区号键盘输入、回车提交、加载期间防止重复提交、验证码倒计时、二维码过期刷新和关闭后的旧响应隔离。真实登录窗口测试使用延迟模拟 API，检查卡片/遮罩点击、两面的关闭按钮、扫码切回表单、保持登录标签和会话保存，并输出截图；不会发送真实短信或使用真实账号。更新 Electron 登录基准使用 `electron/node_modules/.bin/electron --no-sandbox slint-ui/scripts/extract-electron-metrics.cjs --login-modal`（先在 `electron/` 中构建）。
