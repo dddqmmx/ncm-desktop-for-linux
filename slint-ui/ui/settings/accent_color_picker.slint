@@ -1,0 +1,135 @@
+import { SettingsState } from "../state/settings.slint";
+import { SaturationField, HueField } from "color_fields.slint";
+import { Theme } from "../theme.slint";
+
+component ColorPalette inherits Rectangle {
+    callback dismiss();
+    in property <int> open-generation;
+    changed open-generation => { root.reset(Theme.theme-color); }
+    init => { root.reset(Theme.theme-color); }
+    property <float> hue: 0;
+    property <float> saturation: 1;
+    property <float> value: 1;
+    property <bool> invalid-hex: false;
+    property <string> hex-text;
+    forward-focus: palette-focus;
+    background: Theme.sys-bg-elevated;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.sys-border-strong;
+
+    public function reset(color: color) {
+        let hsv-color = color.to-hsv();
+        root.hue = hsv-color.hue;
+        root.saturation = hsv-color.saturation;
+        root.value = hsv-color.value;
+        root.hex-text = SettingsState.setting-accent-hex;
+        root.invalid-hex = false;
+    }
+    function select() {
+        SettingsState.set-accent-color(hsv(root.hue, root.saturation, root.value));
+        root.hex-text = SettingsState.setting-accent-hex;
+        root.invalid-hex = false;
+    }
+    function submit-hex() {
+        root.invalid-hex = !SettingsState.set-accent-hex(root.hex-text);
+        if !root.invalid-hex { root.reset(Theme.theme-color); }
+    }
+    function edit-hex() {
+        root.invalid-hex = false;
+        if SettingsState.set-accent-hex(root.hex-text) { root.reset(Theme.theme-color); }
+    }
+
+    palette-focus := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape { root.dismiss(); return accept; }
+            return reject;
+        }
+        Text {
+            x: 16px; y: 12px; width: parent.width - 32px; height: 24px;
+            text: "强调色"; font-size: 13px; font-weight: 600; color: Theme.sys-text;
+        }
+        saturation-field := SaturationField {
+            x: 16px; y: 44px; width: parent.width - 32px; height: 154px;
+            hue: root.hue;
+            saturation <=> root.saturation;
+            value <=> root.value;
+            selected => { root.select(); }
+        }
+        hue-field := HueField {
+            x: 16px; y: 210px; width: parent.width - 32px; height: 16px;
+            hue <=> root.hue;
+            selected => { root.select(); }
+        }
+        Rectangle {
+            x: 16px; y: 242px; width: 28px; height: 28px;
+            border-radius: 6px; background: Theme.theme-color;
+            border-width: 1px; border-color: Theme.sys-border-strong;
+        }
+        Rectangle {
+            x: 54px; y: 240px; width: parent.width - 70px; height: 32px;
+            border-radius: 6px; background: Theme.sys-bg-soft;
+            border-width: 1px;
+            border-color: root.invalid-hex ? Theme.sys-danger : hex-input.has-focus ? Theme.theme-color : Theme.sys-border-strong;
+            hex-input := TextInput {
+                x: 10px; width: parent.width - 20px; height: 100%;
+                text <=> root.hex-text;
+                single-line: true;
+                font-size: 13px;
+                color: Theme.sys-text;
+                vertical-alignment: center;
+                accessible-label: "强调色 HEX 色值";
+                edited => { root.edit-hex(); }
+                accepted => { root.submit-hex(); }
+            }
+        }
+        Text {
+            x: 16px; y: 282px; width: parent.width - 32px; height: 20px;
+            text: root.invalid-hex ? "请输入 #RRGGBB 格式的色值" : "RGB  " + Theme.theme-color.red + ", " + Theme.theme-color.green + ", " + Theme.theme-color.blue;
+            font-size: 11px;
+            color: root.invalid-hex ? Theme.sys-danger : Theme.sys-text-tertiary;
+        }
+    }
+}
+
+export component AccentColorPicker inherits Rectangle {
+    width: 40px;
+    height: 24px;
+    border-radius: 6px;
+    background: Theme.theme-color;
+    border-width: 2px;
+    border-color: Theme.sys-border-strong;
+    forward-focus: picker-focus;
+    accessible-role: button;
+    accessible-label: "选择强调色";
+    accessible-action-default => { root.open(); }
+
+    property <int> open-generation: 0;
+    function open() {
+        root.open-generation += 1;
+        popup.show();
+    }
+    function dismiss() {
+        popup.close();
+        picker-focus.focus();
+    }
+    picker-focus := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " { root.open(); return accept; }
+            return reject;
+        }
+        color-touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.open(); }
+        }
+    }
+    popup := PopupWindow {
+        x: root.width - self.width;
+        y: root.height + 8px;
+        width: 272px;
+        height: 318px;
+        close-policy: close-on-click-outside;
+        forward-focus: palette;
+        palette := ColorPalette { open-generation: root.open-generation; dismiss => { root.dismiss(); } }
+    }
+}

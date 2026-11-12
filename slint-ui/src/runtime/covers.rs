@@ -124,6 +124,7 @@ const MAX_IMAGES: usize = 1024;
 const MAX_BYTES: usize = 64 * 1024 * 1024;
 struct CachedCover {
     image: Image,
+    palette: Option<crate::fullscreen_palette::CoverPalette>,
     size: u32,
     bytes: usize,
     used: Cell<u64>,
@@ -155,11 +156,15 @@ impl CoverCache {
             entry.size >= size
         })
     }
+    pub fn palette(&self, url: &str) -> Option<crate::fullscreen_palette::CoverPalette> {
+        self.images.get(url).and_then(|entry| entry.palette)
+    }
     pub fn insert(
         &mut self,
         url: String,
         size: u32,
         image: Image,
+        palette: Option<crate::fullscreen_palette::CoverPalette>,
         pinned: &HashSet<String>,
     ) -> Vec<String> {
         if self.contains(&url, size) {
@@ -171,6 +176,7 @@ impl CoverCache {
             url.clone(),
             CachedCover {
                 image,
+                palette,
                 size,
                 bytes,
                 used,
@@ -274,12 +280,12 @@ mod tests {
         let pinned = HashSet::from(["playing".into()]);
         let full = image(800);
         let small = image(64);
-        cache.insert("playing".into(), 800, full.clone(), &pinned);
-        cache.insert("playing".into(), 128, small.clone(), &pinned);
+        cache.insert("playing".into(), 800, full.clone(), None, &pinned);
+        cache.insert("playing".into(), 128, small.clone(), None, &pinned);
         assert_eq!(cache.get("playing").unwrap(), &full);
         let mut evicted = Vec::new();
         for i in 0..MAX_IMAGES + 40 {
-            evicted.extend(cache.insert(i.to_string(), 128, small.clone(), &pinned));
+            evicted.extend(cache.insert(i.to_string(), 128, small.clone(), None, &pinned));
         }
         assert_eq!(cache.images.len(), MAX_IMAGES);
         assert!(!evicted.is_empty());
@@ -289,10 +295,10 @@ mod tests {
             !cache.contains(&(MAX_IMAGES + 39).to_string(), 800),
             "thumbnail must allow a later artwork upgrade"
         );
-        cache.insert("0".into(), 128, small, &pinned);
+        cache.insert("0".into(), 128, small, None, &pinned);
         assert!(cache.contains("0", 128));
         for i in 0..40 {
-            cache.insert(format!("art-{i}"), 800, full.clone(), &pinned);
+            cache.insert(format!("art-{i}"), 800, full.clone(), None, &pinned);
         }
         assert!(cache.bytes <= MAX_BYTES);
         assert!(cache.images.len() <= MAX_IMAGES);
@@ -376,10 +382,10 @@ mod tests {
         let mut cache = CoverCache::default();
         let thumbnail = image(128);
         let pinned = HashSet::from(["header".into()]);
-        cache.insert("header".into(), 800, image(800), &pinned);
+        cache.insert("header".into(), 800, image(800), None, &pinned);
         for i in 0..500 {
             assert!(cache
-                .insert(i.to_string(), 128, thumbnail.clone(), &pinned)
+                .insert(i.to_string(), 128, thumbnail.clone(), None, &pinned)
                 .is_empty());
         }
         for i in 0..500 {

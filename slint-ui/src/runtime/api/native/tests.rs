@@ -15,6 +15,44 @@ struct Request {
 }
 impl Request {
     fn eapi_data(&self) -> Value {
+        if self.path.starts_with("/xeapi/") {
+            let form = reqwest::Url::parse(&format!("http://fixture/?{}", self.body))
+                .unwrap()
+                .query_pairs()
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
+            let fixture: Value = serde_json::from_str(include_str!(
+                "../../../../../ncm-api-rs/tests/fixtures/xeapi-node.json"
+            ))
+            .unwrap();
+            let secret: Vec<u8> = serde_json::from_value(fixture["serverSecret"].clone()).unwrap();
+            let decoded =
+                ncm_api_rs::crypto::xeapi_req_decrypt(&form, secret.try_into().unwrap()).unwrap();
+            let mut data = serde_json::Map::new();
+            for (key, value) in reqwest::Url::parse(&format!(
+                "http://fixture/?{}",
+                decoded["content"].as_str().unwrap_or("")
+            ))
+            .unwrap()
+            .query_pairs()
+            {
+                data.insert(key.into_owned(), value.into_owned().into());
+            }
+            let cookie = self
+                .headers
+                .lines()
+                .find_map(|line| {
+                    line.split_once(':')
+                        .filter(|(name, _)| name.eq_ignore_ascii_case("cookie"))
+                        .map(|(_, value)| value.trim())
+                })
+                .unwrap_or("");
+            data.insert(
+                "header".into(),
+                serde_json::to_value(ncm_api_rs::util::cookie::cookie_to_json(cookie)).unwrap(),
+            );
+            return data.into();
+        }
         let params = self.body.strip_prefix("params=").unwrap();
         ncm_api_rs::crypto::eapi_req_decrypt(params).unwrap().1
     }
@@ -24,6 +62,8 @@ struct Reply {
     body: Value,
     cookies: Vec<&'static str>,
     delay: Duration,
+    headers: Vec<(&'static str, &'static str)>,
+    raw: Option<Vec<u8>>,
 }
 impl Reply {
     fn new(body: Value) -> Self {
@@ -31,6 +71,8 @@ impl Reply {
             body,
             cookies: vec![],
             delay: Duration::ZERO,
+            headers: vec![],
+            raw: None,
         }
     }
 }
@@ -38,6 +80,7 @@ impl Reply {
 struct Server {
     domain: String,
     requests: mpsc::UnboundedReceiver<Request>,
+    key_requests: mpsc::UnboundedReceiver<Request>,
     task: JoinHandle<()>,
 }
 impl Drop for Server {
@@ -50,6 +93,7 @@ impl Server {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let domain = format!("http://{}", listener.local_addr().unwrap());
         let (sent, requests) = mpsc::unbounded_channel();
+        let (key_sent, key_requests) = mpsc::unbounded_channel();
         let reply = Arc::new(reply);
         let task = tokio::spawn(async move {
             let mut connections = JoinSet::new();
@@ -59,8 +103,9 @@ impl Server {
                         let (stream, _) = result.unwrap();
                         let reply = reply.clone();
                         let sent = sent.clone();
+                        let key_sent = key_sent.clone();
                         connections.spawn(async move {
-                            serve(stream, reply.as_ref(), sent).await;
+                            serve(stream, reply.as_ref(), sent, key_sent).await;
                         });
                     }
                     Some(result) = connections.join_next() => { result.unwrap(); }
@@ -70,6 +115,7 @@ impl Server {
         Self {
             domain,
             requests,
+            key_requests,
             task,
         }
     }
@@ -92,6 +138,7 @@ async fn serve(
     mut stream: TcpStream,
     reply: &(dyn Fn(&Request) -> Reply + Send + Sync),
     sent: mpsc::UnboundedSender<Request>,
+    key_sent: mpsc::UnboundedSender<Request>,
 ) {
     let mut bytes = Vec::new();
     let end = loop {
@@ -108,11 +155,8 @@ async fn serve(
         .lines()
         .filter_map(|line| line.split_once(':'))
         .find(|(key, _)| key.eq_ignore_ascii_case("content-length"))
-        .unwrap()
-        .1
-        .trim()
-        .parse()
-        .unwrap();
+        .map(|(_, value)| value.trim().parse().unwrap())
+        .unwrap_or(0);
     while bytes.len() < end + length {
         let mut chunk = [0; 4096];
         let count = stream.read(&mut chunk).await.unwrap();
@@ -124,20 +168,54 @@ async fn serve(
         headers,
         body: String::from_utf8(bytes[end..end + length].to_vec()).unwrap(),
     };
-    let response = reply(&request);
-    sent.send(request).unwrap();
+    let response = if request.path == "/api/bsr/sk/get" {
+        let params: std::collections::HashMap<_, _> =
+            reqwest::Url::parse(&format!("http://fixture/?{}", request.body))
+                .unwrap()
+                .query_pairs()
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
+        assert!(ncm_api_rs::crypto::xeapi_verify_signature(
+            &params["timestamp"],
+            &params["nonce"],
+            &params["signature"]
+        ));
+        assert_eq!(params["appVersion"], "9.5.61");
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../../../ncm-api-rs/tests/fixtures/xeapi-node.json"
+        ))
+        .unwrap();
+        let reply = Reply::new(json!({"code":200,"data":{
+            "encryptedData":fixture["encryptedKey"], "timestamp":params["timestamp"],
+            "signature":ncm_api_rs::crypto::xeapi_sign(&params["timestamp"], &params["nonce"])
+        }}));
+        key_sent.send(request).unwrap();
+        reply
+    } else {
+        let response = reply(&request);
+        sent.send(request).unwrap();
+        response
+    };
     tokio::time::sleep(response.delay).await;
-    let body = response.body.to_string();
+    let body = response
+        .raw
+        .unwrap_or_else(|| response.body.to_string().into_bytes());
     let cookies = response
         .cookies
         .iter()
         .map(|cookie| format!("Set-Cookie: {cookie}\r\n"))
         .collect::<String>();
+    let headers = response
+        .headers
+        .iter()
+        .map(|(key, value)| format!("{key}: {value}\r\n"))
+        .collect::<String>();
     let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{cookies}Connection: close\r\n\r\n{body}", body.len()
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{cookies}{headers}Connection: close\r\n\r\n", body.len()
     );
     // A timed-out/cancelled caller may have already closed its connection.
     let _ = stream.write_all(response.as_bytes()).await;
+    let _ = stream.write_all(&body).await;
 }
 
 #[tokio::test]
@@ -174,7 +252,7 @@ async fn operations_reach_the_expected_sdk_endpoints() {
         ),
         ("playlist_create", "/weapi/playlist/create"),
         ("playlist_delete", "/weapi/playlist/remove"),
-        ("song_url", "/eapi/song/enhance/player/url/v1"),
+        ("song_url", "/xeapi/song/enhance/player/url/v1"),
         ("song_download_url", "/eapi/song/enhance/download/url/v1"),
         ("artist_detail", "/eapi/artist/head/info/get"),
         ("artist_top_song", "/weapi/artist/top/song"),
@@ -441,9 +519,273 @@ async fn sdk_special_statuses_are_not_mistaken_for_success() {
 }
 
 #[tokio::test]
+async fn first_song_url_uses_authenticated_csr_and_preserves_hires() {
+    let mut server = Server::new(|request| {
+        assert!(request.path.starts_with("/xeapi/"));
+        let data = request.eapi_data();
+        assert_eq!(data["level"], "hires");
+        assert_eq!(data["ids"], "[42]");
+        assert_eq!(data["encodeType"], "flac");
+        assert_eq!(data["header"]["MUSIC_U"], "session");
+        assert!(request.headers.to_ascii_lowercase().contains("x-client-enc-state: encrypted"));
+        Reply::new(json!({"code":200,"data":[{"id":42,"url":"https://fixture.invalid/song.flac","level":"hires","freeTrialInfo":null}]}))
+    }).await;
+    let api = server.api();
+    for _ in 0..2 {
+        let response = api
+            .call(
+                "song_url",
+                json!({"id":"42","level":"hires"}),
+                "MUSIC_U=session",
+            )
+            .await
+            .unwrap()
+            .checked()
+            .unwrap();
+        assert_eq!(response.body["data"][0]["level"], "hires");
+        assert!(response.body["playback_notice"].is_null());
+        assert_eq!(
+            server.next().await.path,
+            "/xeapi/song/enhance/player/url/v1"
+        );
+    }
+    assert_eq!(
+        server.key_requests.try_recv().unwrap().path,
+        "/api/bsr/sk/get"
+    );
+    assert!(
+        server.key_requests.try_recv().is_err(),
+        "key initialization must be reused"
+    );
+    assert!(
+        server.requests.try_recv().is_err(),
+        "must not downgrade to the legacy API"
+    );
+}
+
+#[tokio::test]
+async fn sky_and_vivid_parameters_match_current_upstream() {
+    let mut server =
+        Server::new(|request| Reply::new(json!({"code":200,"query":request.eapi_data()}))).await;
+    let api = server.api();
+    let sky = api
+        .call(
+            "song_url",
+            json!({"id":"42","level":"sky","immerseType":"c512"}),
+            "",
+        )
+        .await
+        .unwrap()
+        .checked()
+        .unwrap();
+    assert_eq!(sky.body["query"]["immerseType"], "c512");
+    server.next().await;
+    let vivid = api
+        .call("song_url", json!({"id":"42","level":"vivid"}), "")
+        .await
+        .unwrap()
+        .checked()
+        .unwrap();
+    assert_eq!(vivid.body["query"]["encodeType"], "mp3");
+    assert_eq!(vivid.body["query"]["header"]["os"], "android");
+    assert_eq!(vivid.body["query"]["header"]["appver"], "9.5.61");
+    server.next().await;
+    let download = api
+        .call("song_download_url", json!({"id":"42","level":"vivid"}), "")
+        .await
+        .unwrap()
+        .checked()
+        .unwrap();
+    assert_eq!(download.body["query"]["header"]["appver"], "9.5.61");
+    assert_eq!(
+        server.next().await.path,
+        "/eapi/song/enhance/download/url/v1"
+    );
+}
+
+#[tokio::test]
+async fn checktoken_v3_is_fetched_fresh_for_each_required_request() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let tokens = AtomicUsize::new(0);
+    let mut server = Server::new(move |request| {
+        if request.path.starts_with("/v3/b?") {
+            let token = tokens.fetch_add(1, Ordering::Relaxed) + 1;
+            let mut reply = Reply::new(Value::Null);
+            reply.raw = Some(format!("null([200,1,\"fixture-token-{token}\"])").into_bytes());
+            reply
+        } else {
+            Reply::new(json!({"code":200}))
+        }
+    })
+    .await;
+    let client = ApiClient::new(None);
+    let mut query = Query::new().cookie("MUSIC_U=session");
+    query.domain = Some(server.domain.clone());
+    for token in 1..=2 {
+        client.yunbei_sign(&query).await.unwrap();
+        assert!(server.next().await.path.starts_with("/v3/b?"));
+        let request = server.next().await;
+        assert_eq!(request.path, "/xeapi/pointmall/user/sign");
+        assert!(request
+            .headers
+            .to_ascii_lowercase()
+            .contains(&format!("x-anticheattoken: fixture-token-{token}")));
+    }
+}
+
+#[tokio::test]
+async fn xeapi_sessions_are_reused_only_within_one_account_and_support_gzip() {
+    let mut server = Server::new(|_| {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../../../ncm-api-rs/tests/fixtures/xeapi-node.json"
+        ))
+        .unwrap();
+        let mut reply = Reply::new(Value::Null);
+        reply.raw = Some(
+            base64::engine::general_purpose::STANDARD
+                .decode(fixture["compressedResponse"].as_str().unwrap())
+                .unwrap(),
+        );
+        reply.headers = vec![
+            ("x-encr-ssid", "fixture-session"),
+            ("x-encr-sskey", "0123456789abcdef"),
+        ];
+        reply
+    })
+    .await;
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../../ncm-api-rs/tests/fixtures/xeapi-node.json"
+    ))
+    .unwrap();
+    let api = server.api();
+    for (cookie, has_session) in [
+        ("MUSIC_U=first", false),
+        ("MUSIC_U=first", true),
+        ("MUSIC_U=second", false),
+    ] {
+        let response = api
+            .call(
+                "song_url",
+                json!({"id":"3394877950","level":"hires"}),
+                cookie,
+            )
+            .await
+            .unwrap()
+            .checked()
+            .unwrap();
+        assert_eq!(response.body, fixture["response"]);
+        let request = server.next().await;
+        let form: std::collections::HashMap<_, _> =
+            reqwest::Url::parse(&format!("http://fixture/?{}", request.body))
+                .unwrap()
+                .query_pairs()
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
+        assert_eq!(
+            form["R"],
+            fixture[if has_session {
+                "sessionRequest"
+            } else {
+                "request"
+            }]["R"]
+        );
+        let decoded = request.eapi_data();
+        assert_eq!(
+            decoded["header"]["MUSIC_U"],
+            cookie.strip_prefix("MUSIC_U=").unwrap()
+        );
+    }
+    assert!(server.key_requests.try_recv().is_ok());
+    assert!(server.key_requests.try_recv().is_ok());
+    assert!(server.key_requests.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn server_rejections_keep_original_codes_messages_and_details() {
+    let mut server = Server::new(|_| {
+        Reply::new(
+            json!({"code":-460,"message":"protocol rejected","detail":{"reason":"retained"}}),
+        )
+    })
+    .await;
+    let response = server
+        .api()
+        .call("song_url", json!({"id":"42","level":"hires"}), "")
+        .await
+        .unwrap();
+    assert_eq!(response.body["code"], -460);
+    assert_eq!(response.body["detail"]["reason"], "retained");
+    assert_eq!(response.checked().unwrap_err(), "protocol rejected");
+    server.next().await;
+    assert!(server.requests.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn nameless_permission_and_rate_limit_errors_are_actionable_and_never_replayed() {
+    for code in [301, 403, 503] {
+        let mut server = Server::new(move |_| Reply::new(json!({"code":code}))).await;
+        let response = server
+            .api()
+            .call("song_url", json!({"id":"42"}), "")
+            .await
+            .unwrap();
+        let error = response.checked().unwrap_err();
+        assert!(error.contains(&code.to_string()));
+        assert!(!error.to_lowercase().contains("unknown"));
+        server.next().await;
+        assert!(server.requests.try_recv().is_err());
+    }
+}
+
+#[tokio::test]
+async fn temporary_song_url_failure_retries_once_but_writes_never_retry() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let count = AtomicUsize::new(0);
+    let mut server = Server::new(move |_| {
+        if count.fetch_add(1, Ordering::Relaxed) == 0 {
+            Reply::new(json!({"code":502}))
+        } else {
+            Reply::new(json!({"code":200,"data":[{"url":"https://music.test/song"}]}))
+        }
+    })
+    .await;
+    server
+        .api()
+        .call("song_url", json!({"id":"42"}), "")
+        .await
+        .unwrap()
+        .checked()
+        .unwrap();
+    server.next().await;
+    server.next().await;
+    assert!(server.requests.try_recv().is_err());
+
+    let mut server = Server::new(|_| Reply::new(json!({"code":502}))).await;
+    assert!(server
+        .api()
+        .call("song_url", json!({"id":"42"}), "")
+        .await
+        .unwrap()
+        .checked()
+        .is_err());
+    server.next().await;
+    server.next().await;
+    assert!(server.requests.try_recv().is_err());
+    assert!(server
+        .api()
+        .call("playlist_create", json!({"name":"once"}), "")
+        .await
+        .unwrap()
+        .checked()
+        .is_err());
+    server.next().await;
+    assert!(server.requests.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn errors_timeouts_and_cancellation_do_not_retry_or_leak_capacity() {
     let mut server = Server::new(|request| {
-        let data = if request.path.starts_with("/eapi/") {
+        let data = if request.path.starts_with("/eapi/") || request.path.starts_with("/xeapi/") {
             request.eapi_data()
         } else {
             Value::Null
@@ -476,7 +818,10 @@ async fn errors_timeouts_and_cancellation_do_not_retry_or_leak_capacity() {
             .unwrap();
         assert_eq!(response.body["code"], code);
         assert_eq!(response.checked().unwrap_err(), message);
-        assert_eq!(server.next().await.path, "/eapi/song/enhance/player/url/v1");
+        assert_eq!(
+            server.next().await.path,
+            "/xeapi/song/enhance/player/url/v1"
+        );
     }
     assert!(api
         .call("playlist_create", json!({"name":"timeout"}), "")
@@ -529,4 +874,148 @@ async fn live_native_api_smoke() {
             "{operation}: missing {field}"
         );
     }
+}
+
+#[tokio::test]
+#[ignore = "requires an explicitly selected existing session and song; only resolves a playback URL"]
+async fn live_authenticated_song_url_smoke() {
+    let session_path = std::env::var("NCM_LIVE_SESSION_PATH").expect("set NCM_LIVE_SESSION_PATH");
+    let song_id = std::env::var("NCM_LIVE_SONG_ID").expect("set NCM_LIVE_SONG_ID");
+    let cookie: String = serde_json::from_slice(&std::fs::read(session_path).unwrap()).unwrap();
+    let api = NativeApi::new();
+    let response = api
+        .call("song_url", json!({"id":song_id,"level":"hires"}), &cookie)
+        .await
+        .unwrap()
+        .checked()
+        .unwrap();
+    let item = &response.body["data"][0];
+    native::diagnostics::record(
+        "info",
+        "test.authenticated_source",
+        json!({
+            "song_id": song_id, "code": item["code"], "quality": item["level"],
+            "url_present": item["url"].as_str().is_some_and(|url| !url.is_empty()),
+            "trial": item["freeTrialInfo"].is_object(),
+        }),
+    );
+    assert!(
+        item["url"].as_str().is_some_and(|url| !url.is_empty()),
+        "no playable URL"
+    );
+    assert!(
+        !item["freeTrialInfo"].is_object(),
+        "only a trial source is available"
+    );
+}
+
+#[tokio::test]
+#[ignore = "read-only comparison against the live service with an explicitly selected saved session"]
+async fn live_eapi_xeapi_comparison() {
+    let session_path = std::env::var("NCM_LIVE_SESSION_PATH").expect("set NCM_LIVE_SESSION_PATH");
+    let song_id = std::env::var("NCM_LIVE_SONG_ID").expect("set NCM_LIVE_SONG_ID");
+    let cookie: String = serde_json::from_slice(&std::fs::read(session_path).unwrap()).unwrap();
+    let client = ApiClient::new(None);
+    let old = client
+        .request(
+            "/api/song/enhance/player/url/v1",
+            json!({"ids":format!("[{song_id}]"),"level":"hires","encodeType":"flac"}),
+            ncm_api_rs::RequestOption {
+                crypto: ncm_api_rs::CryptoType::Eapi,
+                cookie: Some(cookie.clone()),
+                domain: Some("https://interface.music.163.com".into()),
+                ..Default::default()
+            },
+        )
+        .await;
+    match old {
+        Err(NcmError::Response {
+            http_status,
+            code,
+            message,
+            ..
+        }) => native::diagnostics::record(
+            "info",
+            "test.old_eapi_response",
+            json!({"http_status":http_status,"code":code,"message":message}),
+        ),
+        Ok(response) => native::diagnostics::record(
+            "info",
+            "test.old_eapi_response",
+            json!({"code":response.body["code"],"item_code":response.body["data"][0]["code"],"quality":response.body["data"][0]["level"]}),
+        ),
+        Err(error) => panic!("old EAPI transport/parse failed: {error}"),
+    }
+    let response = client
+        .song_url_v1(
+            &Query::new()
+                .cookie(&cookie)
+                .param("id", &song_id)
+                .param("level", "hires"),
+        )
+        .await
+        .unwrap();
+    let item = &response.body["data"][0];
+    native::diagnostics::record(
+        "info",
+        "test.new_xeapi_response",
+        json!({"code":response.body["code"],"item_code":item["code"],"quality":item["level"],"url_present":item["url"].as_str().is_some_and(|url| !url.is_empty()),"trial":item["freeTrialInfo"].is_object()}),
+    );
+    assert!(
+        item["url"].as_str().is_some_and(|url| !url.is_empty()),
+        "XEAPI did not return a playable source"
+    );
+    assert!(!item["freeTrialInfo"].is_object());
+}
+
+#[tokio::test]
+#[ignore = "read-only anonymous protocol comparison against the live service"]
+async fn live_anonymous_eapi_xeapi_comparison() {
+    let client = ApiClient::new(None);
+    let data = json!({"ids":"[347230]","level":"standard","encodeType":"flac"});
+    let old = client
+        .request(
+            "/api/song/enhance/player/url/v1",
+            data,
+            ncm_api_rs::RequestOption {
+                crypto: ncm_api_rs::CryptoType::Eapi,
+                cookie: Some(String::new()),
+                domain: Some("https://interface.music.163.com".into()),
+                ..Default::default()
+            },
+        )
+        .await;
+    match old {
+        Err(NcmError::Response {
+            http_status,
+            code,
+            message,
+            ..
+        }) => native::diagnostics::record(
+            "info",
+            "test.anonymous_old_eapi",
+            json!({"http_status":http_status,"code":code,"message":message}),
+        ),
+        Ok(response) => native::diagnostics::record(
+            "info",
+            "test.anonymous_old_eapi",
+            json!({"code":response.body["code"],"item_code":response.body["data"][0]["code"]}),
+        ),
+        Err(error) => panic!("EAPI transport/parse failed: {error}"),
+    }
+    let response = client
+        .song_url_v1(
+            &Query::new()
+                .cookie("")
+                .param("id", "347230")
+                .param("level", "standard"),
+        )
+        .await
+        .unwrap();
+    native::diagnostics::record(
+        "info",
+        "test.anonymous_new_xeapi",
+        json!({"code":response.body["code"],"item_code":response.body["data"][0]["code"]}),
+    );
+    assert_eq!(response.body["code"], 200);
 }

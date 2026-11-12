@@ -3,11 +3,15 @@ use super::{ApiFuture, ApiResponse, MusicApi};
 use base64::Engine;
 use ncm_api_rs::{ApiClient, NcmError, Query};
 use serde_json::{json, Value};
-use std::{io::Cursor, time::Duration};
+use std::{
+    io::Cursor,
+    time::{Duration, Instant},
+};
 use tokio::sync::Semaphore;
 
 const UPDATE_PATHS: [&str; 2] = ["/api/playlist/update/name", "/api/playlist/desc/update"];
 const TIMEOUT_MESSAGE: &str = "API 请求超时；操作可能已执行，请刷新确认";
+const NETWORK_MESSAGE: &str = "网易云网络连接失败，请检查网络或 API 服务配置";
 
 pub(super) struct NativeApi {
     client: ApiClient,
@@ -137,10 +141,46 @@ impl MusicApi for NativeApi {
                 .in_flight
                 .try_acquire()
                 .map_err(|_| "API 请求过多，请稍后重试".to_owned())?;
-            tokio::time::timeout(self.timeout, self.dispatch(&operation, &query))
+            let request_id = native::diagnostics::next_id();
+            // Only resolving playback URLs is replayed. Keep writes, login and
+            // permission/rate-limit failures single-shot. Both attempts share
+            // one timeout and one permit, and cancellation drops the whole future.
+            tokio::time::timeout(self.timeout, async {
+                for attempt in 1..=2 {
+                    let started = Instant::now();
+                    let result = self.dispatch(&operation, &query).await;
+                    let retry = operation == "song_url" && attempt == 1 && retryable(&result);
+                    native::diagnostics::record(
+                        if result.as_ref().is_ok_and(|r| r.status == 200 && r.body["code"].as_i64().unwrap_or(200) == 200) { "info" } else { "warn" },
+                        "api.attempt_finished",
+                        json!({"request_id": request_id, "operation": operation, "song_id": query.get_or("id", ""),
+                            "quality": query.get_or("level", ""), "attempt": attempt,
+                            "elapsed_ms": started.elapsed().as_millis(), "retry": retry,
+                            "sdk_status": result.as_ref().ok().map(|r| r.status),
+                            "code": result.as_ref().ok().map(|r| &r.body["code"]),
+                            "actual_quality": result.as_ref().ok().map(|r| &r.body["data"][0]["level"]),
+                            "error": result.as_ref().err()}),
+                    );
+                    if !retry { return result; }
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
+                unreachable!("second attempt always returns")
+            })
                 .await
                 .map_err(|_| TIMEOUT_MESSAGE.to_owned())?
         })
+    }
+}
+
+fn retryable(result: &Result<ApiResponse, String>) -> bool {
+    match result {
+        Ok(response) => matches!(
+            response.body["code"]
+                .as_i64()
+                .unwrap_or(i64::from(response.status)),
+            500 | 502 | 504 | 520..=524
+        ),
+        Err(error) => error == NETWORK_MESSAGE || error == TIMEOUT_MESSAGE,
     }
 }
 
@@ -239,15 +279,80 @@ fn adapt_response(
                 cookie: response.cookie,
             })
         }
-        Err(NcmError::Api { code, msg }) => Ok(rejection(code, &msg)),
-        Err(NcmError::AuthRequired(message)) => Ok(rejection(301, &message)),
-        Err(NcmError::InvalidParam(message)) => Ok(rejection(400, &message)),
-        Err(NcmError::RateLimited(message)) => Ok(rejection(503, &message)),
+        Err(NcmError::Api { code, msg }) => Ok(sdk_rejection(code, &msg)),
+        Err(NcmError::Response {
+            endpoint,
+            http_status,
+            code,
+            message,
+            mut body,
+            cookie,
+        }) => {
+            native::diagnostics::record(
+                "error",
+                "api.server_rejected",
+                json!({
+                    "endpoint": endpoint, "http_status": http_status, "code": code,
+                    "message": message,
+                }),
+            );
+            if !body.is_object() {
+                body = json!({});
+            }
+            body["code"] = code.into();
+            if !super::meaningful_message(body["message"].as_str().unwrap_or(""))
+                && !super::meaningful_message(body["msg"].as_str().unwrap_or(""))
+            {
+                body["message"] = super::rejection_message(code).into();
+            }
+            Ok(ApiResponse {
+                status: http_status,
+                body,
+                cookie,
+            })
+        }
+        Err(NcmError::AuthRequired(message)) => Ok(sdk_rejection(301, &message)),
+        Err(NcmError::InvalidParam(message)) => Ok(sdk_rejection(400, &message)),
+        Err(NcmError::RateLimited(message)) => Ok(sdk_rejection(503, &message)),
         Err(NcmError::Timeout(_)) => Err(TIMEOUT_MESSAGE.into()),
-        Err(NcmError::Http(error)) if error.is_timeout() => Err(TIMEOUT_MESSAGE.into()),
-        // Network/crypto errors may contain request details. Do not expose credentials.
-        Err(_) => Err("网易云请求失败，请检查网络或 API 服务配置；未自动重试请求".into()),
+        Err(NcmError::Http(error)) => {
+            let timeout = error.is_timeout();
+            let connect = error.is_connect();
+            let error = error.without_url();
+            native::diagnostics::record(
+                "error",
+                "api.transport_failed",
+                json!({
+                    "timeout": timeout, "connect": connect,
+                    "causes": native::diagnostics::error_chain(&error),
+                }),
+            );
+            Err(if timeout {
+                TIMEOUT_MESSAGE
+            } else {
+                NETWORK_MESSAGE
+            }
+            .into())
+        }
+        Err(NcmError::Crypto(message)) => {
+            native::diagnostics::record("error", "api.crypto_failed", json!({"cause": message}));
+            Err(format!("网易云协议加解密失败：{message}"))
+        }
+        Err(NcmError::Json(error)) => Err(format!("网易云响应 JSON 解析失败：{error}")),
+        // Unknown SDK errors may contain credentials; expose the failing component.
+        Err(NcmError::Unknown(_)) => Err("网易云 SDK 请求处理失败，未提供可公开的错误说明".into()),
     }
+}
+
+fn sdk_rejection(code: i64, message: &str) -> ApiResponse {
+    rejection(
+        code,
+        &if super::meaningful_message(message) {
+            message.to_owned()
+        } else {
+            super::rejection_message(code)
+        },
+    )
 }
 
 fn qr_image(url: &str) -> Result<String, String> {

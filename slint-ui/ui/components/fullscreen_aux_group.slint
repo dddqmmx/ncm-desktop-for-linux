@@ -8,17 +8,31 @@ export component FullscreenAuxGroup inherits Rectangle {
     in property <color> text-color: #ffffff;
     horizontal-stretch: 1;
     height: 72px;
+    // The four configurable controls can all be moved to one side. Pack only
+    // visible buttons and reduce their gaps to fit that side of the transport.
+    pure function shown(index: int) -> bool {
+        return index < root.items.length && root.items[index].visible &&
+            (root.items[index].id != "volume" || AudioState.can-adjust-volume);
+    }
+    pure function visible-before(index: int) -> int {
+        return (index > 0 && root.shown(0) ? 1 : 0) +
+            (index > 1 && root.shown(1) ? 1 : 0) +
+            (index > 2 && root.shown(2) ? 1 : 0) +
+            (index > 3 && root.shown(3) ? 1 : 0);
+    }
+    property <int> visible-count: root.visible-before(root.items.length);
+    property <length> gap: Math.clamp((root.width - root.visible-count * 20px) / Math.max(1, root.visible-count - 1), 0px, 24px);
     HorizontalLayout {
         x: 0px; y: 0px;
         width: 100%; height: 100%;
         alignment: root.align-right ? end : start;
-        spacing: 24px;
-        for item in root.items : Rectangle {
-            width: item.visible && (item.id != "volume" || AudioState.can-adjust-volume) ? 20px : 0px;
+        spacing: 0px;
+        for item[index] in root.items : aux-slot := Rectangle {
+            width: root.shown(index) ? 20px + (root.visible-before(index) < root.visible-count - 1 ? root.gap : 0px) : 0px;
             height: 20px;
             y: (parent.height - self.height) / 2;
-            visible: item.visible && (item.id != "volume" || AudioState.can-adjust-volume);
-            FullscreenAuxBtn { btn-id: item.id; text-color: root.text-color; }
+            visible: root.shown(index);
+            aux-button := FullscreenAuxBtn { btn-id: item.id; text-color: root.text-color; }
         }
     }
 }

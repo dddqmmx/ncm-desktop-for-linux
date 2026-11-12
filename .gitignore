@@ -15,5 +15,8 @@ yarn.lock
 native-seek-regression-report.json
 # 参考用的第三方仓库（独立 git 仓库，不属于本项目）
 spotifast/
+# API 源码和对照仓库均为独立 Git 仓库。
+/ncm-api-rs/
+/neteasecloudmusicapi-enhanced/
 # 首选客户端的 Cargo 工作区构建产物
 /target/

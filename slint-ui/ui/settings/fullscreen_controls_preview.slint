@@ -1,0 +1,146 @@
+import { SettingsState } from "../state/settings.slint";
+import { AuxButtonItem } from "../models.slint";
+import { AuxVisibilityButton } from "aux_visibility_button.slint";
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppIcon } from "../components/common.slint";
+
+component AuxDock inherits Rectangle {
+    in property <[AuxButtonItem]> items;
+    in property <bool> align-right;
+    in property <string> drag-id;
+    in property <string> hover-id;
+    horizontal-stretch: 1;
+    min-width: 40px;
+    height: 40px;
+    for item[idx] in root.items : aux-button := AuxVisibilityButton {
+        x: (root.align-right ? root.width - (root.items.length * 48px - 14px) : 0px) + idx * 48px;
+        y: 3px;
+        shown: item.visible;
+        hovered: root.hover-id == item.id;
+        opacity: root.drag-id == item.id ? 0.3 : item.visible ? 1.0 : 0.34;
+        icon: item.id == "favorite" ? Icons.heart : item.id == "comment" ? Icons.comment : item.id == "playMode" ? Icons.loop : Icons.volume;
+        accessible-role: button;
+        accessible-label: item.id == "favorite" ? "喜欢" : item.id == "comment" ? "评论" : item.id == "playMode" ? "播放顺序" : "音量";
+        accessible-checkable: true;
+        accessible-checked: item.visible;
+        accessible-action-default => { SettingsState.toggle-fullscreen-aux(item.id); }
+    }
+}
+
+export component FullscreenControlsPreview inherits Rectangle {
+    height: 76px;
+    border-radius: 18px;
+    background: Theme.sys-bg-muted;
+    border-width: 1px;
+    border-color: Theme.sys-border;
+    property <string> pressed-id;
+    property <bool> pressed-visible;
+    property <length> start-x;
+    property <length> start-y;
+    property <bool> dragging: false;
+    property <length> pointer-x: touch.mouse-x;
+    property <length> pointer-y: touch.mouse-y;
+    property <bool> target-left: root.pointer-x < root.width / 2;
+    property <int> target-count: root.target-left ? SettingsState.fullscreen-aux-left.length : SettingsState.fullscreen-aux-right.length;
+    property <length> target-start: root.dock-start(root.target-left);
+    property <int> target-index: Math.clamp(Math.floor((root.pointer-x - root.target-start + 31px) / 48px), 0, root.target-count);
+    property <bool> valid-drop: root.pointer-y >= 0px && root.pointer-y <= root.height &&
+        ((root.pointer-x >= left-dock.x && root.pointer-x <= left-dock.x + left-dock.width) ||
+         (root.pointer-x >= right-dock.x && root.pointer-x <= right-dock.x + right-dock.width));
+    property <string> hover-id: root.hit-button(root.pointer-x, root.pointer-y);
+
+    pure function dock-start(left: bool) -> length {
+        return left ? left-dock.x + left-dock.width - Math.max(0px, SettingsState.fullscreen-aux-left.length * 48px - 14px) : right-dock.x;
+    }
+    pure function hit-button(x: length, y: length) -> string {
+        if y < (root.height - 34px) / 2 || y > (root.height + 34px) / 2 { return ""; }
+        let left = x < root.width / 2;
+        let offset = x - root.dock-start(left);
+        let index = Math.floor(offset / 48px);
+        let count = left ? SettingsState.fullscreen-aux-left.length : SettingsState.fullscreen-aux-right.length;
+        if offset < 0px || index >= count || offset - index * 48px > 34px { return ""; }
+        return left ? SettingsState.fullscreen-aux-left[index].id : SettingsState.fullscreen-aux-right[index].id;
+    }
+    function cancel-drag() {
+        root.dragging = false;
+        root.pressed-id = "";
+    }
+    function finish() {
+        if root.pressed-id != "" {
+            if root.dragging && root.valid-drop {
+                SettingsState.move-fullscreen-aux(root.pressed-id, root.target-left, root.target-index);
+            } else if !root.dragging && root.hit-button(root.pointer-x, root.pointer-y) == root.pressed-id {
+                SettingsState.toggle-fullscreen-aux(root.pressed-id);
+            }
+        }
+        root.cancel-drag();
+    }
+
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 20px;
+        cross-axis-alignment: center;
+        left-dock := AuxDock {
+            items: SettingsState.fullscreen-aux-left;
+            align-right: true;
+            drag-id: root.dragging ? root.pressed-id : "";
+            hover-id: touch.has-hover ? root.hover-id : "";
+        }
+        HorizontalLayout {
+            horizontal-stretch: 0;
+            spacing: 18px;
+            alignment: center;
+            AppIcon { y: (parent.height - self.height) / 2; source: Icons.prev; icon-size: 20px; tint: Theme.sys-text; opacity: 0.55; }
+            Rectangle {
+                width: 40px; height: 40px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 20px;
+                background: Theme.sys-text;
+                AppIcon { x: 11px; y: 11px; source: Icons.play; icon-size: 18px; tint: Theme.sys-bg; }
+            }
+            AppIcon { y: (parent.height - self.height) / 2; source: Icons.next; icon-size: 20px; tint: Theme.sys-text; opacity: 0.55; }
+        }
+        right-dock := AuxDock {
+            items: SettingsState.fullscreen-aux-right;
+            align-right: false;
+            drag-id: root.dragging ? root.pressed-id : "";
+            hover-id: touch.has-hover ? root.hover-id : "";
+        }
+    }
+    if root.dragging && root.valid-drop : Rectangle {
+        x: Math.clamp(root.target-start + root.target-index * 48px - 8px, root.target-left ? left-dock.x : right-dock.x, root.target-left ? left-dock.x + left-dock.width - 2px : right-dock.x + right-dock.width - 2px);
+        y: (root.height - 40px) / 2;
+        width: 2px; height: 40px;
+        border-radius: 1px;
+        background: Theme.theme-color;
+    }
+    if root.dragging : AuxVisibilityButton {
+        x: Math.clamp(root.pointer-x - 17px, 0px, root.width - 34px);
+        y: Math.clamp(root.pointer-y - 17px, 0px, root.height - 34px);
+        shown: root.pressed-visible;
+        hovered: true;
+        icon: root.pressed-id == "favorite" ? Icons.heart : root.pressed-id == "comment" ? Icons.comment : root.pressed-id == "playMode" ? Icons.loop : Icons.volume;
+    }
+    // One pointer grab stays alive while crossing docks, including an empty dock.
+    // Handle click on release here so completing a drag never toggles visibility.
+    touch := TouchArea {
+        mouse-cursor: root.dragging ? grabbing : root.hover-id != "" ? grab : default;
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.cancel { root.cancel-drag(); }
+            if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {
+                root.cancel-drag();
+                root.pressed-id = root.hit-button(self.mouse-x, self.mouse-y);
+                root.start-x = self.mouse-x;
+                root.start-y = self.mouse-y;
+                let index = Math.floor((self.mouse-x - root.dock-start(root.target-left)) / 48px);
+                if root.pressed-id != "" { root.pressed-visible = root.target-left ? SettingsState.fullscreen-aux-left[index].visible : SettingsState.fullscreen-aux-right[index].visible; }
+            }
+            if event.kind == PointerEventKind.move && self.pressed && root.pressed-id != "" {
+                if Math.abs(self.mouse-x - root.start-x) >= 5px || Math.abs(self.mouse-y - root.start-y) >= 5px { root.dragging = true; }
+            }
+            if event.kind == PointerEventKind.up && event.button == PointerEventButton.left { root.finish(); }
+        }
+    }
+}

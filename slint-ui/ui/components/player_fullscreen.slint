@@ -4,6 +4,7 @@ import { FullscreenVisualPanel } from "fullscreen_visual.slint";
 import { CommentPanelView } from "comment_panel.slint";
 import { LyricPanelView } from "lyric_panel.slint";
 import { Icons } from "../icons.slint";
+import { Theme } from "../theme.slint";
 
 import { AppIcon } from "common.slint";
 
@@ -38,10 +39,12 @@ export component PlayerFullscreen inherits Rectangle {
     width: 100%;
     height: 100%;
 
-    property <color> text-color: PlayerViewState.fullscreen-is-dark ? #ffffff : #000000;
-    property <color> contrast-color: PlayerViewState.fullscreen-is-dark ? rgba(255, 255, 255, 0.15) : rgba(0, 0, 0, 0.10);
-    property <color> btn-bg: PlayerViewState.fullscreen-is-dark ? #ffffff : #000000;
-    property <color> btn-text: PlayerViewState.fullscreen-is-dark ? #000000 : #ffffff;
+    property <bool> is-dark: PlayerViewState.fullscreen-use-accent || PlayerViewState.fullscreen-is-dark;
+    property <color> text-color: root.is-dark ? #ffffff : #000000;
+    animate text-color { duration: 800ms; easing: ease; }
+    property <color> contrast-color: root.is-dark ? rgba(255, 255, 255, 0.15) : rgba(0, 0, 0, 0.10);
+    property <color> btn-bg: root.text-color;
+    property <color> btn-text: root.is-dark ? #000000 : #ffffff;
 
     TouchArea {
         clicked => {
@@ -53,7 +56,9 @@ export component PlayerFullscreen inherits Rectangle {
     Rectangle {
         width: 100%;
         height: 100%;
-        background: @linear-gradient(135deg, PlayerViewState.fullscreen-bg-primary 0%, PlayerViewState.fullscreen-bg-secondary 100%);
+        background: @linear-gradient(135deg,
+            (PlayerViewState.fullscreen-use-accent ? Theme.theme-color : PlayerViewState.fullscreen-bg-primary) 0%,
+            (PlayerViewState.fullscreen-use-accent ? Theme.theme-color-strong : PlayerViewState.fullscreen-bg-secondary) 100%);
         animate background { duration: 1500ms; easing: ease; }
     }
 
@@ -126,13 +131,13 @@ export component PlayerFullscreen inherits Rectangle {
                 if PlayerViewState.is-comment-open && !PlayerState.current-song-is-local : CommentPanelView {
                     width: 100%;
                     height: 100%;
-                    is-dark: PlayerViewState.fullscreen-is-dark;
+                    is-dark: root.is-dark;
                 }
 
                 if !PlayerViewState.is-comment-open && !PlayerState.current-song-is-local : LyricPanelView {
                     width: 100%;
                     height: 100%;
-                    is-dark: PlayerViewState.fullscreen-is-dark;
+                    is-dark: root.is-dark;
                 }
 
                 if PlayerState.current-song-is-local : Rectangle {

@@ -14,6 +14,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Checkout the independent API SDK
+        uses: actions/checkout@v4
+        with:
+          repository: dddqmmx/ncm-api-rs
+          path: ncm-api-rs
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -25,22 +31,18 @@ jobs:
             libxkbcommon-dev libwayland-dev libgl1-mesa-dev
 
       - name: Cache Cargo
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-            native/target/
-          key: ${{ runner.os }}-slint-cargo-${{ hashFiles('Cargo.lock', 'native/Cargo.lock') }}
+          shared-key: slint
 
       - name: Check Slint UI structure
         run: python3 slint-ui/scripts/check_ui_quality.py
 
+      - name: Test Rust API SDK
+        run: CARGO_TARGET_DIR=target cargo test --manifest-path ncm-api-rs/Cargo.toml --locked --lib --test error --test query
+
       - name: Test
-        run: cargo test --locked
+        run: cargo test --workspace --locked
 
       - name: Build
         run: cargo build --locked --release
@@ -65,6 +67,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Checkout the independent API SDK
+        uses: actions/checkout@v4
+        with:
+          repository: dddqmmx/ncm-api-rs
+          path: ncm-api-rs
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -85,24 +93,16 @@ jobs:
 
       # 缓存 Rust 编译产物
       - name: Cache Cargo
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            native/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('native/Cargo.lock') }}
+          shared-key: electron
 
       - name: Install dependencies
         run: npm install
 
-      # 执行检查
-      - name: Lint and Typecheck
-        run: |
-          npm run lint
-          npm run typecheck
+      # npm run build 已包含 typecheck，避免重复执行
+      - name: Lint
+        run: npm run lint
 
       # 构建项目 (包含 build:native 和 electron-vite build)
       - name: Build project

@@ -141,6 +141,14 @@ where
         match cmd {
             PlayerCommand::Play(source, start_secs, reply_tx) => {
                 let kind = source.kind();
+                let started = std::time::Instant::now();
+                crate::diagnostics::record(
+                    "info",
+                    "player.play_started",
+                    serde_json::json!({
+                        "source": kind, "start_secs": start_secs, "device": self.requested_device,
+                    }),
+                );
                 // 音量随会话实时可调（不同于开播即冻结的独占/BitPerfect 选项），
                 // 开播前先把渲染层最近下发的值种进新会话，防止前端漏发/丢包
                 // 导致新会话带着旧值开播。
@@ -148,9 +156,15 @@ where
                 let result = self
                     .play_source(source, start_secs_to_duration(start_secs))
                     .await;
-                if let Err(err) = &result {
-                    eprintln!("Play {} failed: {}", kind, err);
-                }
+                crate::diagnostics::record(
+                    if result.is_ok() { "info" } else { "error" },
+                    "player.play_finished",
+                    serde_json::json!({
+                        "source": kind, "device": self.requested_device,
+                        "elapsed_ms": started.elapsed().as_millis(),
+                        "error": result.as_ref().err().map(|e| crate::diagnostics::redact_urls(e)),
+                    }),
+                );
                 if let Some(reply_tx) = reply_tx {
                     let _ = reply_tx.send(result);
                 }

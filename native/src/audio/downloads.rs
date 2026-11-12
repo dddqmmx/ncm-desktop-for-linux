@@ -65,10 +65,8 @@ pub(crate) async fn open_http_stream(
         HttpStream::new(HTTP_CLIENT.clone(), parsed),
     )
     .await
-    .map_err(|_| format!("open stream timed out after {STREAM_OPEN_TIMEOUT_SECS}s: {url}"))?
-    .map_err(|err| {
-        Box::<dyn std::error::Error>::from(format!("failed to open stream {url}: {err}"))
-    })
+    .map_err(|_| format!("音源 HTTP 响应头等待超时（{STREAM_OPEN_TIMEOUT_SECS}s）"))?
+    .map_err(|err| crate::diagnostics::stage_error("打开音源 HTTP 连接", &err))
 }
 
 /// 无缓存（边下边播）的流式下载：只暂存在内存/临时目录，不落缓存目录。

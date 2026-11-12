@@ -29,6 +29,7 @@ pub struct DecodedImage {
     pub target: ImageTarget,
     pub epoch: u64,
     pub pixels: SharedPixelBuffer<Rgba8Pixel>,
+    pub palette: Option<crate::fullscreen_palette::CoverPalette>,
 }
 
 pub enum ImageTarget {
@@ -140,17 +141,20 @@ impl ImageLoader {
                 }
                 // Disk reads, decoding, resizing and pixel allocation must all stay
                 // off the Slint thread, including when the disk cache is warm.
-                let pixels = tokio::task::spawn_blocking(move || {
+                let decoded = tokio::task::spawn_blocking(move || {
                     let _permit = permit;
-                    decode(Path::new(&path), size)
+                    let pixels = decode(Path::new(&path), size)?;
+                    let palette = crate::fullscreen_palette::extract(&pixels);
+                    Ok::<_, String>((pixels, palette))
                 })
                 .await;
-                if let Ok(Ok(pixels)) = pixels {
+                if let Ok(Ok((pixels, palette))) = decoded {
                     if epoch == current_epoch.load(Ordering::Acquire) {
                         slot.send(DecodedImage {
                             target: ImageTarget::Cover(url, size),
                             epoch,
                             pixels,
+                            palette,
                         });
                     }
                 }
@@ -186,6 +190,7 @@ impl ImageLoader {
             target: ImageTarget::LoginQr(token),
             epoch,
             pixels,
+            palette: None,
         });
         Ok(())
     }

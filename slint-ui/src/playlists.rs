@@ -327,6 +327,7 @@ impl Library {
 }
 
 pub fn attach(app: &AppWindow) {
+    crate::detail_search::attach(app);
     queue::attach(app);
     let library_state = app.global::<crate::LibraryState>();
     let detail_state = app.global::<crate::DetailState>();

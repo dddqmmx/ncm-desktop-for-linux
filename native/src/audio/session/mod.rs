@@ -572,7 +572,14 @@ impl Session {
             return;
         }
 
-        eprintln!("{message}");
+        crate::diagnostics::record(
+            "error",
+            "audio.session_failed",
+            serde_json::json!({
+                "device_lost": device_lost, "position_ms": self.position().as_millis(),
+                "error": crate::diagnostics::redact_urls(message),
+            }),
+        );
         // 保留当前位置：设备丢失后调用方要按它迁移续播。
         self.seek_pending.store(false, Ordering::Release);
         self.drained.store(true, Ordering::Release);

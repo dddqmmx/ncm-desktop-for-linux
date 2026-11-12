@@ -251,8 +251,20 @@ export component MediaDetailView inherits Rectangle {
     width: 100%;
     height: 100%;
     property <int> playlist-id: PlaylistState.active-playlist-id;
-    changed playlist-id => { if root.variant == "playlist" { detail-scroll.content-y = 0px; } }
+    changed playlist-id => {
+        if root.variant == "playlist" {
+            DetailState.detail-search-query = "";
+            detail-scroll.content-y = 0px;
+        }
+    }
     changed loading => { if root.loading { detail-scroll.content-y = 0px; } }
+    property <string> search-query: DetailState.detail-search-query;
+    property <[TrackItem]> visible-songs: root.variant == "playlist" && root.search-query != ""
+        ? DetailState.filter-tracks(root.songs, root.search-query) : root.songs;
+    changed search-query => {
+        SongMenuState.close-menu();
+        detail-scroll.content-y = 0px;
+    }
 
     // .playlist-container: width 1149px (1159 - 10px scrollbar), max-width 1200px, padding 40px
     property <length> avail-w: root.width - 10px;
@@ -299,7 +311,8 @@ export component MediaDetailView inherits Rectangle {
                 x: 40px;
                 y: 40px + detail-header.height + 48px;
                 width: parent.width - 80px;
-                songs: root.songs;
+                songs: root.visible-songs;
+                searching: root.variant == "playlist" && root.search-query != "" && root.songs.length > 0;
                 loading: root.loading;
                 load-error: root.load-error;
                 retry => { PlaylistState.open-playlist(PlaylistState.active-playlist-id); }

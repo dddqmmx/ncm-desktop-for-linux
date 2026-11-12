@@ -12,7 +12,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex, RwLock,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::sync::mpsc;
 #[derive(Clone, Debug)]
@@ -62,7 +62,17 @@ impl Services {
         }
         let (data, error) = match result {
             Ok(v) => (v, None),
-            Err(e) => (Value::Null, Some(e)),
+            Err(e) => {
+                native::diagnostics::record(
+                    "error",
+                    "runtime.command_failed",
+                    json!({
+                        "command": name, "token": token, "epoch": epoch,
+                        "error": native::diagnostics::redact_urls(&e),
+                    }),
+                );
+                (Value::Null, Some(e))
+            }
         };
         let _ = self.events.send(Event {
             name: name.into(),
@@ -100,13 +110,26 @@ impl Services {
                 }
             }
         }
-        let body = self
+        let started = Instant::now();
+        let context = json!({"operation": op, "id": p["id"], "quality": p["level"],
+            "authenticated": !cookie.is_empty()});
+        native::diagnostics::record("info", "api.call_started", context.clone());
+        let response = self
             .api
             .as_ref()
             .map_err(Clone::clone)?
             .call(op, p, cookie)
-            .await?
-            .checked()?
+            .await;
+        let result = response.and_then(|response| response.checked());
+        native::diagnostics::record(
+            if result.is_ok() { "info" } else { "error" },
+            "api.call_finished",
+            json!({"request": context,
+                "elapsed_ms": started.elapsed().as_millis(),
+                "error": result.as_ref().err().map(|e| native::diagnostics::redact_urls(e))}),
+        );
+        let body = result
+            .map_err(|error| format!("接口 {op} 请求失败：{error}"))?
             .body;
         if let Some(bucket) = bucket {
             let _ = self
@@ -392,6 +415,31 @@ impl Services {
         version: u64,
         request_token: u64,
     ) -> Result<Value, String> {
+        let started = Instant::now();
+        let prefs = self.prefs.read().unwrap().clone();
+        let (strict, exclusive) = prefs.output_options(prefs.device.as_deref());
+        let context = json!({"token": request_token, "version": version,
+            "song_id": data["song"]["id"], "quality": prefs.quality,
+            "local": data["song"]["path"].is_string(), "position_ms": data["position_ms"],
+            "device": prefs.device, "strict": strict, "exclusive": exclusive});
+        native::diagnostics::record("info", "playback.start_requested", context.clone());
+        let result = self.play_inner(data, version, request_token).await;
+        native::diagnostics::record(
+            if result.is_ok() { "info" } else { "error" },
+            "playback.start_finished",
+            json!({"request": context,
+                "elapsed_ms": started.elapsed().as_millis(),
+                "superseded": version != self.play_version.load(Ordering::Acquire),
+                "error": result.as_ref().err().map(|e| native::diagnostics::redact_urls(e))}),
+        );
+        result.map_err(|error| format!("播放失败（歌曲 {}）：{error}", text(&data["song"]["id"])))
+    }
+    async fn play_inner(
+        self: &Arc<Self>,
+        data: &Value,
+        version: u64,
+        request_token: u64,
+    ) -> Result<Value, String> {
         let song: Song = serde_json::from_value(data["song"].clone()).map_err(|e| e.to_string())?;
         let start_secs =
             Some(clamp_position(&song, data["position_ms"].as_u64().unwrap_or(0)) as f64 / 1000.0);
@@ -399,6 +447,7 @@ impl Services {
         let prefs = self.prefs.read().unwrap().clone();
         let (strict, exclusive) = prefs.output_options(prefs.device.as_deref());
         let mut source = None;
+        let mut notice = Value::Null;
         *self.metadata.lock().unwrap() = None;
         if song.path.is_none() {
             let body = self
@@ -408,9 +457,19 @@ impl Services {
                     &self.cookie(),
                 )
                 .await?;
+            notice = body["playback_notice"].clone();
             let item = &body["data"][0];
             let url = text(&item["url"]);
             if url.is_empty() || item["freeTrialInfo"].is_object() {
+                native::diagnostics::record(
+                    "warn",
+                    "playback.source_unavailable",
+                    json!({
+                        "token": request_token, "song_id": song.id, "quality": prefs.quality,
+                        "item_code": item["code"], "trial": item["freeTrialInfo"].is_object(),
+                        "url_present": !url.is_empty(), "fee": item["fee"],
+                    }),
+                );
                 return Err("该歌曲暂无可用的完整音源，请检查会员、购买权限或所选音质".into());
             }
             let id = song.id.parse::<i64>().map_err(|_| "无效的歌曲 ID")?;
@@ -419,13 +478,21 @@ impl Services {
                 self.cache
                     .prepare_song_source(id, quality, url, item["size"].as_i64())
                     .await
-                    .map_err(|e| e.to_string())?,
+                    .map_err(|e| format!("准备歌曲缓存失败：{e}"))?,
             );
         }
         let _gate = self.playback_gate.lock().await;
         if version != self.play_version.load(Ordering::Acquire) {
             return Ok(Value::Null);
         }
+        native::diagnostics::record(
+            "info",
+            "playback.source_ready",
+            json!({
+                "token": request_token, "song_id": song.id,
+                "source": source.as_ref().map(|source| source.r#type.as_str()).unwrap_or("local"),
+            }),
+        );
         let result = if let Some(path) = &song.path {
             player
                 .play_file(
@@ -484,7 +551,7 @@ impl Services {
                 _ => {}
             }
         });
-        Ok(json!({ "song" : song }))
+        Ok(json!({ "song" : song, "notice": notice }))
     }
     async fn devices(&self) -> Result<Value, String> {
         let devices = self
@@ -1470,7 +1537,10 @@ mod tests {
                 "account-a",
             )
             .await;
-        assert_eq!(result.unwrap_err(), "partial update rejected");
+        assert_eq!(
+            result.unwrap_err(),
+            "接口 playlist_update 请求失败：partial update rejected"
+        );
         assert_eq!(
             api.calls
                 .lock()

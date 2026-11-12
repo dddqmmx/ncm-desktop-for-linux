@@ -23,13 +23,26 @@ impl ApiResponse {
         if !self.body.is_object() {
             return Err("API 未返回有效数据".into());
         }
-        let code = self.body["code"].as_i64().unwrap_or(200);
+        let code = self.body["code"]
+            .as_i64()
+            .or_else(|| {
+                self.body["code"]
+                    .as_str()
+                    .and_then(|code| code.parse().ok())
+            })
+            .unwrap_or(200);
         if !(200..300).contains(&self.status) || code != 200 {
-            return Err(self.body["message"]
-                .as_str()
-                .or(self.body["msg"].as_str())
-                .unwrap_or("网易云服务拒绝了请求，请检查登录状态和权限")
-                .to_owned());
+            let message = [self.body["message"].as_str(), self.body["msg"].as_str()]
+                .into_iter()
+                .flatten()
+                .find(|message| meaningful_message(message));
+            return Err(message.map(str::to_owned).unwrap_or_else(|| {
+                rejection_message(if code == 200 {
+                    i64::from(self.status)
+                } else {
+                    code
+                })
+            }));
         }
         Ok(self)
     }
@@ -43,6 +56,24 @@ impl ApiResponse {
             .collect::<Vec<_>>()
             .join("; ")
     }
+}
+
+fn meaningful_message(message: &str) -> bool {
+    let message = message.trim();
+    !message.is_empty()
+        && !message.eq_ignore_ascii_case("unknown error")
+        && !message.eq_ignore_ascii_case("unknown")
+}
+
+fn rejection_message(code: i64) -> String {
+    let reason = match code {
+        301 | 401 => "登录已失效，请重新登录",
+        403 => "服务端拒绝访问，请检查账号和歌曲权限",
+        429 | 503 => "服务端限制请求频率，请稍后重试",
+        500..=599 => "网易云服务暂时异常，请稍后重试",
+        _ => "网易云服务拒绝请求，未提供具体原因",
+    };
+    format!("{reason}（状态码 {code}）")
 }
 struct HttpApi {
     endpoint: String,
@@ -96,5 +127,38 @@ pub fn configured_provider() -> Result<Arc<dyn MusicApi>, String> {
         Ok(Arc::new(HttpApi { endpoint, client }))
     } else {
         Ok(Arc::new(native::NativeApi::new()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn uninformative_errors_keep_http_or_business_codes() {
+        for message in [Value::Null, json!(""), json!("   "), json!("Unknown error")] {
+            let response = ApiResponse {
+                status: 200,
+                body: json!({"code":"403","message":message}),
+                cookie: vec![],
+            };
+            assert_eq!(
+                response.checked().unwrap_err(),
+                "服务端拒绝访问，请检查账号和歌曲权限（状态码 403）"
+            );
+        }
+        let response = ApiResponse {
+            status: 504,
+            body: json!({"code":200}),
+            cookie: vec![],
+        };
+        assert!(response.checked().unwrap_err().contains("504"));
+        let response = ApiResponse {
+            status: 403,
+            body: json!({"code":403,"message":"Unknown error","msg":"未购买"}),
+            cookie: vec![],
+        };
+        assert_eq!(response.checked().unwrap_err(), "未购买");
     }
 }

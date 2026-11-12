@@ -1,10 +1,14 @@
 import { Icons } from "../icons.slint";
 import { TrackItem } from "../models.slint";
 import { DemoLibrary } from "../fixtures/library.slint";
+import { NavigationState } from "navigation.slint";
 
 // Active album/favorites/search result view; independent of playlist tracks.
 export global DetailState {
     in-out property <string> detail-search-query: "";
+    pure callback filter-tracks([TrackItem], string) -> [TrackItem];
+    private property <string> route: NavigationState.current-route;
+    changed route => { self.detail-search-query = ""; }
     in-out property <string> album-title: "Hurry Up, We're Dreaming";
     in-out property <string> album-artist: "M83";
     in-out property <image> album-cover: Icons.cover-cyan;

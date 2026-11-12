@@ -32,7 +32,7 @@ const isWebApiOutput = computed(() => audioEngine.value === 'webapi')
 const exclusiveModeValue = computed({
   get: () => strictBitPerfect.value || exclusiveMode.value,
   set: (enabled: boolean) => {
-    if (!strictBitPerfect.value && !isWebApiOutput.value) {
+    if (!strictBitPerfect.value && (!enabled || supportsExclusiveOutput.value)) {
       exclusiveMode.value = enabled
     }
   }
@@ -185,14 +185,14 @@ onBeforeUnmount(() => {
         :description="
           supportsExclusiveOutput
             ? '仅 Native 输出可用；严格 BitPerfect 打开时会强制启用'
-            : '“系统默认输出”是混音服务器的虚拟端点，独占无从谈起；选择一个硬件端点后自动恢复'
+            : '当前输出不支持独占；已保存的设置可以关闭，选择硬件端点后才能开启'
         "
       >
         <input
           v-model="exclusiveModeValue"
           type="checkbox"
           class="modern-switch"
-          :disabled="strictBitPerfect || isWebApiOutput || !supportsExclusiveOutput"
+          :disabled="strictBitPerfect || (!exclusiveMode && !supportsExclusiveOutput)"
         />
       </SettingRow>
 
@@ -201,14 +201,14 @@ onBeforeUnmount(() => {
         :description="
           supportsExclusiveOutput
             ? '仅 Native 输出可用；设备必须原生支持当前音源格式'
-            : 'BitPerfect 必须直通 hw: 硬件端点，请先在上方选择具体的输出设备'
+            : '当前输出不支持 BitPerfect；已保存的设置可以关闭，选择 hw: 硬件端点后才能开启'
         "
       >
         <input
           v-model="strictBitPerfect"
           type="checkbox"
           class="modern-switch"
-          :disabled="isWebApiOutput || !supportsExclusiveOutput"
+          :disabled="!strictBitPerfect && (isWebApiOutput || !supportsExclusiveOutput)"
         />
       </SettingRow>
     </SettingGroup>

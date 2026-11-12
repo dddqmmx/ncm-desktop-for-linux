@@ -30,6 +30,28 @@ fn key(app: &AppWindow, key: Key) {
 
 fn check_rect(app: &AppWindow, gt: &Value, view: &str, name: &str, id: &str) {
     let item = element(app, id);
+    if view == "sidebar" {
+        // The favorites entry is temporarily hidden; the playlist group now
+        // follows local music rather than the old Electron capture's fourth row.
+        let header = element(app, "SidebarNavigation::nav-group-header");
+        let local = element(app, "SidebarNavigation::nav-item-local");
+        crate::responsive_tests::assert_inside(
+            &element(app, "SideNavBar::sidebar-content"),
+            &header,
+            "sidebar.header",
+        );
+        assert!(
+            (header.absolute_position().y
+                - local.absolute_position().y
+                - local.size().height
+                - 24.0)
+                .abs()
+                <= 0.5
+        );
+        if name == "create" {
+            crate::responsive_tests::assert_inside(&header, &item, "sidebar.create");
+        }
+    }
     if view.starts_with("detail") {
         let owner = element(
             app,
@@ -58,6 +80,9 @@ fn check_rect(app: &AppWindow, gt: &Value, view: &str, name: &str, id: &str) {
     let actual = [p.x, p.y, s.width, s.height];
     let expected = &gt[view][name]["rect"];
     for (i, field) in ["x", "y", "width", "height"].iter().enumerate() {
+        if view == "sidebar" && *field == "y" {
+            continue;
+        }
         let expected = expected[field].as_f64().unwrap() as f32;
         assert!(
             (actual[i] - expected).abs() <= 0.5,

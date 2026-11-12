@@ -313,6 +313,7 @@ impl View {
                         url,
                         size,
                         slint::Image::from_rgba8(image.pixels),
+                        image.palette,
                         &pinned,
                     );
                     #[cfg(test)]
@@ -403,6 +404,12 @@ impl View {
         update_covers(queue_state.get_queue_songs(), &changes);
         if let Some(image) = cover(player_state.get_current_song_id()) {
             player_state.set_current_song_cover(image);
+            let palette = self
+                .queue
+                .current()
+                .and_then(|id| self.songs.get(id))
+                .and_then(|song| self.images.palette(&song.cover));
+            crate::fullscreen_palette::apply(&player_view_state, palette);
         }
         for (key, url) in &self.image_targets {
             if !changed.contains(url) {
@@ -597,6 +604,7 @@ impl View {
         player_state.set_current_song_title(song.name.clone().into());
         player_state.set_current_song_artist(song.artist.clone().into());
         player_state.set_current_song_cover(self.image(&song.cover));
+        crate::fullscreen_palette::apply(&player_view_state, self.images.palette(&song.cover));
         self.request_cover_urls(vec![(song.cover.clone(), 800)]);
         player_state.set_current_song_is_local(song.path.is_some());
         player_state.set_current_song_has_cover(!song.cover.is_empty());
@@ -1562,6 +1570,11 @@ impl View {
                 if !data.is_null() {
                     self.loading = false;
                     player_state.set_is_loading(false);
+                    if let Some(notice) =
+                        data["notice"].as_str().filter(|notice| !notice.is_empty())
+                    {
+                        runtime_state.set_runtime_message(notice.into());
+                    }
                 }
             }
             "finished" => {
@@ -2061,6 +2074,7 @@ impl View {
     }
 }
 pub fn initialize(app: &AppWindow, prefs: &Preferences) {
+    crate::detail_search::attach(app);
     let account_state = app.global::<crate::AccountState>();
     let player_state = app.global::<crate::PlayerState>();
     let playlist_state = app.global::<crate::PlaylistState>();
@@ -2083,6 +2097,7 @@ pub fn initialize(app: &AppWindow, prefs: &Preferences) {
     player_state.set_current_song_title("未在播放".into());
     player_state.set_current_song_artist("".into());
     player_state.set_current_song_cover(slint::Image::default());
+    crate::fullscreen_palette::apply(&player_view_state, None);
     player_state.set_current_song_favorite(false);
     player_state.set_progress_percent(0.0);
     player_state.set_buffered_percent(0.0);
@@ -2185,6 +2200,9 @@ pub fn initialize(app: &AppWindow, prefs: &Preferences) {
     color!("muted", set_theme_color_muted);
     color!("strong", set_theme_color_strong);
     color!("tint", set_theme_color_tint);
+    // Keep the saved HEX value and all theme variants consistent, including
+    // older preferences whose color picker only updated the primary color.
+    crate::appearance::apply_accent(&settings_state, &theme, theme.get_theme_color());
     if let Some(mode) = v["play_mode"]
         .as_str()
         .filter(|m| ["loop", "single", "random"].contains(m))

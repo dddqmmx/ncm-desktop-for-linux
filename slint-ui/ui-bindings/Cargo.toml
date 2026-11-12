@@ -1,0 +1,21 @@
+[package]
+name = "ncm-slint-ui-bindings"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Generated Slint bindings shared by application builds and tests"
+
+[lib]
+# The application tests exercise these bindings; do not compile another copy
+# of the generated UI just to build an empty library test harness.
+test = false
+doctest = false
+
+[features]
+hot-reload = ["slint/live-preview"]
+
+[dependencies]
+slint = { workspace = true }
+
+[build-dependencies]
+slint-build = "~1.18.1"

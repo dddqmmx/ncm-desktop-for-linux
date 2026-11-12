@@ -65,6 +65,40 @@ fn snapshot(app: &AppWindow, name: &str) {
 }
 
 #[test]
+fn playlist_search_preserves_full_song_ids_and_playback_queue() {
+    i_slint_backend_testing::init_no_event_loop();
+    let app = AppWindow::new().unwrap();
+    view::initialize(&app, &Preferences::default());
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut view = View::new(tx, Preferences::default());
+    let mut page = playlist("9000000001", 3);
+    page["body"]["playlist"]["tracks"] = json!([
+        {"id":4500000001_u64,"name":"First","dt":180000},
+        {"id":4500000002_u64,"name":"Target","dt":180000,"ar":[{"name":"BEYOND"}]},
+        {"id":4500000003_u64,"name":"Last","dt":180000}
+    ]);
+    view.apply(&app, response("page", 0, page));
+    let playlist = app.global::<crate::PlaylistState>();
+    let detail = app.global::<crate::DetailState>();
+    let all = playlist.get_playlist_tracks();
+    detail.set_detail_search_query("beyond".into());
+    let matches = detail.invoke_filter_tracks(all.clone(), detail.get_detail_search_query());
+    assert_eq!(matches.row_count(), 1);
+    view.action(&app, "play", matches.row_data(0).unwrap().id, "");
+    let play = std::iter::from_fn(|| rx.try_recv().ok())
+        .find(|command| command.name == "play")
+        .unwrap();
+    assert_eq!(play.data["song"]["id"], "4500000002");
+    assert_eq!(
+        app.global::<crate::QueueState>()
+            .get_queue_songs()
+            .row_count(),
+        3
+    );
+    assert_eq!(playlist.get_playlist_tracks(), all);
+}
+
+#[test]
 fn playlist_switches_immediately_and_isolates_delayed_metadata_tracks_and_errors() {
     slint::platform::set_platform(Box::new(i_slint_backend_testing::TestingBackend::new(
         i_slint_backend_testing::TestingBackendOptions {
@@ -182,6 +216,7 @@ fn playlist_switches_immediately_and_isolates_delayed_metadata_tracks_and_errors
     view.borrow_mut().apply_images(
         &app,
         [DecodedImage {
+            palette: None,
             target: ImageTarget::Cover("https://example.test/1.jpg".into(), 800),
             epoch: 0,
             pixels: slint::SharedPixelBuffer::clone_from_slice(&[255u8, 0, 0, 255], 1, 1),

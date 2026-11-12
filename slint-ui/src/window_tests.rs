@@ -139,7 +139,7 @@ fn check_settings_contents(window: &SettingsWindow, tab: &str) {
     }
 }
 
-fn snapshot(window: &impl ComponentHandle, name: &str) {
+pub(crate) fn snapshot(window: &impl ComponentHandle, name: &str) {
     if let Some(dir) = std::env::var_os("NCM_SLINT_SCREENSHOT_DIR") {
         let dir = std::path::PathBuf::from(dir);
         std::fs::create_dir_all(&dir).unwrap();

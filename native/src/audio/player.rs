@@ -15,6 +15,8 @@ use crate::audio::downloads as builds;
 use crate::audio::output::{self, OutputDeviceInfo};
 use crate::audio::session::{Session, SessionOutcome};
 use crate::audio::source::SeekableSource;
+use crate::diagnostics::{record, stage_error};
+use serde_json::json;
 
 const OUTPUT_BUFFER_SECONDS: usize = 6;
 const INITIAL_PREDECODE_SECONDS: usize = 2;
@@ -210,12 +212,17 @@ impl AudioPlayer {
             .extension()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
-        let reader = builds::build_uncached_stream_download(url).await?;
+        let reader = builds::build_uncached_stream_download(url)
+            .await
+            .map_err(|error| stage_error("建立音源下载流", error.as_ref()))?;
 
         let content_len = reader.content_length();
         let source = Box::new(SeekableSource::new(reader, content_len));
-        let meta = decoder::spawn_probe_task(source, extension).await?;
+        let meta = decoder::spawn_probe_task(source, extension)
+            .await
+            .map_err(|error| stage_error("识别音源格式", error.as_ref()))?;
         self.setup_and_play(meta, start_at, strict_bit_perfect, exclusive)
+            .map_err(|error| stage_error("启动音频输出", error.as_ref()))
     }
 
     pub async fn play_url_cached(
@@ -242,15 +249,19 @@ impl AudioPlayer {
             cache_ahead_secs,
             max_cache_ahead_bytes,
         )
-        .await?;
+        .await
+        .map_err(|error| stage_error("建立歌曲缓存流", error.as_ref()))?;
 
         let reader = download.reader;
         let content_len = reader.content_length();
         let source = Box::new(
             SeekableSource::new(reader, content_len).with_storage_state(download.storage_state),
         );
-        let meta = decoder::spawn_probe_task(source, extension).await?;
+        let meta = decoder::spawn_probe_task(source, extension)
+            .await
+            .map_err(|error| stage_error("识别缓存音源格式", error.as_ref()))?;
         self.setup_and_play(meta, start_at, strict_bit_perfect, exclusive)
+            .map_err(|error| stage_error("启动音频输出", error.as_ref()))
     }
 
     pub async fn play_file(
@@ -265,11 +276,15 @@ impl AudioPlayer {
             .extension()
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
-        let file = std::fs::File::open(path_buf)?;
+        let file =
+            std::fs::File::open(path_buf).map_err(|error| stage_error("打开音频文件", &error))?;
         let source = Box::new(file);
 
-        let meta = decoder::spawn_probe_task(source, extension).await?;
+        let meta = decoder::spawn_probe_task(source, extension)
+            .await
+            .map_err(|error| stage_error("识别音频文件格式", error.as_ref()))?;
         self.setup_and_play(meta, start_at, strict_bit_perfect, exclusive)
+            .map_err(|error| stage_error("启动音频输出", error.as_ref()))
     }
 
     pub(crate) fn setup_and_play(
@@ -313,6 +328,17 @@ impl AudioPlayer {
         };
         let sr = meta.sample_rate;
         let channels = meta.channels;
+        record(
+            "info",
+            "audio.source_probed",
+            json!({
+                "device": output::device_id(&self.device), "sample_rate": sr,
+                "channels": channels, "bits_per_sample": meta.bits_per_sample,
+                "sample_format": format!("{:?}", meta.sample_format),
+                "start_ms": start_at.unwrap_or_default().as_millis(),
+                "strict": strict_bit_perfect, "exclusive": want_exclusive,
+            }),
+        );
         // 会话先建起来但不发布（`self.session` 在开流成功后才赋值）：开流失败的
         // 路径上，外部看到的仍是"没有会话"，不会误读一个半初始化的会话。
         // 起点直接落在 start_at 上：开播不是一次 seek，不需要换代或清缓冲。
@@ -426,6 +452,14 @@ impl AudioPlayer {
             }
         };
 
+        record(
+            "info",
+            "audio.output_configured",
+            json!({
+                "device": output::device_id(&self.device), "config": format!("{config:?}"),
+                "sample_format": format!("{sample_format:?}"),
+            }),
+        );
         let mut decode_thread = None;
         let stream = match sample_format {
             cpal::SampleFormat::I16 => self.build_pipeline::<i16, i16>(
@@ -508,6 +542,9 @@ impl AudioPlayer {
             // 解码线程已经在跑：不终结会话，它会一直往一个没人消费的 ring buffer
             // 里填样本，直到进程结束。
             session.terminate();
+            if let Some(thread) = decode_thread.take() {
+                let _ = thread.join();
+            }
             return Err(err.into());
         }
         self.stream = Some(safe_stream);
@@ -549,7 +586,8 @@ impl AudioPlayer {
             consumer,
             Arc::clone(session),
             channels as usize,
-        )?;
+        )
+        .map_err(|error| stage_error("创建音频输出流", error.as_ref()))?;
         let decode_thread = Self::start_decode_thread::<S>(meta, producer, Arc::clone(session));
         *decode_thread_slot = Some(decode_thread);
         Ok(stream)

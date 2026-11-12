@@ -1,116 +1,11 @@
 import { SettingsState } from "../state/settings.slint";
-import { AuxVisibilityButton } from "aux_visibility_button.slint";
+import { FullscreenControlsPreview } from "fullscreen_controls_preview.slint";
+import { AccentColorPicker } from "accent_color_picker.slint";
 import { Theme } from "../theme.slint";
-import { Icons } from "../icons.slint";
 
-import { AppIcon, ModernSwitch, SegmentedSlider3 } from "../components/common.slint";
+import { ModernSwitch, SegmentedSlider3 } from "../components/common.slint";
 
 import { SettingsText, SettingGroupCard, SettingRowItem } from "controls.slint";
-
-component FullscreenControlsPreview inherits Rectangle {
-
-    height: 76px;
-    border-radius: 18px;
-    background: Theme.sys-bg-muted;
-    border-width: 1px;
-    border-color: Theme.sys-border;
-
-    HorizontalLayout {
-        padding-left: 20px;
-        padding-right: 20px;
-        spacing: 20px;
-
-        HorizontalLayout {
-            horizontal-stretch: 1;
-            alignment: end;
-            spacing: 14px;
-
-            for item[idx] in SettingsState.fullscreen-aux-left : AuxVisibilityButton {
-                y: (parent.height - self.height) / 2;
-                shown: item.visible;
-                icon: item.id == "favorite" ? Icons.heart : Icons.comment;
-                toggled => { SettingsState.fullscreen-aux-left[idx].visible = !item.visible; }
-            }
-        }
-
-        HorizontalLayout {
-            spacing: 18px;
-            alignment: center;
-
-            AppIcon {
-                y: (parent.height - self.height) / 2;
-                source: Icons.prev;
-                icon-size: 20px;
-                tint: Theme.sys-text;
-                opacity: 0.55;
-            }
-
-            Rectangle {
-                width: 40px;
-                height: 40px;
-                y: (parent.height - self.height) / 2;
-                border-radius: 20px;
-                background: Theme.sys-text;
-
-                AppIcon {
-                    x: 11px;
-                    y: 11px;
-                    source: Icons.play;
-                    icon-size: 18px;
-                    tint: Theme.sys-bg;
-                }
-            }
-
-            AppIcon {
-                y: (parent.height - self.height) / 2;
-                source: Icons.next;
-                icon-size: 20px;
-                tint: Theme.sys-text;
-                opacity: 0.55;
-            }
-        }
-
-        HorizontalLayout {
-            horizontal-stretch: 1;
-            alignment: start;
-            spacing: 14px;
-
-            for item[idx] in SettingsState.fullscreen-aux-right : AuxVisibilityButton {
-                y: (parent.height - self.height) / 2;
-                shown: item.visible;
-                icon: item.id == "playMode" ? Icons.loop : Icons.volume;
-                toggled => { SettingsState.fullscreen-aux-right[idx].visible = !item.visible; }
-            }
-        }
-    }
-}
-
-component AccentColorPicker inherits Rectangle {
-
-    width: 40px;
-    height: 24px;
-    y: 0px;
-    border-radius: 6px;
-    background: Theme.theme-color;
-    border-width: 2px;
-    border-color: Theme.sys-border-strong;
-
-    TouchArea {
-        mouse-cursor: pointer;
-        clicked => {
-            if (Theme.theme-color == #6366f1) {
-                Theme.theme-color = #0e7490;
-                Theme.theme-color-strong = #0e7490;
-            } else if (Theme.theme-color == #0e7490) {
-                Theme.theme-color = #d9480f;
-                Theme.theme-color-strong = #d9480f;
-            } else {
-                Theme.theme-color = #6366f1;
-                Theme.theme-color-strong = #5154c5;
-            }
-        }
-    }
-}
 
 export component AppearanceSettingsTab inherits VerticalLayout {
     SettingGroupCard {

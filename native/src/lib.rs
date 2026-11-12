@@ -3,6 +3,7 @@
 pub mod audio;
 mod bindings;
 mod cache;
+pub mod diagnostics;
 mod player;
 mod runtime;
 

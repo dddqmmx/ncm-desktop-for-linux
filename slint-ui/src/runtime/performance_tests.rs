@@ -59,6 +59,7 @@ fn profile_playlist_cover_updates_and_scrolling() {
         for batch in 0..16 {
             let covers: Vec<_> = (batch * 4..batch * 4 + 4)
                 .map(|i| DecodedImage {
+                    palette: None,
                     target: ImageTarget::Cover(format!("https://example.test/{i}.jpg"), 128),
                     epoch: 0,
                     pixels: slint::SharedPixelBuffer::clone_from_slice(

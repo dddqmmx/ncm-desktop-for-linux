@@ -50,6 +50,165 @@ fn drain(receiver: &mut tokio::sync::mpsc::UnboundedReceiver<Command>) -> Vec<Co
 }
 
 #[test]
+fn fullscreen_palette_follows_current_artwork_cache_upgrades_and_clear() {
+    use super::images::{DecodedImage, ImageTarget};
+    i_slint_backend_testing::init_no_event_loop();
+    let app = AppWindow::new().unwrap();
+    view::initialize(&app, &Preferences::default());
+    let player = app.global::<crate::PlayerState>();
+    let fullscreen = app.global::<crate::PlayerViewState>();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut view = View::new(tx, Preferences::default());
+    let songs = vec![
+        Song {
+            id: "1".into(),
+            cover: "https://example.test/one".into(),
+            ..Song::default()
+        },
+        Song {
+            id: "2".into(),
+            cover: "https://example.test/two".into(),
+            ..Song::default()
+        },
+        Song {
+            id: "local:three".into(),
+            path: Some("/three.flac".into()),
+            ..Song::default()
+        },
+    ];
+    view.restore_playback(
+        &app,
+        PlaybackState {
+            queue: songs,
+            current_id: Some("1".into()),
+            position_ms: 0,
+        },
+    );
+    assert!(fullscreen.get_fullscreen_use_accent());
+    let cover = |url: &str, size, rgb: [u8; 3], epoch| {
+        let pixels =
+            slint::SharedPixelBuffer::clone_from_slice(&[rgb[0], rgb[1], rgb[2], 255], 1, 1);
+        DecodedImage {
+            target: ImageTarget::Cover(url.into(), size),
+            epoch,
+            palette: crate::fullscreen_palette::extract(&pixels),
+            pixels,
+        }
+    };
+    view.apply_images(
+        &app,
+        [cover("https://example.test/one", 128, [10, 20, 30], 0)].into_iter(),
+    );
+    assert!(!fullscreen.get_fullscreen_use_accent());
+    assert!(fullscreen.get_fullscreen_is_dark());
+    assert_eq!(
+        fullscreen.get_fullscreen_bg_primary(),
+        slint::Color::from_rgb_u8(10, 20, 30)
+    );
+
+    // Prefetching another song cannot recolor the current track.
+    view.apply_images(
+        &app,
+        [cover("https://example.test/two", 800, [220, 230, 240], 0)].into_iter(),
+    );
+    assert_eq!(
+        fullscreen.get_fullscreen_bg_primary(),
+        slint::Color::from_rgb_u8(10, 20, 30)
+    );
+    view.action(&app, "step", 1, "");
+    assert_eq!(
+        fullscreen.get_fullscreen_bg_primary(),
+        slint::Color::from_rgb_u8(220, 230, 240)
+    );
+    assert!(!fullscreen.get_fullscreen_is_dark());
+    view.action(&app, "step", -1, "");
+    assert_eq!(
+        fullscreen.get_fullscreen_bg_primary(),
+        slint::Color::from_rgb_u8(10, 20, 30)
+    );
+
+    view.apply_images(
+        &app,
+        [cover("https://example.test/one", 1600, [40, 50, 60], 0)].into_iter(),
+    );
+    // Neither a late thumbnail nor an old-session image may replace the palette.
+    view.apply_images(
+        &app,
+        [
+            cover("https://example.test/one", 800, [250, 250, 250], 0),
+            cover("https://example.test/one", 1600, [250, 250, 250], 1),
+        ]
+        .into_iter(),
+    );
+    assert_eq!(
+        fullscreen.get_fullscreen_bg_primary(),
+        slint::Color::from_rgb_u8(40, 50, 60)
+    );
+    view.action(&app, "step", 1, "");
+    view.action(&app, "step", 1, "");
+    assert!(player.get_current_song_is_local());
+    assert!(fullscreen.get_fullscreen_use_accent());
+    view.action(&app, "step", -1, "");
+    assert!(!fullscreen.get_fullscreen_use_accent());
+    view.action(&app, "clear-queue", -1, "");
+    assert!(fullscreen.get_fullscreen_use_accent());
+    view.apply_images(
+        &app,
+        [cover("https://example.test/one", 1600, [250, 250, 250], 0)].into_iter(),
+    );
+    assert!(
+        fullscreen.get_fullscreen_use_accent(),
+        "late artwork recolored a cleared player"
+    );
+}
+
+#[test]
+fn appearance_preferences_restore_accent_variants_and_aux_order() {
+    i_slint_backend_testing::init_no_event_loop();
+    let app = AppWindow::new().unwrap();
+    let windows = crate::windows::ApplicationWindows::attach(&app).unwrap();
+    view::initialize(&app, &Preferences::default());
+    let state = windows._settings.global::<crate::SettingsState>();
+    assert!(state.invoke_set_accent_hex("#22c55e".into()));
+    state.invoke_toggle_fullscreen_aux("comment".into());
+    state.invoke_move_fullscreen_aux("comment".into(), false, 1);
+    i_slint_backend_testing::mock_elapsed_time(Duration::from_millis(100));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut controller = View::new(tx, Preferences::default());
+    controller.save_preferences_if_changed(&app);
+    let saved: Preferences = serde_json::from_value(rx.try_recv().unwrap().data).unwrap();
+    let restored = AppWindow::new().unwrap();
+    view::initialize(&restored, &saved);
+    let state = restored.global::<crate::SettingsState>();
+    let theme = restored.global::<crate::Theme>();
+    assert_eq!(state.get_setting_accent_hex(), "#22c55e");
+    assert_eq!(
+        theme.get_theme_color(),
+        slint::Color::from_rgb_u8(34, 197, 94)
+    );
+    assert_eq!(
+        theme.get_theme_color_strong(),
+        slint::Color::from_rgb_u8(28, 162, 77)
+    );
+    assert_eq!(state.get_fullscreen_aux_left().row_count(), 1);
+    assert_eq!(
+        state
+            .get_fullscreen_aux_right()
+            .iter()
+            .map(|item| item.id.to_string())
+            .collect::<Vec<_>>(),
+        ["playMode", "comment", "volume"]
+    );
+    assert!(
+        !state
+            .get_fullscreen_aux_right()
+            .row_data(1)
+            .unwrap()
+            .visible
+    );
+}
+
+#[test]
 fn restoring_online_playback_loads_lyrics_and_seeks_them_without_starting_audio() {
     use i_slint_backend_testing::{mock_elapsed_time, ElementHandle, ElementRoot};
     slint::platform::set_platform(Box::new(i_slint_backend_testing::TestingBackend::new(
@@ -359,6 +518,40 @@ fn queue_next_inserts_search_results_and_empty_queues_without_starting_playback(
         .find(|cmd| cmd.name == "play")
         .unwrap();
     assert_eq!(play.data["song"]["id"], "9007199254740993");
+}
+
+#[test]
+fn quality_fallback_notice_only_applies_to_the_current_play_request() {
+    i_slint_backend_testing::init_no_event_loop();
+    let app = AppWindow::new().unwrap();
+    view::initialize(&app, &Preferences::default());
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut view = View::new(tx, Preferences::default());
+    view.restore_playback(&app, saved_queue());
+    view.action(&app, "toggle", -1, "");
+    let play = drain(&mut rx)
+        .into_iter()
+        .find(|cmd| cmd.name == "play")
+        .unwrap();
+    let runtime_state = app.global::<crate::RuntimeState>();
+    let player_state = app.global::<crate::PlayerState>();
+    runtime_state.set_runtime_message("正在播放".into());
+    view.apply(
+        &app,
+        event("play", play.token + 1, json!({"notice":"过期音质提示"})),
+    );
+    assert_eq!(runtime_state.get_runtime_message(), "正在播放");
+    let notice = "所选音质暂不可用，当前播放音质：无损";
+    view.apply(
+        &app,
+        event(
+            "play",
+            play.token,
+            json!({"song":play.data["song"],"notice":notice}),
+        ),
+    );
+    assert_eq!(runtime_state.get_runtime_message(), notice);
+    assert!(!player_state.get_is_loading());
 }
 
 #[test]

@@ -209,6 +209,7 @@ fn visited_home_covers_survive_card_recycling_and_fullscreen_upgrades() {
                     .map(|request| {
                         let size = request["size"].as_u64().unwrap() as u32;
                         DecodedImage {
+                            palette: None,
                             target: ImageTarget::Cover(
                                 request["cover"].as_str().unwrap().into(),
                                 size,
@@ -333,6 +334,7 @@ fn visited_home_covers_survive_card_recycling_and_fullscreen_upgrades() {
     controller.apply_images(
         &app,
         std::iter::once(DecodedImage {
+            palette: None,
             target: ImageTarget::Cover("https://example.test/song-0".into(), 384),
             epoch: 0,
             pixels: slint::SharedPixelBuffer::new(384, 384),

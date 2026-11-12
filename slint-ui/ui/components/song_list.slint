@@ -46,6 +46,7 @@ component SongLoadingRow inherits Rectangle {
 }
 
 export component SongList inherits VerticalLayout {
+    in property <bool> searching: false;
     metrics := SongMetrics { }
     in property <[TrackItem]> songs: [];
     in property <bool> loading: false;
@@ -179,7 +180,7 @@ export component SongList inherits VerticalLayout {
     if !root.loading && root.load-error == "" && root.songs.length == 0 : empty-state := Rectangle {
         height: 100px;
         Text {
-            text: "暂无歌曲";
+            text: root.searching ? "未找到匹配的歌曲" : "暂无歌曲";
             font-size: 14px;
             color: Theme.sys-text-tertiary;
             horizontal-alignment: center;

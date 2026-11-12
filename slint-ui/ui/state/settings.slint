@@ -38,6 +38,10 @@ export global SettingsState {
 
     callback open-settings-window();
     callback settings-changed(string);
+    callback move-fullscreen-aux(string, bool, int);
+    callback toggle-fullscreen-aux(string);
+    callback set-accent-color(color);
+    callback set-accent-hex(string) -> bool;
 
     changed setting-cache-details => { self.settings-changed("setting-cache-details"); }
     changed setting-auto-launch => { self.settings-changed("setting-auto-launch"); }

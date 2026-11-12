@@ -36,7 +36,7 @@ component SidebarCreatePlaylistButton inherits Rectangle {
         mouse-cursor: pointer;
         clicked => { create-focus.focus(); PlaylistState.open-create-playlist(); }
     }
-    AppIcon { x: 5px; y: 5px; source: Icons.plus; icon-size: 16px; tint: Theme.sys-text-tertiary; }
+    AppIcon { x: 5px; y: 5px; source: Icons.plus; icon-size: 16px; tint: #ffffff; }
 }
 
 component SidebarProfileMenu inherits VerticalLayout {
@@ -62,7 +62,7 @@ component SidebarProfileMenu inherits VerticalLayout {
             y: (parent.height - self.height) / 2;
             text: "修改个人信息";
             font-size: 13px;
-            color: menu-ta-1.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
+            color: #ffffff;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
@@ -93,7 +93,7 @@ component SidebarProfileMenu inherits VerticalLayout {
             y: (parent.height - self.height) / 2;
             text: "设置";
             font-size: 13px;
-            color: menu-ta-2.has-hover ? Theme.sys-text : Theme.sys-text-secondary;
+            color: #ffffff;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
@@ -164,12 +164,11 @@ component SidebarNavItem inherits Rectangle {
             height: 20px;
             y: (parent.height - self.height) / 2;
             border-radius: 6px;
-            opacity: 0.7;
 
             AppIcon {
                 source: root.icon;
                 icon-size: 20px;
-                tint: root.active ? Theme.theme-color-strong : Theme.sys-text-secondary;
+                tint: #ffffff;
             }
         }
 
@@ -177,7 +176,7 @@ component SidebarNavItem inherits Rectangle {
             text: root.label;
             font-size: 14px;
             font-weight: 500;
-            color: root.active ? Theme.theme-color-strong : Theme.sys-text-secondary;
+            color: #ffffff;
             vertical-alignment: center;
             animate color { duration: 200ms; easing: ease; }
         }
@@ -225,7 +224,7 @@ component SidebarPlaylistRow inherits Rectangle {
             text: root.item.name;
             font-size: 14px;
             font-weight: 500;
-            color: root.active ? Theme.theme-color-strong : Theme.sys-text-secondary;
+            color: #ffffff;
             vertical-alignment: center;
             overflow: elide;
             horizontal-stretch: 1;
@@ -339,7 +338,7 @@ component SidebarProfileBubble inherits Rectangle {
             text: AccountState.is-logged-in ? AccountState.user-nickname : "请登录";
             font-size: 13px;
             font-weight: 600;
-            color: Theme.sys-text-secondary;
+            color: #ffffff;
             vertical-alignment: center;
             overflow: elide;
         }
@@ -383,13 +382,7 @@ component SidebarNavigation inherits Flickable {
                 clicked => { NavigationState.current-route = "home"; }
             }
 
-            nav-item-favorites := SidebarNavItem {
-                label: "喜欢的音乐";
-                icon: Icons.heart;
-                compact: root.is-compact;
-                active: NavigationState.current-route == "favorites";
-                clicked => { NavigationState.current-route = "favorites"; }
-            }
+            // 暂时隐藏「喜欢的音乐」入口，保留页面和歌曲收藏功能。
 
             nav-item-local := SidebarNavItem {
                 label: "本地音乐";
@@ -410,7 +403,7 @@ component SidebarNavigation inherits Flickable {
                 text: "创建的歌单";
                 font-size: 12px;
                 font-weight: 600;
-                color: Theme.sys-text-tertiary;
+                color: #ffffff;
                 vertical-alignment: center;
             }
             create-playlist-btn := SidebarCreatePlaylistButton {

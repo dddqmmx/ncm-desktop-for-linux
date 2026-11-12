@@ -138,7 +138,7 @@ component DetailSearchField inherits Rectangle {
         vertical-alignment: center;
     }
 
-    if DetailState.detail-search-query != "" : Rectangle {
+    if DetailState.detail-search-query != "" : clear-search-button := Rectangle {
         x: parent.width - 32px;
         y: 11px;
         width: 22px;

@@ -76,7 +76,9 @@ export component AudioSettingsTab inherits VerticalLayout {
     SettingGroupCard {
         title: "输出架构";
         no-card: true;
-        tip: "Native 提供高性能原生输出；WebAPI 适合兼容性场景。当前设备切换由 Native 输出链路生效。";
+        tip: RuntimeState.runtime-enabled
+            ? "当前 Slint 客户端仅支持 Native 原生输出，暂不支持切换 WebAPI / Auto。"
+            : "Native 提供高性能原生输出；WebAPI 适合兼容性场景。当前设备切换由 Native 输出链路生效。";
 
         SegmentedSlider3 {
             label-0: "Native";
@@ -168,13 +170,14 @@ export component AudioSettingsTab inherits VerticalLayout {
             title: "独占输出模式";
             description: AudioState.setting-supports-exclusive
                 ? "仅 Native 输出可用；严格 BitPerfect 打开时会强制启用"
-                : "“系统默认输出”是混音服务器的虚拟端点，独占无从谈起；选择一个硬件端点后自动恢复";
+                : "当前输出不支持独占；已保存的设置可以关闭，选择硬件端点后才能开启";
             show-divider: true;
 
-            ModernSwitch {
+            exclusive-switch := ModernSwitch {
                 y: 0px;
-                checked: AudioState.setting-strict-bitperfect || (AudioState.setting-supports-exclusive && AudioState.setting-exclusive-mode);
-                enabled: AudioState.setting-supports-exclusive && !AudioState.setting-strict-bitperfect && AudioState.setting-audio-engine != "webapi";
+                checked: AudioState.setting-strict-bitperfect || AudioState.setting-exclusive-mode;
+                enabled: !AudioState.setting-strict-bitperfect && (AudioState.setting-exclusive-mode
+                    || (AudioState.setting-supports-exclusive && AudioState.setting-audio-engine != "webapi"));
                 toggled(v) => { AudioState.setting-exclusive-mode = v; }
             }
         }
@@ -183,13 +186,15 @@ export component AudioSettingsTab inherits VerticalLayout {
             title: "严格 BitPerfect";
             description: AudioState.setting-supports-exclusive
                 ? "仅 Native 输出可用；设备必须原生支持当前音源格式"
-                : "BitPerfect 必须直通 hw: 硬件端点，请先在上方选择具体的输出设备";
+                : "当前输出不支持 BitPerfect；已保存的设置可以关闭，选择 hw: 硬件端点后才能开启";
             show-divider: false;
 
             bitperfect-switch := ModernSwitch {
                 y: 0px;
                 checked <=> AudioState.setting-strict-bitperfect;
-                enabled: AudioState.setting-supports-exclusive && AudioState.setting-audio-engine != "webapi";
+                // Unsupported outputs block enabling, but must allow clearing a saved preference.
+                enabled: AudioState.setting-strict-bitperfect
+                    || (AudioState.setting-supports-exclusive && AudioState.setting-audio-engine != "webapi");
             }
         }
     }

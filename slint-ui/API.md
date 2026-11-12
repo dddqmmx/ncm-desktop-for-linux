@@ -14,7 +14,7 @@ pub trait MusicApi: Send + Sync {
 
 ## 提供方
 
-默认的 `NativeApi` 直接使用 `dddqmmx/ncm-api-rs`，依赖固定到提交 `133b65bfe482e41ebccf018870d3fce07bf58eb3`，同时记录在 `Cargo.lock`。只启用 SDK，不启用它的 HTTP server feature；应用不启动 Node 子进程或本地 API 服务。构建、运行及 Rust 测试不需要安装 npm 依赖。旧的 `NCM_NODE`、`NCM_API_SIDECAR` 已移除。
+默认的 `NativeApi` 通过 Cargo path 依赖直接使用独立仓库 `git@github.com:dddqmmx/ncm-api-rs.git` 的本地源码，SDK 克隆到客户端根目录的 `ncm-api-rs/`。XEAPI、播放和错误处理的修改直接维护在 SDK 源文件中，并在 SDK 自己的 Git 仓库中提交；客户端忽略该目录，CI 单独检出 SDK，无需应用补丁。SDK 的上游来源和协议对齐详情见 [UPSTREAM_SYNC.md](../ncm-api-rs/UPSTREAM_SYNC.md)。只启用 SDK，不启用它的 HTTP server feature；应用不启动 Node 子进程或本地 API 服务。构建、运行及 Rust 测试不需要安装 npm 依赖。旧的 `NCM_NODE`、`NCM_API_SIDECAR` 已移除。
 
 一个 SDK 客户端复用 HTTP 连接；每次调用显式传入该请求的 cookie（匿名请求也显式传空值），不使用全局可变登录状态或 cookie jar。SDK 返回的登录 cookie 仍交由原有 `Services` 和 `Storage` 管理，旧会话文件无需迁移。接口适配位于 `src/runtime/api/native.rs`。
 
@@ -40,6 +40,10 @@ HTTP 响应必须包含 `version: 1`，不要求请求 ID。`cookie` 是可选�
 
 内置提供方的参数与 cookie 合计限制 1 MiB，最多 64 个在途调用，单次调用 40 秒超时。取消或超时释放并发额度；创建、删除、收藏等操作不自动重发，超时后应刷新确认结果。HTTP 提供方同样使用 40 秒请求超时并限制响应为 16 MiB；内置 SDK 自行读取响应，当前没有流式响应大小上限。
 
+播放地址请求在连接失败或临时服务端错误（500/502/504/520–524）时最多重试一次，两次尝试共用 40 秒上限；登录、权限和限流错误不重试。v1 音源使用当前 XEAPI C/S/R 协议，公钥在首次请求中自动获取并验签，不依赖 Node 临时文件，不自动降级到旧 bitrate 接口。没有完整音源或仅允许试听时仍拒绝播放。
+
+诊断日志保存到数据目录的 `diagnostics.jsonl`（默认 `~/.config/ncm-slint/diagnostics.jsonl`），超过 5 MiB 轮换为 `diagnostics.jsonl.1`，同时输出到终端。日志包含时间、进程、接口/播放阶段、请求或播放标识、状态码、歌曲 ID、请求与实际音质、耗时、输出设备与格式、错误原因链。SDK 状态码标为 `sdk_status`；服务端拒绝另记录原始 `http_status`、`code`、接口路径与 message/msg，保留 -460 等非 HTTP 业务码。日志不记录密码、会话 cookie、完整 API 响应或签名音源 URL。文件写入在专用线程进行，队列有容量限制，拥塞时丢弃的数量会随下一条成功记录报告。
+
 ## 操作覆盖
 
 操作名与 Electron IPC 不同，适配层用以下稳定名称：
@@ -62,10 +66,10 @@ HTTP 响应必须包含 `version: 1`，不要求请求 ID。`cookie` 是可选�
 
 - `playlist_track_add/delete`：`params = { pid, tracks: [完整ID字符串] }`，将 ID 数组无损转换为逗号分隔字符串，使用 SDK `playlist_tracks` 的 `add/del`，不调用旧的 `playlist_track_add/delete` 模块。
 - `playlist_update`：`params = { id, name, desc }`；分别 JSON 编码名称和简介，使用 batch，只改这两个字段，保留标签。两个子响应都必须成功；外层 200 或缺少子响应不代表完整保存。
-- `song_url`：调用 SDK `song_url_v1`，直接使用 EAPI；不依赖 Node 的 XEAPI 公钥配置，不自动重试或降级音质。`configure_xeapi` 保留兼容操作名，内置提供方直接返回成功；`ping` 返回 `provider: "rust"`。
+- `song_url`：调用 SDK `song_url_v1`，使用当前 XEAPI C/S/R 加密及自动公钥初始化；首播不用等待并行配置任务。`configure_xeapi` 保留兼容操作名，内置提供方直接返回成功；`ping` 返回 `provider: "rust"`。
 - 下载详情必须以当前会话重新请求；播放权限、歌曲最高音质、旧缓存不能替代当前账号的 `dl/dlLevel/dlLevels`。音源必须是完整文件，返回音质必须等于所选音质。
 - `login_qr_key`：将 SDK 顶层 `unikey` 包装为应用使用的 `data.unikey`；`login_qr_create` 在后台阻塞任务中生成 PNG data URL，补齐 SDK 只返回 URL 的部分。`login_qr_check` 保留 800–803 状态及 Set-Cookie。
-- SDK 成功响应保留原始 `body` 和 cookie；类型化业务错误转换为包含 `code`、`message` 的拒绝响应。当前 SDK 的部分错误只保留 `msg`，已经丢弃的原始响应字段无法恢复。网络/加密错误使用不含请求详情的提示，权限失败不重试。
+- SDK 响应保留原始 `body` 和 cookie；服务端拒绝保留原始 HTTP 状态与业务 code，以及 message/msg 和详情。加解密失败记录具体组件及阶段；网络错误记录经过 URL 隐藏的原因链，权限失败不重试。
 
 ## native 边界
 
@@ -75,4 +79,4 @@ Rust 控制器使用原有 native worker 的串行命令、完整播放快照、
 
 ## 适配验证
 
-`src/runtime/api/native/tests.rs` 通过回环 HTTP 服务调用真实 SDK，覆盖接口路径、EAPI 解密后的参数、会话隔离、歌单编辑、二维码图片及轮询、业务失败、超时和取消。`cargo test --locked runtime::api::` 不访问网易云。`live_native_api_smoke` 为显式运行的公开接口检查，不使用保存的账号。
+`src/runtime/api/native/tests.rs` 通过回环 HTTP 服务调用真实 SDK，覆盖接口路径、EAPI/XEAPI 解密后的参数、公钥首次初始化与复用、会话隔离、歌单编辑、二维码图片及轮询、业务失败、超时和取消。`cargo test --locked runtime::api::` 不访问网易云。`live_native_api_smoke` 为显式运行的公开接口检查，不使用保存的账号。

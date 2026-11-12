@@ -1,3 +1,8 @@
 [workspace]
-members = ["slint-ui", "native"]
+members = ["slint-ui", "slint-ui/ui-bindings", "native"]
+default-members = ["slint-ui"]
+exclude = ["ncm-api-rs"]
 resolver = "2"
+
+[workspace.dependencies]
+slint = { version = "~1.18.1", features = ["unstable-winit-030"] }

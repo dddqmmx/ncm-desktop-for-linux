@@ -120,6 +120,8 @@ impl ApplicationWindows {
         });
         crate::login_animation::attach(app)?;
         let settings = SettingsWindow::new()?;
+        crate::appearance::attach(app);
+        crate::appearance::attach(&settings);
         // Each domain publishes only its own changes; window-local navigation and
         // dialogs are never copied between top-level windows.
         macro_rules! mirror_domain {

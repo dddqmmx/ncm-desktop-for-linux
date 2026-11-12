@@ -19,6 +19,11 @@ cargo run --locked --features hot-reload -- --demo
 
 热加载用于布局、样式和 UI 逻辑迭代。Rust 代码以及 Rust 使用的属性、回调、结构体接口发生变化时，仍需停止并重新运行开发命令。开发模式通过解释器读取源码，启动和刷新速度、内存占用与正式构建不同；性能测量使用普通构建。`cargo run`、`cargo test` 和 release 构建默认仍使用编译后的 UI，不依赖运行时源码。
 
+生成的 Rust 界面代码在 `ui-bindings/` 独立 crate 中编译，应用和测试复用同一份产物。
+修改业务 Rust 源码只重编应用；修改 `ui/` 或嵌入资源后自动重编界面绑定。
+根目录的 Cargo 命令默认选中 Slint 应用，完整工作区测试使用 `cargo test --workspace --locked`。
+检查 Rust 类型时可使用 `cargo check --locked` 跳过链接。
+
 默认构建包含 Vulkan、OpenGL 和软件渲染。首次运行及旧配置缺少渲染字段时使用 Vulkan，不再需要额外的启动参数。在「设置 → 通用 → 界面渲染」中使用通用下拉菜单选择：
 
 - Vulkan（默认）：Skia Vulkan 渲染。
@@ -31,7 +36,7 @@ cargo run --locked --features hot-reload -- --demo
 
 设备确认、真实窗口检查和滚动测量见 [Vulkan 渲染验证](tests/vulkan-rendering.md)。
 
-Slint 默认直接链接 `dddqmmx/ncm-api-rs`，网易云 API、播放、缓存、下载、文件扫描和配置存储都在 Rust 进程内执行。使用 Cargo 构建和运行不需要 Node.js、npm 依赖或 API sidecar；首次构建由 Cargo 获取固定提交的 Rust 库。也可通过 `NCM_API_URL` 接入 v1 HTTP 提供方。接口与适配细节见 [API.md](API.md)。
+Slint 通过 Cargo path 依赖直接链接独立仓库 `dddqmmx/ncm-api-rs` 的本地源码，SDK 克隆到客户端根目录的 `ncm-api-rs/`。API 修改在 SDK 自己的 Git 仓库中维护和提交；客户端仓库忽略该目录，CI 单独检出 SDK。网易云 API、播放、缓存、下载、文件扫描和配置存储都在 Rust 进程内执行，构建和运行不需要补丁应用流程、Node.js、npm 依赖或 API sidecar。也可通过 `NCM_API_URL` 接入 v1 HTTP 提供方。接口与适配细节见 [API.md](API.md)。
 
 已经接入：手机密码/验证码登录、二维码登录/轮询/过期刷新、保持登录和退出；推荐、搜索分页、喜欢的歌曲、歌单全量曲目、歌手/专辑/MV、歌词/译文与评论；云端歌单创建/编辑/删除/增删曲目；播放队列、暂停/继续、上一首/下一首、随机/单曲循环、进度拖动和歌词跳转；真实输出设备、软件音量、独占/BitPerfect；本地文件夹扫描/移除；native 缓存容量、预下载上限和清理；下载权限及音质选择、原生保存窗口和完整性检查。MV 交给系统外部处理程序打开。
 
@@ -44,6 +49,8 @@ UI 主线程只提交运行时命令、接收结果并更新模型，禁止发�
 歌单切换会立即更新侧栏选中项、已知标题和封面，并回到页首。尚未返回的基本信息与歌曲列表使用和主页相同的扫光占位；基本信息先展示，完整曲目继续后台加载。快速切换或离开页面后忽略旧请求的基本信息、歌曲及错误，旧封面不会覆盖新歌单。失败显示具体错误并支持重新加载，只有成功返回的空歌单才显示“暂无歌曲”。
 
 主窗口隐藏系统标题栏，支持顶部空白区拖动、边缘缩放，右上角提供最小化、最大化/还原和关闭按钮。默认 1435×1000，最小 1340×960；独立设置窗口默认及最小尺寸为 1000×800，均可继续放大。设置窗口可拖动、调整尺寸；重复打开聚焦现有窗口，Esc/关闭只关闭设置，关闭主窗口会一并结束运行时。设置在两个窗口之间按字段同步，偏好会保存到磁盘。
+
+「外观个性化」的全屏播放页预览支持跨左右两侧拖动按钮、调整顺序，以及点击切换显示 / 隐藏；按钮全部集中到一侧时自动收紧间距。强调色提供色相、饱和度 / 明度调色盘及 HEX 输入，实时更新主题并保存。全屏播放器参考 Electron 的 `extract-colors` 提取封面主色和辅助色，使用渐变背景并根据亮度切换文字颜色；取色在后台解码任务内完成，随封面一起缓存。切歌及高清封面到达时更新配色，没有可用封面时回退到强调色。
 
 音质和输出设备使用通用 [Dropdown](ui/components/dropdown.slint) 下拉组件。调用方提供 `option-count`、`option-label(index)` 和 `current-index`，在 `selected(index)` 中提交选择；组件不依赖业务状态。支持当前项勾选、方向键/Home/End 浏览、回车确认、Esc/点击外部取消，长菜单按可见范围创建选项。可用 `enabled`、`placeholder`、`popup-width` 和 `max-visible-items` 调整行为。七档音质的值和名称定义在 `AudioState.sound-quality-options`，选择后沿用偏好持久化，重启从保存值恢复名称。
 
@@ -93,6 +100,9 @@ cargo test --locked
 cargo test --manifest-path native/Cargo.toml --no-default-features --locked
 cargo check --manifest-path native/Cargo.toml --locked
 ```
+
+完整回归使用默认编译界面，不加 `--features hot-reload`。热加载解释器会包装模型，
+直接比较 `ModelRc` 指针身份的测试不适用于该模式；热加载验证可使用窗口属性同步测试。
 
 测试覆盖完整 ID、业务错误、下载权限、会话持久化、歌词解析、本地扫描，以及页面、登录和双窗口偏好联通。Rust API 测试通过本地 HTTP 服务检查真实 SDK 的接口映射、加密请求参数、并发会话隔离、扫码图片/状态、歌单部分失败、超时不重试及取消后的并发额度回收。native 的本地 HTTP/设备测试需能绑定回环端口并读取声卡。
 

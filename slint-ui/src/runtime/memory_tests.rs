@@ -144,7 +144,7 @@ fn profile_memory_stages() {
                     view.apply_images(&app, batch.iter().map(|i| {
                         let mut pixels = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(128, 128);
                         pixels.make_mut_bytes().fill((i % 255) as u8);
-                        DecodedImage { target: ImageTarget::Cover(format!("https://example.test/{i}.jpg"), 128), epoch: 0, pixels }
+                        DecodedImage { palette: None, target: ImageTarget::Cover(format!("https://example.test/{i}.jpg"), 128), epoch: 0, pixels }
                     }));
                 }
             }

@@ -205,6 +205,7 @@ fn decoded_images_update_existing_rows_and_discard_stale_account_and_qr_results(
     let rows = home_state.get_recommend_playlists();
     let pixels = || slint::SharedPixelBuffer::clone_from_slice(&[12u8, 34, 56, 255], 1, 1);
     let cover = |epoch| DecodedImage {
+        palette: None,
         target: ImageTarget::Cover("https://example.test/one.jpg".into(), 800),
         epoch,
         pixels: pixels(),
@@ -249,6 +250,7 @@ fn decoded_images_update_existing_rows_and_discard_stale_account_and_qr_results(
     assert_eq!(request.name, "qr");
     assert_eq!(request.data["remember"], true);
     let qr = |epoch, token| DecodedImage {
+        palette: None,
         target: ImageTarget::LoginQr(token),
         epoch,
         pixels: pixels(),
@@ -664,6 +666,136 @@ fn bitperfect_volume_stays_disabled_across_restart_and_player_snapshots() {
 }
 
 #[test]
+fn unavailable_outputs_allow_disabling_saved_bitperfect_and_exclusive_settings() {
+    use slint::platform::PointerEventButton;
+    use std::time::Duration;
+
+    i_slint_backend_testing::init_no_event_loop();
+    for software_volume in [false, true] {
+        for device_state in ["detecting", "empty", "default", "fallback"] {
+            let prefs = Preferences {
+                strict: true,
+                exclusive: true,
+                software_volume,
+                volume: 0.42,
+                ..Preferences::default()
+            };
+            let app = AppWindow::new().unwrap();
+            super::view::initialize(&app, &prefs);
+            let windows = crate::windows::ApplicationWindows::attach(&app).unwrap();
+            let settings = &windows._settings;
+            let audio = app.global::<crate::AudioState>();
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let mut view = View::new(tx, prefs);
+            if device_state == "fallback" {
+                view.apply(
+                    &app,
+                    response(
+                        "devices",
+                        0,
+                        0,
+                        json!([
+                            {"id":"hw:CARD=UsbDac,DEV=0","name":"USB DAC","current":true}
+                        ]),
+                    ),
+                );
+                assert!(audio.get_setting_supports_exclusive());
+            }
+            match device_state {
+                "empty" => view.apply(&app, response("devices", 0, 0, json!([]))),
+                "default" | "fallback" => view.apply(
+                    &app,
+                    response(
+                        "devices",
+                        0,
+                        0,
+                        json!([
+                            {"id":"","name":"系统默认输出","default":true,"current":true}
+                        ]),
+                    ),
+                ),
+                _ => {}
+            }
+            assert!(!audio.get_setting_supports_exclusive());
+            assert!(audio.get_setting_strict_bitperfect());
+            assert!(audio.get_setting_exclusive_mode());
+            app.show().unwrap();
+            app.global::<crate::SettingsState>()
+                .invoke_open_settings_window();
+            settings
+                .window()
+                .set_size(slint::PhysicalSize::new(1000, 1400));
+            settings
+                .global::<crate::SettingsState>()
+                .set_settings_tab("audio".into());
+            i_slint_backend_testing::mock_elapsed_time(Duration::from_millis(600));
+            let click = |id: &str| {
+                ElementHandle::find_by_element_id(settings, id)
+                    .next()
+                    .unwrap()
+                    .mock_single_click(PointerEventButton::Left);
+                i_slint_backend_testing::mock_elapsed_time(Duration::from_millis(600));
+            };
+
+            // BitPerfect still forces exclusive and blocks software volume.
+            click("AudioSettingsTab::exclusive-switch");
+            click("AudioSettingsTab::software-volume-switch");
+            assert!(audio.get_setting_exclusive_mode());
+            assert_eq!(audio.get_setting_software_volume(), software_volume);
+
+            // Unsupported hardware must never prevent turning a saved option off.
+            click("AudioSettingsTab::bitperfect-switch");
+            assert!(!audio.get_setting_strict_bitperfect(), "{device_state}");
+            assert_eq!(audio.get_can_adjust_volume(), software_volume);
+            click("AudioSettingsTab::exclusive-switch");
+            assert!(!audio.get_setting_exclusive_mode(), "{device_state}");
+            assert!(!settings
+                .global::<crate::AudioState>()
+                .get_setting_strict_bitperfect());
+            assert!(!settings
+                .global::<crate::AudioState>()
+                .get_setting_exclusive_mode());
+
+            // Once off, neither hardware option can be enabled on a virtual output.
+            click("AudioSettingsTab::bitperfect-switch");
+            click("AudioSettingsTab::exclusive-switch");
+            assert!(!audio.get_setting_strict_bitperfect());
+            assert!(!audio.get_setting_exclusive_mode());
+            if !software_volume {
+                click("AudioSettingsTab::software-volume-switch");
+            }
+            assert!(audio.get_can_adjust_volume());
+            assert_eq!(audio.get_volume_percent(), 42.0);
+            view.save_preferences_if_changed(&app);
+            let command = rx.try_recv().unwrap();
+            assert_eq!(command.name, "preferences");
+            let saved: Preferences = serde_json::from_value(command.data).unwrap();
+            assert!(!saved.strict && !saved.exclusive && saved.software_volume);
+            assert_eq!(saved.effective_volume(), 0.42);
+
+            // A hardware output makes both options available again.
+            view.apply(
+                &app,
+                response(
+                    "devices",
+                    0,
+                    0,
+                    json!([
+                        {"id":"hw:CARD=UsbDac,DEV=0","name":"USB DAC","current":true}
+                    ]),
+                ),
+            );
+            click("AudioSettingsTab::exclusive-switch");
+            assert!(audio.get_setting_exclusive_mode());
+            click("AudioSettingsTab::bitperfect-switch");
+            assert!(audio.get_setting_strict_bitperfect());
+            settings.hide().unwrap();
+            app.hide().unwrap();
+        }
+    }
+}
+
+#[test]
 fn virtual_outputs_disable_hardware_options_without_erasing_preferences() {
     let prefs = Preferences {
         strict: true,
@@ -695,6 +827,7 @@ fn cover_eviction_releases_playlist_rows_and_scrolling_back_can_reload() {
     }}})));
     let rows = playlist_state.get_playlist_tracks();
     let cover = |index, size| DecodedImage {
+        palette: None,
         target: ImageTarget::Cover(format!("https://example.test/{index}.jpg"), size),
         epoch: 0,
         pixels: slint::SharedPixelBuffer::new(size, size),

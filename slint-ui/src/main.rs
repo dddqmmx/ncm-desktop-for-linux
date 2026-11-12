@@ -1,4 +1,10 @@
-slint::include_modules!();
+pub use ncm_slint_ui_bindings::*;
+use slint::ComponentHandle;
+mod appearance;
+#[cfg(test)]
+mod appearance_tests;
+mod detail_search;
+mod fullscreen_palette;
 #[cfg(test)]
 mod fullscreen_tests;
 #[cfg(test)]
@@ -23,9 +29,9 @@ mod state_tests;
 #[cfg(test)]
 mod virtual_list_tests;
 #[cfg(test)]
-mod window_tests;
-#[cfg(test)]
 mod window_size_tests;
+#[cfg(test)]
+mod window_tests;
 mod windows;
 
 fn main() -> Result<(), slint::PlatformError> {
@@ -38,6 +44,15 @@ fn main() -> Result<(), slint::PlatformError> {
         None
     } else {
         let storage = runtime::Storage::discover()?;
+        let log_path = storage.config.join("diagnostics.jsonl");
+        if let Err(error) = native::diagnostics::init(&log_path) {
+            eprintln!("无法打开诊断日志 {}: {error}", log_path.display());
+        }
+        native::diagnostics::record(
+            "info",
+            "app.start",
+            serde_json::json!({"version": env!("CARGO_PKG_VERSION")}),
+        );
         let preferences = storage.preferences()?;
         Some((storage, preferences))
     };
@@ -365,11 +380,25 @@ mod tests {
         );
 
         let nav_group_title = find_first_element(&app, "SidebarNavigation::nav-group-title");
+        let nav_group_header = find_first_element(&app, "SidebarNavigation::nav-group-header");
+        let nav_local = find_first_element(&app, "SidebarNavigation::nav-item-local");
+        // Hiding favorites moves the group up by one navigation row. Keep its
+        // text dimensions from the capture and check its position in the header.
+        crate::responsive_tests::assert_inside(
+            &nav_group_header,
+            &nav_group_title,
+            "home.navGroupTitle",
+        );
+        let mut group_title_rect = get_gt(&gt, "home", "navGroupTitle").clone();
+        group_title_rect.y = nav_local.absolute_position().y
+            + nav_local.size().height
+            + 24.0
+            + (nav_group_header.size().height - group_title_rect.height) / 2.0;
         assert_rect_matches_electron(
             "home.navGroupTitle",
             nav_group_title.absolute_position(),
             nav_group_title.size(),
-            get_gt(&gt, "home", "navGroupTitle"),
+            &group_title_rect,
             0.5,
         );
 
