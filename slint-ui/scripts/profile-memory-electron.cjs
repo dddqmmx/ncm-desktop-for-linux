@@ -5,7 +5,7 @@ if (!process.env.NCM_MEMORY_USER_DATA) throw new Error('Use profile-memory-fixtu
 app.setPath('userData', process.env.NCM_MEMORY_USER_DATA)
 app.commandLine.appendSwitch('ozone-platform', 'wayland')
 process.on('SIGTERM', () => app.quit())
-const root = path.resolve(__dirname, '../..')
+const root = path.resolve(__dirname, '../../electron')
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 app

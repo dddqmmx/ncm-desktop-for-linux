@@ -10,6 +10,7 @@ const { setTimeout: sleep } = require('node:timers/promises')
 
 const ROOT = path.resolve(__dirname, '..')
 const NATIVE_DIR = path.join(ROOT, 'native')
+const ELECTRON_DIR = path.join(ROOT, 'electron')
 const DEFAULT_REPORT_PATH = path.join(ROOT, 'native-seek-regression-report.json')
 
 const args = new Set(process.argv.slice(2))
@@ -1109,7 +1110,7 @@ async function main() {
   }
 
   if (runAudio && buildNative) {
-    runCommand('npm', ['run', 'build:native:dev'])
+    runCommand('npm', ['run', 'build:native:dev'], { cwd: ELECTRON_DIR })
   }
 
   if (runAudio) {

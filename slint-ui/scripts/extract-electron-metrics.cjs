@@ -6,7 +6,7 @@ app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('ozone-platform', 'headless')
 app.commandLine.appendSwitch('no-sandbox')
 
-const ROOT = path.resolve(__dirname, '../..')
+const ROOT = path.resolve(__dirname, '../../electron')
 const PRELOAD_PATH = path.join(ROOT, 'out/preload/index.js')
 const RENDERER_HTML = path.join(ROOT, 'out/renderer/index.html')
 const OUTPUT_JSON = path.join(__dirname, '../tests/electron-ground-truth.json')

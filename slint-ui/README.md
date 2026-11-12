@@ -1,10 +1,13 @@
 # Slint 应用
 
-默认启动真实 Rust 运行时；`--demo` 保留原来的离线演示和像素回归数据。
+Slint 是仓库的首选客户端，`electron/` 中的 Electron + Vue 界面为二级保留。默认启动真实 Rust 运行时；`--demo` 保留原来的离线演示和像素回归数据。
 
 ```sh
-npm run dev:slint
-# 或（开发模式，保存 .slint 时热加载）
+# 仓库根目录：npm run dev 等价于 dev:slint，npm run build / test 同理
+npm run dev
+npm run build
+npm run test
+# 或直接用 cargo（开发模式，保存 .slint 时热加载）
 cargo run --manifest-path slint-ui/Cargo.toml --locked --features hot-reload
 # 普通运行，不启用热加载
 cargo run --manifest-path slint-ui/Cargo.toml --locked
@@ -49,6 +52,8 @@ UI 主线程只提交运行时命令、接收结果并更新模型，禁止发�
 音质和输出设备使用通用 [Dropdown](ui/components/dropdown.slint) 下拉组件。调用方提供 `option-count`、`option-label(index)` 和 `current-index`，在 `selected(index)` 中提交选择；组件不依赖业务状态。支持当前项勾选、方向键/Home/End 浏览、回车确认、Esc/点击外部取消，长菜单按可见范围创建选项。可用 `enabled`、`placeholder`、`popup-width` 和 `max-visible-items` 调整行为。七档音质的值和名称定义在 `AudioState.sound-quality-options`，选择后沿用偏好持久化，重启从保存值恢复名称。
 
 界面共享状态按业务拆分到 `ui/state/`，演示数据位于 `ui/fixtures/`。`ui/state.slint` 只导出 Rust 绑定；模块职责、跨窗口同步与依赖规则见 [状态模块说明](ui/state/README.md)。
+
+Electron 客户端位于 [electron/](../electron/)，与本目录共用 `native/` crate；从仓库根目录用 `npm run dev:electron` / `npm run build:electron` 调用，打包和基准采集命令见本文末尾。
 
 ## 配置与数据
 
@@ -117,7 +122,7 @@ NCM_SLINT_TEST_LIVE_API=1 timeout 60s cargo test --manifest-path slint-ui/Cargo.
 timeout 60s cargo test --manifest-path slint-ui/Cargo.toml --locked real_login_window_matches_electron_behavior -- --ignored --nocapture
 ```
 
-登录回归检查默认、错误和重新打开时的内容布局、控件边界，以及独立表单、区号键盘输入、回车提交、加载期间防止重复提交、验证码倒计时、二维码过期刷新和关闭后的旧响应隔离。真实登录窗口测试使用延迟模拟 API，检查卡片/遮罩点击、两面的关闭按钮、扫码切回表单、保持登录标签和会话保存，并输出截图；不会发送真实短信或使用真实账号。更新 Electron 登录基准使用 `node_modules/.bin/electron --no-sandbox slint-ui/scripts/extract-electron-metrics.cjs --login-modal`（先构建 Electron）。
+登录回归检查默认、错误和重新打开时的内容布局、控件边界，以及独立表单、区号键盘输入、回车提交、加载期间防止重复提交、验证码倒计时、二维码过期刷新和关闭后的旧响应隔离。真实登录窗口测试使用延迟模拟 API，检查卡片/遮罩点击、两面的关闭按钮、扫码切回表单、保持登录标签和会话保存，并输出截图；不会发送真实短信或使用真实账号。更新 Electron 登录基准使用 `electron/node_modules/.bin/electron --no-sandbox slint-ui/scripts/extract-electron-metrics.cjs --login-modal`（先在 `electron/` 中构建）。
 
 测试包含原有页面几何和动画回归，以及新建、编辑、删除、键盘操作、权限变化、空歌单隔离、重复提交和 Unicode 输入。窗口测试覆盖实际传给平台的尺寸约束、独立打开和关闭、重复打开、Esc、偏好双向同步及同一轮操作中的不同字段变更。设置窗口在 1000×800、1200×900 下检查布局；歌单管理控件在 1435×1000、620×720 下检查包含关系和操作流程。动态内容不再要求复现截图坐标，多尺寸、长文字及短窗口滚动验证见 [自适应布局审查](tests/responsive-layout.md)。620×720 仅用于无窗口系统的组件布局压力测试；实际主窗口受 1340×960 的最小尺寸限制。
 
@@ -126,13 +131,13 @@ timeout 60s cargo test --manifest-path slint-ui/Cargo.toml --locked real_login_w
 重新采集歌单基准（本地模拟 IPC，不使用真实账户）：
 
 ```sh
-npx electron-vite build
-node_modules/.bin/electron --no-sandbox slint-ui/scripts/extract-electron-metrics.cjs --playlist-management
+npm run build:electron
+npx electron --no-sandbox slint-ui/scripts/extract-electron-metrics.cjs --playlist-management
 ```
 
 输出为 `tests/playlist-management-ground-truth.json`，选择器缺失时会失败，不会把缺失控件当作通过。歌手页使用新采集的 `tests/artist-ground-truth.json`，动态布局及验证见 [歌手页记录](tests/artist-display.md)。未改动的固定控件与动画仍使用 `tests/electron-ground-truth.json` 中的历史基准；动态布局改为检验实际内容的边界、排列、换行与滚动。
 
-采集设置窗口基准：在构建 Electron 后执行 `node_modules/.bin/electron --no-sandbox slint-ui/scripts/extract-electron-metrics.cjs --settings-window`，输出到 `tests/settings-window-ground-truth.json`。同时采集八个标签页内部布局，等待切换动画结束；用户气泡基准使用 `--sidebar-hover`。均使用本地模拟 IPC，支持以下截图环境变量。
+采集设置窗口基准：在构建 Electron 后执行 `electron/node_modules/.bin/electron --no-sandbox slint-ui/scripts/extract-electron-metrics.cjs --settings-window`，输出到 `tests/settings-window-ground-truth.json`。同时采集八个标签页内部布局，等待切换动画结束；用户气泡基准使用 `--sidebar-hover`。均使用本地模拟 IPC，支持以下截图环境变量。
 
 可选截图：设置 `NCM_SLINT_SCREENSHOT_DIR=/tmp/ncm-slint-shots` 运行测试，会输出软件渲染的 PPM；设置 `NCM_ELECTRON_SCREENSHOT_DIR=/tmp/ncm-electron-shots` 运行采集脚本，会输出 PNG。Electron 截图像素尺寸取决于屏幕缩放，DOM 基准始终使用逻辑像素。
 

@@ -4,7 +4,7 @@ const path = require('node:path')
 const { setTimeout: sleep } = require('node:timers/promises')
 const fs = require('node:fs')
 const os = require('node:os')
-const { lyric_new, song_detail, song_url_v1 } = require('@neteasecloudmusicapienhanced/api')
+const { lyric_new, song_detail, song_url_v1 } = require('electron/node_modules/@neteasecloudmusicapienhanced/api')
 const { CacheService, PlayerService } = require('../native/index.node')
 
 const SONG_ID = Number(process.env.SONG_ID ?? 1347630432)

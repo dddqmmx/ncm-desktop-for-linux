@@ -106,8 +106,8 @@ python3 scripts/profile-memory.py <PID> --samples 3 --output /tmp/ncm-live.json
 cargo build --release --locked
 python3 scripts/profile-memory-fixture.py target/release/ncm-slint-ui --output /tmp/ncm-release.json
 
-# 从仓库根目录先运行 node_modules/.bin/electron-vite build，再回到 slint-ui
-python3 scripts/profile-memory-fixture.py ../node_modules/electron/dist/electron --electron --output /tmp/ncm-electron.json
+# 先从仓库根目录运行 npm run build:electron，再回到 slint-ui
+python3 scripts/profile-memory-fixture.py ../electron/node_modules/electron/dist/electron --electron --output /tmp/ncm-electron.json
 
 # 分阶段窗口/封面/登录测量，替换 renderer 为 opengl 或 software
 NCM_SLINT_TEST_RENDERER=vulkan NCM_MEMORY_TRIM=1 cargo test --locked profile_memory_stages -- --ignored --nocapture --test-threads=1

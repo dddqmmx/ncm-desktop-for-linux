@@ -7,10 +7,60 @@ on:
   workflow_dispatch: # 允许手动触发，用于测试编译
 
 jobs:
-  release:
+  # 首选客户端：Slint + Rust，直接产物是 release 二进制
+  slint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # Slint 的 Vulkan/OpenGL/软件渲染与 native 音频都需要这些系统库
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev cmake libvulkan-dev \
+            libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            slint-ui/target/
+            native/target/
+          key: ${{ runner.os }}-slint-cargo-${{ hashFiles('slint-ui/Cargo.lock', 'native/Cargo.lock') }}
+
+      - name: Check Slint UI structure
+        run: python3 slint-ui/scripts/check_ui_quality.py
+
+      - name: Test
+        run: cargo test --manifest-path slint-ui/Cargo.toml --locked
+
+      - name: Build
+        run: cargo build --manifest-path slint-ui/Cargo.toml --release --locked
+
+      - name: Upload Slint binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ncm-slint-ui-linux-x64
+          path: slint-ui/target/release/ncm-slint-ui
+          retention-days: 5
+
+  # 二级客户端：Electron，沿用 electron-builder 的 AppImage 打包与发布
+  electron:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    needs: slint
+    defaults:
+      run:
+        working-directory: electron
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -20,13 +70,12 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
+          cache-dependency-path: electron/package-lock.json
 
       # 安装 Rust 环境（针对 napi-rs 原生模块）
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          
+
       - name: Install ALSA deps
         run: |
           sudo apt-get update
@@ -36,7 +85,7 @@ jobs:
 
       # 缓存 Rust 编译产物
       - name: Cache Cargo
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
@@ -44,7 +93,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             native/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('native/Cargo.lock') }}
 
       - name: Install dependencies
         run: npm install
@@ -77,6 +126,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ncm-desktop-linux-appimage
-          path: dist/*.AppImage # electron-builder 默认打包输出在 dist 目录
+          name: ncm-desktop-electron-linux-appimage
+          path: electron/dist/*.AppImage # electron-builder 默认打包输出在 dist 目录
           retention-days: 5 # 测试包保留5天即可

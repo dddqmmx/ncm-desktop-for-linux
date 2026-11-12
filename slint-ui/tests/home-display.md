@@ -49,5 +49,5 @@ NCM_SLINT_SCREENSHOT_DIR=/tmp/ncm-home timeout 60s cargo test --locked --offline
 原版参考截图使用独立配置与模拟接口，避免修改既有基准：
 
 ```sh
-NCM_ELECTRON_SCREENSHOT_DIR=/tmp/ncm-home-reference ../node_modules/.bin/electron --no-sandbox scripts/extract-electron-metrics.cjs --home-view
+NCM_ELECTRON_SCREENSHOT_DIR=/tmp/ncm-home-reference ../../electron/node_modules/.bin/electron --no-sandbox scripts/extract-electron-metrics.cjs --home-view
 ```

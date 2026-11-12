@@ -1,93 +1,19 @@
 {
   "name": "ncm-desktop-for-linux",
   "version": "1.0.0",
-  "description": "A third-party NetEase Cloud Music client for the Linux desktop",
-  "main": "./out/main/index.js",
-  "author": "PaulPerkenstein",
-  "homepage": "https://electron-vite.org",
+  "private": true,
+  "description": "A third-party NetEase Cloud Music client for Linux (Slint/Rust client; the Electron client lives in electron/)",
   "scripts": {
-    "format": "prettier --write .",
-    "lint": "eslint --cache .",
-    "test:web": "vitest run",
+    "dev": "npm run dev:slint",
+    "build": "npm run build:slint",
+    "test": "npm run test:slint",
     "dev:slint": "cargo run --manifest-path slint-ui/Cargo.toml --locked --features hot-reload",
     "build:slint": "cargo build --manifest-path slint-ui/Cargo.toml --release --locked",
     "test:slint": "cargo test --manifest-path slint-ui/Cargo.toml --locked",
+    "check:slint": "python3 slint-ui/scripts/check_ui_quality.py",
     "test:native-seek": "node scripts/native-seek-regression.cjs",
-    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
-    "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "start": "electron-vite preview",
-    "build:native:dev": "cd native && npx napi build",
-    "dev:native": "cd native && npx napi build --watch",
-    "dev": "npm run build:native:dev && concurrently --kill-others \"npm run dev:native\" \"electron-vite dev\"",
-    "build:native": "cd native && npx napi build --release",
-    "build": "npm run typecheck && npm run build:native && electron-vite build",
-    "postinstall": "electron-builder install-app-deps",
-    "build:unpack": "npm run build && electron-builder --dir",
-    "build:win": "npm run build && electron-builder --win",
-    "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "npm run build && electron-builder --linux"
-  },
-  "dependencies": {
-    "@electron-toolkit/preload": "^3.0.2",
-    "@electron-toolkit/utils": "^4.0.0",
-    "axios": "^1.16.1",
-    "colord": "^2.9.3",
-    "electron-updater": "^6.8.3",
-    "extract-colors": "^4.2.1",
-    "@neteasecloudmusicapienhanced/api": "^4.36.1",
-    "pinia": "^3.0.4",
-    "tough-cookie": "^6.0.1",
-    "vue-draggable-plus": "^0.6.1",
-    "vue-router": "^5.0.7"
-  },
-  "devDependencies": {
-    "@electron-toolkit/eslint-config-prettier": "^3.0.0",
-    "@electron-toolkit/eslint-config-ts": "^3.1.0",
-    "@electron-toolkit/tsconfig": "^2.0.0",
-    "@napi-rs/cli": "^3.6.2",
-    "@types/node": "^25.9.0",
-    "@types/tough-cookie": "^4.0.5",
-    "@vitejs/plugin-vue": "^6.0.7",
-    "@vue/devtools": "^8.1.2",
-    "concurrently": "^9.2.1",
-    "electron": "^42.4.0",
-    "electron-builder": "^26.8.1",
-    "electron-vite": "^6.0.0-beta.1",
-    "eslint": "^10.4.0",
-    "eslint-plugin-vue": "^10.9.1",
-    "prettier": "^3.8.3",
-    "ts-node": "^10.9.2",
-    "typescript": "^6.0.3",
-    "vite": "^8.0.13",
-    "vitest": "^4.1.6",
-    "vue": "^3.5.34",
-    "vue-tsc": "^3.3.0"
-  },
-  "build": {
-    "asar": true,
-    "files": [
-      "out/**",
-      "package.json"
-    ],
-    "asarUnpack": [
-      "**/*.node"
-    ],
-    "extraResources": [
-      {
-        "from": "native/index.node",
-        "to": "native/index.node"
-      }
-    ],
-    "linux": {
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    }
+    "dev:electron": "npm --prefix electron run dev",
+    "build:electron": "npm --prefix electron run build",
+    "build:native:dev": "npm --prefix electron run build:native:dev"
   }
 }

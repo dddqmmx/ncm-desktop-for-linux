@@ -1,6 +1,8 @@
 node_modules
 dist
 out
+electron/dist
+electron/node_modules
 .DS_Store
 .eslintcache
 *.log*
@@ -13,3 +15,5 @@ yarn.lock
 native-seek-regression-report.json
 # 参考用的第三方仓库（独立 git 仓库，不属于本项目）
 spotifast/
+# Slint 首选构建产物
+slint-ui/target/

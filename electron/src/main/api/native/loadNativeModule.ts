@@ -146,7 +146,8 @@ let nativeModule: NativeModule | null = null
 
 function resolveNative(): string {
   if (!app.isPackaged) {
-    return path.join(__dirname, '..', '..', 'native', 'index.node')
+    // out/main -> electron/, so the shared crate's artifact is one level higher.
+    return path.join(__dirname, '..', '..', '..', 'native', 'index.node')
   }
 
   const appPath = app.getAppPath()

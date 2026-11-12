@@ -53,7 +53,7 @@ NCM_SLINT_SCREENSHOT_DIR=/tmp/ncm-fullscreen-review timeout 60s cargo test --loc
 Electron 已构建后，使用独立临时配置重新采集基准：
 
 ```sh
-NCM_ELECTRON_SCREENSHOT_DIR=/tmp/ncm-fullscreen-review timeout 35s ../node_modules/.bin/electron --no-sandbox scripts/extract-electron-metrics.cjs --fullscreen-player
+NCM_ELECTRON_SCREENSHOT_DIR=/tmp/ncm-fullscreen-review timeout 35s ../../electron/node_modules/.bin/electron --no-sandbox scripts/extract-electron-metrics.cjs --fullscreen-player
 ```
 
 输出 `tests/fullscreen-ground-truth.json` 及初始、跟随、关闭译文、关闭所有附加行四张截图。
