@@ -1,66 +1,109 @@
-# music
+# ncm-desktop-for-linux
 
-NetEase Cloud Music client for the Linux desktop. The repository holds one shared Rust audio/API
-core (`native/`) and two front-ends on top of it.
+Linux 桌面上的第三方网易云音乐客户端。仓库里有一份共享的 Rust 播放/缓存/下载核心（`native/`），
+上面接了两个前端：
 
 | 目录 | 客户端 | 状态 |
 | --- | --- | --- |
-| `slint-ui/` | Slint + Rust 原生界面 | 首选，默认构建 |
-| `electron/` | Electron + Vue + TypeScript | 二级，保留旧界面 |
-| `native/` | 两者共享的播放、缓存与下载核心 | — |
+| [`slint-ui/`](slint-ui/) | Slint + Rust 原生界面 | **首选**，根目录默认构建 |
+| [`electron/`](electron/) | Electron + Vue + TypeScript | 二级，保留旧界面 |
+| [`native/`](native/) | 两者共用的音频、缓存、下载核心 | — |
 
-根目录的 `npm run dev` / `build` / `test` 都指向 Slint；Electron 的脚本在 `electron/` 内部，通过
-`npm run dev:electron` / `npm run build:electron` 从根目录调用。
+根目录的 `npm run dev` / `build` / `test` 全部指向 Slint；Electron 的脚本留在 `electron/` 内部，
+通过 `npm run dev:electron` / `npm run build:electron` 从根目录调用。
 
-## Slint（首选）
+## Slint 客户端（首选）
+
+Rust 进程内完成 API 请求、解码、缓存与输出，构建和运行都不需要 Node.js 或 npm 依赖。
+
+### 依赖
+
+- Rust（`slint-ui` 用 edition 2021，`native` 用 edition 2024）
+- Linux 上的 ALSA（`libasound2-dev`）、`pkg-config`、`cmake`（编译 bundled libopus）
+- Vulkan 驱动或 OpenGL 驱动；没有 GPU 时可在设置里切到软件渲染
 
 ```bash
-# 开发（保存 .slint 时热加载）
-npm run dev
+# Debian/Ubuntu
+sudo apt install pkg-config libasound2-dev cmake libvulkan-dev \
+  libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+```
 
-# release 构建：slint-ui/target/release/ncm-slint-ui
-npm run build
+### 构建与运行
 
-# 测试与界面结构检查
-npm run test
-npm run check:slint
-# 等价于
-cargo run --manifest-path slint-ui/Cargo.toml --locked --features hot-reload
+```bash
+npm run dev     # = dev:slint，热加载：保存 ui/ 下的 .slint 后界面就地刷新
+npm run build   # = build:slint，release 产物在 slint-ui/target/release/ncm-slint-ui
+npm run test    # = test:slint
+npm run check:slint   # 界面结构/体积/嵌套/导入依赖检查
+```
+
+不用 npm 的话，等价命令是：
+
+```bash
+cargo run   --manifest-path slint-ui/Cargo.toml --locked --features hot-reload
 cargo build --manifest-path slint-ui/Cargo.toml --release --locked
-cargo test --manifest-path slint-ui/Cargo.toml --locked
+cargo test  --manifest-path slint-ui/Cargo.toml --locked
 python3 slint-ui/scripts/check_ui_quality.py
 ```
 
-构建与运行不需要 npm 依赖：Cargo 直接获取固定提交的 `dddqmmx/ncm-api-rs`，音频、缓存、下载和本地
-扫描由 `native/` 进程内完成。渲染器、配置目录和测试细节见 [slint-ui/README.md](slint-ui/README.md)。
+`--demo` 用离线演示数据运行，不启动 API、不读真实会话：
 
-## Electron（二级）
+```bash
+cargo run --manifest-path slint-ui/Cargo.toml --locked --features hot-reload -- --demo
+```
 
-Electron + Vue 客户端完整保留在 `electron/`，依赖、vite/builder 配置和输出都在该目录内。它和 Slint
-共用 `native/` 的 Rust 源码与 `native/index.node` 构建产物。
+### 功能
+
+- 登录：手机密码 / 验证码、二维码登录（轮询与过期刷新）、保持登录、退出
+- 内容：推荐、分页搜索、喜欢的音乐、歌单、歌手、专辑、MV、歌词/译文、评论
+- 歌单：云端创建 / 编辑 / 删除 / 增删曲目，失败保留草稿
+- 播放：队列与「添加到下一曲」、随机 / 单曲循环、进度拖动、歌词跳转、真实输出设备、
+  软件音量、独占 / BitPerfect
+- 本地与缓存：本地文件夹扫描、缓存容量与预下载上限、清理；下载带音质选择、原生保存窗口和完整性检查
+- 界面：隐藏系统标题栏的自绘窗口、独立设置窗口、Vulkan / OpenGL / 软件三种渲染器
+
+界面细节、渲染器说明、性能与回归测试的记录都在 [slint-ui/README.md](slint-ui/README.md)。
+
+### 数据目录
+
+| 变量 | 用途 |
+| --- | --- |
+| `NCM_DATA_DIR` | 覆盖偏好/会话/本地曲库目录（默认 `~/.config/ncm-slint`） |
+| `NCM_CACHE_DIR` | 覆盖缓存目录（默认 `~/.cache/ncm-slint`） |
+| `NCM_API_URL` | 用 v1 HTTP 提供方替代内置 Rust API |
+
+Slint 的数据目录与 Electron 相互独立，不自动导入旧登录信息。会话文件只靠文件权限保护，未接系统密钥环，
+密码不落盘。
+
+## Electron 客户端（二级）
+
+Electron + Vue 界面完整保留在 [`electron/`](electron/)，依赖、vite/electron-builder 配置、`node_modules`
+和构建输出都在该目录内；它与 Slint 共用 `native/` 的 Rust 源码和 `native/index.node`。
 
 ```bash
 cd electron
-npm install            # Electron 的依赖只装在 electron/
+npm install
 npm run dev            # 构建 native 并启动 electron-vite dev
-npm run build          # 类型检查 + native release + electron-vite build
+npm run build          # typecheck + native release + electron-vite build
 npm run build:linux    # electron-builder 打包 AppImage
-npm run build:unpack   # 仅解包目录
 npm run lint
 npm run test:web
-
-cd ..
-npm run dev:electron   # 等价于 npm --prefix electron run dev
-npm run build:electron # 等价于 npm --prefix electron run build
 ```
 
-`native/index.node` 由 `electron/` 中的 `build:native`/`build:native:dev` 通过
-`electron/node_modules/.bin/napi` 编译到仓库根的 `native/`。打包时 electron-builder 用 `extraResources` 把
-`../native/index.node` 放进 `resources/native/index.node`；开发时主进程按
-`out/main` → 仓库根查找同一个文件。
+细节见 [electron/README.md](electron/README.md)。
 
-## 其它脚本
+## 其它
 
 ```bash
-npm run test:native-seek   # native 播放/拖动回归（cargo test + NAPI 播放探针）
+npm run test:native-seek   # native 播放/拖动回归：cargo test + 真实 NAPI 播放探针
 ```
+
+## 当前边界
+
+系统托盘、全局快捷键和自动更新尚未接入。Slint 的玻璃模糊与 Electron 的 CSS `backdrop-filter` 仍有渲染差异；
+字体栅格化、阴影、圆角裁剪和多行行距也在继续对齐。测试使用模拟账号与接口，真实账号的短信、二维码授权、
+会员音源和实际设备听感仍需自己验收。
+
+## 许可证
+
+[MIT](LICENSE)
